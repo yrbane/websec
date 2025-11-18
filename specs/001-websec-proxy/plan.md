@@ -1,342 +1,463 @@
-# Plan d'Implémentation : WebSec Proxy de Sécurité
+# Implementation Plan: WebSec Proxy de Sécurité
 
-**Branche** : `001-websec-proxy` | **Date** : 2025-11-18 | **Spec** : [spec.md](./spec.md)
-**Input** : Spécification de fonctionnalité depuis `specs/001-websec-proxy/spec.md`
+**Branch**: `001-websec-proxy` | **Date**: 2025-11-18 | **Spec**: `/home/seb/Dev/websec/specs/001-websec-proxy/spec.md`
+**Input**: Feature specification from `/home/seb/Dev/websec/specs/001-websec-proxy/spec.md`
 
-## Résumé
+**Note**: This plan follows the template at `.specify/templates/plan-template.md` and is filled by the `/speckit.plan` command.
 
-WebSec est un proxy/reverse proxy de sécurité écrit en Rust, placé en amont d'un serveur web pour intercepter et analyser toutes les requêtes HTTP(S). Le système calcule un score de réputation dynamique pour chaque IP source basé sur la détection de 12 familles de menaces (bots, brute force, injections, scans, etc.) et prend des décisions automatiques : autoriser, ralentir (rate limiting), challenger (CAPTCHA), ou bloquer les requêtes.
+## Summary
 
-## Contexte Technique
+WebSec is a high-performance security reverse proxy written in Rust that intercepts all HTTP(S) requests before they reach backend web servers. It analyzes each request in real-time, calculates an IP reputation score based on 12 threat families (bots, brute force, injections, SSRF, session anomalies, etc.), and takes adaptive actions (allow, rate-limit, challenge, block) based on the computed score using the formula `Score = max(0, min(100, base - Σ(poids_signal)))` with exponential reputation recovery (24h half-life). The system operates transparently without requiring backend configuration, uses Token Bucket with sliding window rate limiting, and stores state in Redis with local L1 caching to achieve <5ms p95 latency at 10k+ req/s. Administration is performed via a CLI for whitelist/blacklist management, IP profile inspection, and live statistics monitoring.
 
-**Langage/Version** : Rust 1.75+ (stable)
-**Dépendances Principales** :
-  - hyper/tokio (serveur HTTP async)
-  - axum (framework web)
-  - tower (middleware)
-  - serde (sérialisation)
-  - tracing (logging structuré)
-  - maxminddb (géolocalisation)
-  - regex (détection de patterns)
-  - redis ou sled (persistance scores)
+## Technical Context
 
-**Stockage** :
-  - En mémoire (cache scores/compteurs actifs)
-  - Persistance Redis ou Sled (scores de réputation)
-  - Fichiers de configuration (TOML)
+**Language/Version**: Rust 1.75+ (stable toolchain)
+**Primary Dependencies**:
+- HTTP framework: hyper 1.0 (async HTTP proxy implementation)
+- Async runtime: tokio 1.35 (high-performance async executor)
+- Storage: redis 0.24 with tokio support (reputation state)
+- Rate limiting: governor 0.6 (token bucket implementation)
+- Geolocation: maxminddb 0.24 (GeoIP2 database reader)
+- Logging: tracing 0.1 + tracing-subscriber (structured logging)
+- Metrics: prometheus 0.13 (observability)
+- TLS: rustls 0.22 (if TLS termination enabled)
+- Config: config 0.14 (TOML parsing)
+- Testing: cargo test + criterion 0.5 (benchmarks) + tarpaulin (coverage)
 
-**Testing** : cargo test (unit + integration + contract tests)
-**Plateforme Cible** : Linux server (production), Docker
-**Type de Projet** : Single project (proxy standalone)
-**Objectifs de Performance** :
-  - 10 000 req/s minimum
-  - < 5ms latence p95
-  - < 512 MB RAM pour 100k IPs
-**Contraintes** :
-  - Latence minimale (< 5ms p95)
-  - Haute disponibilité (99.9%)
-  - Stateless pour scaling horizontal
-  - Sécurité maximale (fail-closed)
-**Échelle/Portée** :
-  - 100k IPs actives simultanées
-  - 12 familles de menaces
-  - 20+ signaux différents
+**Storage**:
+- Primary: Redis 7.0+ (centralized reputation state, L2 cache)
+- Cache: In-memory LRU (L1 cache for <5ms latency)
+- Fallback: File-based logs (degraded mode when Redis unavailable)
 
-## Vérification Constitution
+**Testing**:
+- Unit: cargo test (logic métier >80% coverage)
+- Integration: cargo test integration tests
+- Contract: Contract tests for detectors and reputation engine
+- Benchmarks: criterion (performance regression detection)
+- Coverage: tarpaulin (>80% on business logic)
 
-*GATE : Doit passer avant Phase 0 recherche. Re-vérifier après Phase 1 design.*
+**Target Platform**: Linux x86_64 server (Ubuntu 22.04+, RHEL 8+)
 
-### ✅ I. Rust-First Development
-- Toute l'implémentation sera en Rust
-- Usage de cargo comme système de build
-- Exploitation du système de types et ownership pour la sécurité
+**Project Type**: Single Rust project (binary with library crate)
 
-### ✅ II. Test-Driven Development (NON-NÉGOCIABLE)
-- Tests écrits avant implémentation pour chaque détecteur
-- Red-Green-Refactor strictement appliqué
-- Tests unitaires pour logique métier, integration tests pour contracts
-- Couverture minimum 80%
+**Performance Goals**:
+- Throughput: 10,000+ req/s on 4 CPU cores
+- Latency: <5ms p95, <2ms p50 for legitimate requests
+- Memory: <512MB RAM for 100k tracked IPs
+- Startup: <1s cold start, <100ms config reload
 
-### ✅ III. Design Patterns & Architecture
-- Architecture modulaire avec pattern Strategy pour les détecteurs
-- Repository pattern pour la persistance
-- Builder pattern pour la configuration
-- Factory pattern pour création des détecteurs
-- Séparation claire : domain logic / infrastructure / presentation
+**Constraints**:
+- Stateless architecture (horizontal scaling)
+- Zero backend configuration (transparent deployment)
+- Graceful degradation (continue without Redis)
+- No panics in production (Result/Option only)
+- Security: pass cargo audit, no hardcoded secrets
 
-### ✅ IV. Documentation Excellence
-- Rustdoc pour toutes les APIs publiques
-- README avec quickstart et architecture
-- Documentation des threat models et assumptions de sécurité
-- Commentaires inline pour logique complexe de scoring
+**Scale/Scope**:
+- Support 100k+ concurrent tracked IPs
+- Handle 12 threat families with 20+ signal types
+- Process 1M+ req/day per instance
+- Maintain <0.1% false positive rate
 
-### ✅ V. Quality Triad: Qualité, Sécurité, Performance
-**Qualité** :
-- `#![deny(warnings)]` activé
-- Clippy avec lints stricts
-- rustfmt obligatoire
-- Peer review pour toute PR
+## Constitution Check
 
-**Sécurité** :
-- cargo audit dans CI
-- Validation de tous les inputs
-- Pas de panic en production (use Result/Option)
-- Secrets jamais hardcodés
-- Threat modeling pour nouveaux détecteurs
+*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-**Performance** :
-- Benchmarks avec criterion pour chemins critiques
-- Profiling avant optimisation
-- Éviter allocations dans hot paths
-- Complexité algorithmique documentée
+Based on Constitution v1.1.0 (`/home/seb/Dev/websec/.specify/memory/constitution.md`):
 
-### Contraintes de Complexité
+### Rust-First (Principle I)
+- **Status**: ✅ PASS
+- **Evidence**: Language is Rust 1.75+ stable. All implementation in Rust.
+- **Gate**: Use Rust stable toolchain, cargo as build system, exploit ownership/borrowing.
 
-Aucune violation de la constitution identifiée pour ce projet. L'architecture proposée respecte les principes de simplicité tout en répondant aux exigences fonctionnelles.
+### TDD (Principle II)
+- **Status**: ✅ PASS
+- **Evidence**: Specification defines 13 user scenarios with acceptance criteria. Test structure planned in Phase 1 (contracts/). Implementation Phase 3 follows Red-Green-Refactor.
+- **Gate**: Tests written first, user approval of test cases, coverage >80% on business logic, organized tests/ structure (unit/, integration/, contract/).
 
-## Structure du Projet
+### Design Patterns & Architecture (Principle III)
+- **Status**: ✅ PASS
+- **Evidence**: Architecture uses Strategy (detectors), Repository (reputation storage), Factory (signal creation), Builder (configuration). Documented in research.md and data-model.md.
+- **Gate**: Apply appropriate patterns, document choices in code comments, avoid anti-patterns, follow SOLID principles.
 
-### Documentation (cette fonctionnalité)
+### Documentation Excellence (Principle IV)
+- **Status**: ✅ PASS
+- **Evidence**: Plan includes rustdoc requirements, README generation in Phase 1 (quickstart.md), inline comments for complex logic, security considerations documented.
+- **Gate**: Rustdoc (`///`) for all public APIs, inline comments explaining "why", README with quickstart/architecture, security/threat model documentation, changelog.
+
+### Quality Triad (Principle V)
+- **Status**: ✅ PASS
+- **Evidence**: CI pipeline includes clippy (strict), rustfmt, cargo audit. Benchmarks with criterion. Performance targets defined (<5ms p95, 10k req/s).
+- **Gate**:
+  - Quality: clippy strict, rustfmt, peer review
+  - Security: cargo audit passing, input validation, least privilege, no hardcoded secrets
+  - Performance: criterion benchmarks, profiling before optimization, document characteristics, consider Big-O
+
+**Overall Constitution Compliance**: ✅ ALL GATES PASS
+
+## Project Structure
+
+### Documentation (this feature)
 
 ```text
 specs/001-websec-proxy/
-├── plan.md              # Ce fichier
-├── spec.md              # Spécification fonctionnelle
-├── research.md          # Phase 0 output (recherche technique)
-├── data-model.md        # Phase 1 output (modèle de données)
-├── quickstart.md        # Phase 1 output (guide démarrage rapide)
-├── contracts/           # Phase 1 output (contrats API/interfaces)
-└── tasks.md             # Phase 2 output (liste des tâches)
+├── plan.md              # This file (/speckit.plan output)
+├── research.md          # Phase 0: Technical decisions, library choices
+├── data-model.md        # Phase 1: All entities (IpProfile, Signal, Detector, etc.)
+├── quickstart.md        # Phase 1: Developer getting started guide
+├── contracts/           # Phase 1: Contract test specifications
+│   ├── detector-contracts.md
+│   ├── reputation-engine-contracts.md
+│   ├── ratelimiter-contracts.md
+│   └── storage-contracts.md
+└── tasks.md             # Phase 2: Generated by /speckit.tasks (NOT by this command)
 ```
 
-### Code Source (racine du repository)
+### Source Code (repository root)
 
 ```text
-src/
-├── main.rs                      # Point d'entrée (proxy server)
-├── lib.rs                       # Exports publics de la bibliothèque
+websec/                    # Repository root
+├── Cargo.toml             # Workspace root
+├── Cargo.lock
+├── .github/
+│   └── workflows/
+│       └── ci.yml         # Clippy, rustfmt, test, audit, coverage
+├── README.md              # Project overview, quickstart
+├── CHANGELOG.md           # Keep a Changelog format
+├── websec.example.toml    # Example configuration
 │
-├── config/                      # Configuration
-│   ├── mod.rs
-│   ├── loader.rs               # Chargement config TOML
-│   └── settings.rs             # Structures de configuration
+├── src/                   # Main binary crate
+│   ├── main.rs            # Entry point: CLI parsing, server start
+│   ├── config.rs          # Configuration loading (TOML)
+│   ├── server.rs          # HTTP proxy server (hyper)
+│   ├── cli.rs             # CLI commands (admin, stats, etc.)
+│   │
+│   ├── models/            # Domain entities
+│   │   ├── mod.rs
+│   │   ├── ip_profile.rs      # IpProfile entity
+│   │   ├── signal.rs          # Signal types enum + metadata
+│   │   ├── request.rs         # HttpRequest wrapper
+│   │   ├── decision.rs        # ProxyDecision enum (Allow/Block/etc.)
+│   │   └── reputation_score.rs # Score calculation
+│   │
+│   ├── detectors/         # Strategy pattern: 12 threat detectors
+│   │   ├── mod.rs
+│   │   ├── trait_detector.rs  # Detector trait
+│   │   ├── bot_detector.rs
+│   │   ├── bruteforce_detector.rs
+│   │   ├── flood_detector.rs
+│   │   ├── protocol_anomaly_detector.rs
+│   │   ├── path_traversal_detector.rs
+│   │   ├── upload_detector.rs
+│   │   ├── injection_detector.rs
+│   │   ├── vuln_scan_detector.rs
+│   │   ├── host_header_detector.rs
+│   │   ├── ssrf_detector.rs
+│   │   ├── session_anomaly_detector.rs
+│   │   └── tls_fingerprint_detector.rs
+│   │
+│   ├── reputation/        # Reputation engine
+│   │   ├── mod.rs
+│   │   ├── engine.rs          # Score aggregation, formula
+│   │   ├── decay.rs           # Exponential decay (24h half-life)
+│   │   └── weights.rs         # Signal weights config
+│   │
+│   ├── ratelimit/         # Rate limiting
+│   │   ├── mod.rs
+│   │   ├── token_bucket.rs    # Token bucket + sliding window
+│   │   └── limiter.rs         # Per-IP rate limiter
+│   │
+│   ├── storage/           # Repository pattern: state persistence
+│   │   ├── mod.rs
+│   │   ├── trait_repository.rs # Repository trait
+│   │   ├── redis_repository.rs # Redis implementation (L2)
+│   │   ├── memory_cache.rs     # LRU cache (L1)
+│   │   └── fallback_logs.rs    # File logs (degraded mode)
+│   │
+│   ├── geolocation/       # GeoIP lookup
+│   │   ├── mod.rs
+│   │   └── maxmind.rs         # MaxMind GeoIP2 reader
+│   │
+│   ├── proxy/             # HTTP proxy logic
+│   │   ├── mod.rs
+│   │   ├── handler.rs         # Request handler pipeline
+│   │   ├── forwarder.rs       # Backend forwarding
+│   │   └── response.rs        # Response generation (block/challenge)
+│   │
+│   ├── observability/     # Metrics + logging
+│   │   ├── mod.rs
+│   │   ├── metrics.rs         # Prometheus metrics
+│   │   └── logging.rs         # Tracing setup
+│   │
+│   └── utils/             # Utilities
+│       ├── mod.rs
+│       ├── ip_utils.rs        # IP parsing, CIDR checks
+│       └── patterns.rs        # Regex patterns (SQLi, XSS, etc.)
 │
-├── proxy/                       # Couche proxy HTTP
-│   ├── mod.rs
-│   ├── server.rs               # Serveur HTTP (hyper/axum)
-│   ├── middleware.rs           # Middleware d'interception
-│   └── backend.rs              # Client backend (forward requests)
+├── tests/                 # Integration & contract tests
+│   ├── contract/          # Contract tests (TDD Phase 1)
+│   │   ├── detector_tests.rs
+│   │   ├── reputation_tests.rs
+│   │   ├── ratelimit_tests.rs
+│   │   └── storage_tests.rs
+│   ├── integration/       # End-to-end tests
+│   │   ├── proxy_tests.rs
+│   │   ├── scenarios/
+│   │   │   ├── bot_detection.rs
+│   │   │   ├── bruteforce.rs
+│   │   │   ├── flood.rs
+│   │   │   └── injections.rs
+│   │   └── cli_tests.rs
+│   └── fixtures/          # Test data
+│       ├── requests.json
+│       └── geoip_test.mmdb
 │
-├── detector/                    # Détecteurs de menaces
-│   ├── mod.rs
-│   ├── registry.rs             # Registry pattern pour détecteurs
-│   ├── bot_detector.rs         # Détection bots/scrapers
-│   ├── bruteforce_detector.rs  # Détection brute force
-│   ├── flood_detector.rs       # Détection flood/DDoS
-│   ├── injection_detector.rs   # Détection SQLi/XSS/RCE
-│   ├── path_detector.rs        # Détection path traversal
-│   ├── scan_detector.rs        # Détection scans vulnérabilités
-│   ├── protocol_detector.rs    # Détection anomalies protocole
-│   ├── upload_detector.rs      # Détection uploads dangereux
-│   ├── host_detector.rs        # Détection host header abuse
-│   ├── ssrf_detector.rs        # Détection SSRF
-│   ├── session_detector.rs     # Détection anomalies sessions
-│   └── tls_detector.rs         # Détection TLS/fingerprinting
+├── benches/               # Performance benchmarks
+│   ├── detector_bench.rs
+│   ├── reputation_bench.rs
+│   └── proxy_bench.rs
 │
-├── reputation/                  # Moteur de réputation
-│   ├── mod.rs
-│   ├── score.rs                # Calcul score de réputation
-│   ├── signal.rs               # Définition des signaux
-│   ├── profile.rs              # Profil IP (historique)
-│   └── decision.rs             # Règles de décision (allow/rate/block)
-│
-├── storage/                     # Couche persistance
-│   ├── mod.rs
-│   ├── repository.rs           # Repository trait
-│   ├── memory.rs               # Implémentation in-memory (cache)
-│   ├── redis.rs                # Implémentation Redis
-│   └── sled.rs                 # Implémentation Sled (alternative)
-│
-├── geolocation/                 # Géolocalisation
-│   ├── mod.rs
-│   ├── provider.rs             # Trait provider
-│   └── maxmind.rs              # Implémentation MaxMind GeoIP2
-│
-├── ratelimit/                   # Rate limiting
-│   ├── mod.rs
-│   ├── limiter.rs              # Algorithmes rate limiting
-│   └── adaptive.rs             # Rate limiting adaptatif
-│
-├── lists/                       # Listes de contrôle
-│   ├── mod.rs
-│   ├── blacklist.rs            # Liste noire
-│   └── whitelist.rs            # Liste blanche
-│
-├── metrics/                     # Observabilité
-│   ├── mod.rs
-│   └── collector.rs            # Collecte métriques (Prometheus)
-│
-└── utils/                       # Utilitaires
-    ├── mod.rs
-    ├── parser.rs               # Parseurs (URL, User-Agent, etc.)
-    └── patterns.rs             # Patterns regex réutilisables
-
-tests/
-├── contract/                    # Tests de contrats
-│   ├── detector_contract_test.rs
-│   └── repository_contract_test.rs
-│
-├── integration/                 # Tests d'intégration
-│   ├── proxy_flow_test.rs      # Test flux complet proxy
-│   ├── reputation_test.rs      # Test moteur de réputation
-│   └── config_reload_test.rs   # Test rechargement config
-│
-└── unit/                        # Tests unitaires (miroir de src/)
-    ├── detector/
-    ├── reputation/
-    └── ratelimit/
-
-benches/                         # Benchmarks
-├── proxy_throughput.rs
-└── reputation_scoring.rs
-
-config/                          # Fichiers de configuration
-├── websec.toml.example
-└── rules.toml.example
+└── docs/                  # Additional documentation
+    ├── IDEA.md            # Original concept (existing)
+    ├── Menaces.md         # Threat taxonomy (existing)
+    ├── architecture.md    # System architecture diagrams
+    └── deployment.md      # Production deployment guide
 ```
 
-**Décision de Structure** : Architecture single project avec séparation claire des responsabilités. Le proxy est un service standalone qui peut être déployé devant n'importe quel backend web. Structure modulaire permettant l'ajout facile de nouveaux détecteurs (principe Open/Closed).
+**Structure Decision**: Single Rust project structure selected. This is a monolithic binary with a library crate that can be imported for testing. The project follows Rust conventions with `src/` for implementation and `tests/` for integration/contract tests. The modular structure uses Strategy pattern for detectors, Repository pattern for storage, and clear separation of concerns across models, services, and infrastructure layers. This structure supports the constitution requirements for testability, maintainability, and clear pattern documentation.
 
-## Architecture Détaillée
+## Complexity Tracking
 
-### Flux de Traitement d'une Requête
+> **No violations - all Constitution gates pass. This section is intentionally empty.**
 
-```
-1. Requête HTTP(S) arrive
-   ↓
-2. Proxy Server (hyper/axum) intercepte
-   ↓
-3. Middleware d'analyse :
-   - Extraction IP source, headers, URL, params
-   - Création objet Request enrichi
-   ↓
-4. Vérification listes de contrôle :
-   - Si IP en blacklist → BLOCK immédiat
-   - Si IP en whitelist → ALLOW avec minimal checks
-   ↓
-5. Récupération Profil IP depuis Storage
-   - Cache mémoire d'abord
-   - Puis Redis/Sled si pas en cache
-   ↓
-6. Exécution Détecteurs (parallèle) :
-   - Chaque détecteur analyse la requête
-   - Génération de signaux typés
-   ↓
-7. Calcul Score de Réputation :
-   - Agrégation des signaux
-   - Application des poids configurés
-   - Prise en compte de l'historique
-   - Facteur géolocalisation
-   ↓
-8. Décision (Decision Engine) :
-   - Score > threshold_allow → ALLOW
-   - threshold_ratelimit < Score < threshold_allow → RATE_LIMIT
-   - threshold_block < Score < threshold_ratelimit → CHALLENGE
-   - Score < threshold_block → BLOCK
-   ↓
-9. Application Action :
-   - ALLOW : Forward au backend
-   - RATE_LIMIT : Appliquer rate limiter, puis forward si OK
-   - CHALLENGE : Retourner page CAPTCHA (future)
-   - BLOCK : Retourner 403/429 avec message
-   ↓
-10. Mise à jour Profil IP :
-    - Update score
-    - Persist dans storage
-    - Update cache
-    ↓
-11. Logging & Metrics :
-    - Log décision avec contexte
-    - Update compteurs Prometheus
-    ↓
-12. Retour réponse au client
-```
+## Phase 0: Research
 
-### Patterns de Design Appliqués
+**Objective**: Document all technical decisions with justification.
 
-1. **Strategy Pattern** : Interface `Detector` commune, implémentations spécifiques par menace
-2. **Repository Pattern** : Interface `ReputationRepository`, implémentations Memory/Redis/Sled
-3. **Builder Pattern** : Construction de la configuration avec validation
-4. **Factory Pattern** : `DetectorRegistry` pour créer et gérer les détecteurs
-5. **Observer Pattern** : Metrics collector observe les événements du proxy
-6. **Chain of Responsibility** : Middleware chain pour traitement requête
+**Output**: `/home/seb/Dev/websec/specs/001-websec-proxy/research.md`
 
-## Phases d'Implémentation
+**Content**: Comprehensive research document covering:
+1. HTTP proxy framework evaluation (hyper vs axum vs actix-web)
+2. Redis client library selection
+3. Rate limiting algorithm implementation (Token Bucket + Sliding Window)
+4. Geolocation library (MaxMind GeoIP2)
+5. Logging framework (tracing ecosystem)
+6. Metrics framework (prometheus crate)
+7. Testing strategy (cargo test + criterion + tarpaulin)
+8. TLS library (rustls for optional TLS termination)
+9. Configuration management (config crate + TOML)
+10. Architecture patterns (Strategy, Repository, Factory, Builder)
 
-### Phase 0 : Recherche Technique
+**Status**: To be created by this command execution.
 
-Documenter dans `research.md` :
-- Comparatif hyper vs actix-web vs axum pour le proxy
-- Stratégie de persistance : Redis vs Sled vs autre
-- Bibliothèques de détection : regex, aho-corasick pour pattern matching
-- Format de géolocalisation : MaxMind GeoIP2
-- Algorithmes de rate limiting : Token bucket, leaky bucket, sliding window
-- Stratégie de parallélisation des détecteurs (rayon, tokio tasks)
-- Format de configuration : TOML vs YAML
-- Benchmarking strategy avec criterion
+## Phase 1: Design
 
-### Phase 1 : Design Détaillé
+**Objective**: Create detailed design artifacts for TDD implementation.
 
-Documenter dans `data-model.md` :
-- Structures de données : Request, Signal, ReputationProfile, Score
-- Schémas de persistance : format Redis keys, structure Sled
-- Format de configuration TOML complet
-- Définition des 20+ signaux typés
+**Outputs**:
 
-Documenter dans `contracts/` :
-- `detector.rs` : Interface Detector trait
-- `repository.rs` : Interface ReputationRepository trait
-- `decision.rs` : Interface DecisionEngine trait
+### 1. Data Model (`data-model.md`)
+Complete entity definitions for:
+- `IpProfile`: IP reputation profile with score, signal history, metadata
+- `Signal`: Typed events (20+ variants from 12 threat families)
+- `HttpRequest`: Parsed request with all extractable attributes
+- `ProxyDecision`: Decision enum (Allow/RateLimit/Challenge/Block)
+- `ReputationScore`: Score calculation with formula and decay
+- `Detector`: Trait for pluggable threat detectors
+- `RateLimiter`: Token bucket state machine
+- `Repository`: Storage abstraction for state persistence
 
-Documenter dans `quickstart.md` :
-- Installation des dépendances
-- Compilation du projet
-- Configuration minimale pour démarrage
-- Exemples de tests basiques
+### 2. Contracts (`contracts/`)
+Contract test specifications defining behavioral contracts for:
+- **Detector Contracts**: Each of 12 detectors with input/output scenarios
+- **Reputation Engine Contracts**: Score calculation with exact formula verification
+- **Rate Limiter Contracts**: Token bucket behavior under various scenarios
+- **Storage Contracts**: Repository interface with Redis and fallback modes
 
-### Phase 2 : Génération des Tâches
+### 3. Quickstart Guide (`quickstart.md`)
+Developer onboarding document with:
+- Prerequisites (Rust toolchain, Redis, GeoIP2 database)
+- Build instructions (cargo build)
+- Configuration (websec.toml example)
+- Running locally (cargo run)
+- Running tests (cargo test)
+- Running benchmarks (cargo bench)
+- Project structure walkthrough
+- Contributing guidelines
 
-Exécuter `/speckit.tasks` pour générer `tasks.md` avec :
-- Organisation par user story (P1, P2, P3)
-- Tests écrits AVANT implémentation (TDD strict)
-- Dépendances entre tâches clairement identifiées
-- Marquage des tâches parallélisables [P]
+**Status**: To be created by this command execution.
 
-## Risques et Mitigation
+## Phase 2: Task Generation
 
-| Risque | Impact | Probabilité | Mitigation |
-|--------|--------|-------------|------------|
-| Performance insuffisante (> 5ms latence) | Élevé | Moyen | Benchmarking continu, profiling, optimisation hot paths |
-| Faux positifs élevés (> 0.1%) | Élevé | Moyen | Tuning progressif des seuils, mode apprentissage, whitelist |
-| Complexité des détecteurs | Moyen | Élevé | Architecture modulaire, tests exhaustifs, documentation |
-| Scaling horizontal complexe | Moyen | Faible | Design stateless dès le début, state partagé dans Redis |
-| Dérive mémoire (memory leak) | Élevé | Faible | Expiration automatique, monitoring mémoire, tests de charge |
+**Objective**: Break design into actionable, dependency-ordered implementation tasks.
 
-## Métriques de Succès
+**Output**: `/home/seb/Dev/websec/specs/001-websec-proxy/tasks.md`
 
-- ✅ Latence p95 < 5ms mesurée avec criterion
-- ✅ Throughput ≥ 10k req/s sur 4 cores
-- ✅ Taux de blocage bots > 99% sans faux positifs navigateurs
-- ✅ Détection brute force dans les 5 premières tentatives
-- ✅ Couverture de tests > 80%
-- ✅ Zéro panic en production sur tests de charge
-- ✅ Cargo audit passe (zéro CVE)
-- ✅ Documentation complète (rustdoc + guides)
+**Process**: Execute `/speckit.tasks` command (separate from this plan generation).
 
-## Prochaines Étapes
+**Expected Structure**:
+- Infrastructure setup (project, CI, dependencies)
+- Core models implementation (test-driven)
+- Detector implementation (12 detectors, each with tests first)
+- Reputation engine (formula, decay, aggregation)
+- Rate limiter (token bucket + sliding window)
+- Storage layer (Redis + cache + fallback)
+- Proxy server (request pipeline, forwarding)
+- CLI (admin commands)
+- Integration tests (13 user scenarios)
+- Documentation (rustdoc, README)
+- Performance tuning (benchmarks, profiling)
 
-1. ✅ Valider ce plan avec les stakeholders
-2. → Exécuter Phase 0 : Recherche technique (documenter research.md)
-3. → Exécuter Phase 1 : Design détaillé (data-model.md, contracts/, quickstart.md)
-4. → Exécuter Phase 2 : Génération des tâches avec `/speckit.tasks`
-5. → Commencer implémentation TDD en suivant tasks.md
+**Status**: NOT created by this command. Run `/speckit.tasks` after this plan.
+
+## Phase 3: Implementation
+
+**Objective**: Execute tasks following TDD Red-Green-Refactor cycle.
+
+**Process**: Execute `/speckit.implement` command (separate from this plan generation).
+
+**Workflow**:
+1. For each task in `tasks.md`:
+   - Red: Write failing test based on contract
+   - Green: Implement minimal code to pass
+   - Refactor: Improve design while keeping tests green
+2. Run quality gates (clippy, rustfmt, audit)
+3. Update documentation
+4. Create commit following convention
+
+**Status**: NOT started. Execute after Phase 2 task generation.
+
+## Success Criteria
+
+The implementation is complete when:
+
+### Functional Completeness
+- ✅ All 13 user scenarios pass acceptance tests
+- ✅ All 12 threat detectors implemented and tested
+- ✅ Reputation formula matches specification (exact formula with decay)
+- ✅ Rate limiting works per specification (Token Bucket + Sliding Window)
+- ✅ CLI provides all required commands (whitelist, stats, reload, etc.)
+- ✅ Transparent deployment (zero backend configuration)
+
+### Performance Targets (SC-003, SC-004, SC-014)
+- ✅ <5ms p95 latency, <2ms p50 on legitimate requests
+- ✅ 10k+ req/s on 4 CPU cores with <10% CPU usage
+- ✅ <512MB RAM for 100k tracked IPs
+- ✅ Stable latency (<10ms p99) under 20k req/s + attack load
+
+### Detection Accuracy (SC-001, SC-002, SC-005, SC-006, SC-009-SC-013)
+- ✅ 99% detection of known scanner User-Agents
+- ✅ Brute force detected within 5 failed attempts
+- ✅ <0.1% false positive rate
+- ✅ 95% detection of SQL/XSS injection patterns
+- ✅ 90% detection of TOR exit nodes (daily list update)
+- ✅ 85% detection of webshell uploads
+- ✅ 95% detection of path traversal
+- ✅ 90% detection of SSRF attempts
+- ✅ 80% detection of session hijacking (<5% false positives)
+
+### Quality & Reliability (SC-008, SC-015, SC-016)
+- ✅ >80% test coverage on business logic
+- ✅ 24h continuous operation without memory leak (±5% stability)
+- ✅ 99.9% uptime (graceful degradation when Redis unavailable)
+- ✅ All clippy warnings resolved
+- ✅ All rustfmt checks passing
+- ✅ cargo audit passing (no known vulnerabilities)
+
+### Operational Requirements (SC-017-SC-024)
+- ✅ False positive correction <2 minutes via CLI
+- ✅ 20+ Prometheus metrics exported
+- ✅ 100% blocking decisions logged with full context
+- ✅ 95% geolocation accuracy for public IPs
+- ✅ CLI response <500ms for queries
+- ✅ CLI modifications applied <100ms
+- ✅ Zero backend configuration required (tested with Apache, Nginx, Caddy)
+- ✅ Backend receives real client IP via X-Forwarded-For
+
+### Constitution Compliance
+- ✅ All code in Rust
+- ✅ TDD cycle followed (tests before implementation)
+- ✅ Design patterns documented (Strategy, Repository, Factory, Builder)
+- ✅ Rustdoc complete for all public APIs
+- ✅ Clippy strict mode passing
+- ✅ Rustfmt applied
+- ✅ cargo audit clean
+- ✅ Benchmarks for critical paths
+- ✅ No panics in production code
+
+## Risk Mitigation
+
+### Technical Risks
+
+**Risk 1: Redis unavailability causing service disruption**
+- Mitigation: Degraded mode with local detection + file logs
+- Fallback: Continue processing without historical reputation
+- Recovery: Automatic reconnection with exponential backoff
+
+**Risk 2: Performance degradation under attack load**
+- Mitigation: Early benchmarking in Phase 1
+- Monitoring: Continuous profiling with criterion
+- Optimization: Hot path optimization with zero-cost abstractions
+
+**Risk 3: False positive rate exceeding 0.1% threshold**
+- Mitigation: Extensive testing with real traffic patterns
+- Tuning: Configurable weights per signal type
+- Response: <2min correction via CLI whitelist
+
+**Risk 4: Memory leaks with 100k+ tracked IPs**
+- Mitigation: LRU cache with TTL expiration
+- Testing: 24h stability tests in Phase 3
+- Monitoring: Memory usage metrics in Prometheus
+
+### Operational Risks
+
+**Risk 5: Complex configuration leading to misconfiguration**
+- Mitigation: Sensible defaults with minimal required config
+- Validation: Config validation at startup with clear errors
+- Documentation: Comprehensive examples in quickstart.md
+
+**Risk 6: Difficult debugging of false positives**
+- Mitigation: Comprehensive logging with structured context
+- Tooling: CLI commands for IP profile inspection
+- Tracing: Request IDs for end-to-end tracing
+
+## Dependencies & Prerequisites
+
+### Development Environment
+- Rust 1.75+ (stable toolchain)
+- cargo, rustc, rustfmt, clippy
+- Redis 7.0+ (for local testing)
+- MaxMind GeoIP2 database (GeoLite2-City.mmdb)
+
+### CI/CD Requirements
+- GitHub Actions (already available)
+- Rust CI pipeline (cargo commands)
+- Code coverage reporting (tarpaulin)
+- Benchmark tracking (criterion)
+
+### External Dependencies
+- Redis server (production deployment)
+- GeoIP2 database subscription (production)
+- TLS certificates (if terminating TLS)
+
+### Team Knowledge
+- Rust async programming (tokio)
+- HTTP protocol internals
+- Security threat landscape
+- Performance optimization techniques
+
+## Next Steps
+
+1. ✅ **Phase 0 Complete**: Review and approve `research.md`
+2. ✅ **Phase 1 Complete**: Review and approve design artifacts (`data-model.md`, `contracts/`, `quickstart.md`)
+3. ⏭️ **Phase 2 Start**: Execute `/speckit.tasks` to generate `tasks.md`
+4. ⏭️ **Phase 3 Start**: Execute `/speckit.implement` to begin TDD implementation
+5. ⏭️ **Validation**: Run full test suite and benchmarks
+6. ⏭️ **Deployment**: Create deployment guide and production configuration
+
+---
+
+**Plan Version**: 1.0.0
+**Last Updated**: 2025-11-18
+**Approved By**: [Pending]
+**Status**: Phase 0 & Phase 1 artifacts generated, ready for Phase 2
