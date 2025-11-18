@@ -72,6 +72,10 @@ pub enum SignalVariant {
     /// File access outside allowed paths
     UnauthorizedFileAccess,
 
+    // Command Injection / RCE Signals (US4)
+    /// Remote code execution attempt (command injection)
+    RceAttempt,
+
     // Header Manipulation Signals (US10)
     /// HTTP header injection
     HeaderInjection,
@@ -117,6 +121,9 @@ impl SignalVariant {
     #[must_use]
     pub const fn default_weight(&self) -> u8 {
         match self {
+            // Critical severity - RCE (highest threat)
+            Self::RceAttempt => 50,
+
             // High severity - definitive attacks
             Self::SqlInjectionAttempt | Self::XssAttempt | Self::PathTraversalAttempt => 30,
 
@@ -185,6 +192,8 @@ impl SignalVariant {
                 SignalFamily::PathTraversal
             }
 
+            Self::RceAttempt => SignalFamily::CommandInjection,
+
             Self::HeaderInjection | Self::HostHeaderAttack | Self::RefererSpoofing => {
                 SignalFamily::HeaderManipulation
             }
@@ -219,6 +228,8 @@ pub enum SignalFamily {
     Xss,
     /// Path traversal and file access
     PathTraversal,
+    /// Command injection and RCE
+    CommandInjection,
     /// HTTP header manipulation
     HeaderManipulation,
     /// Protocol violations

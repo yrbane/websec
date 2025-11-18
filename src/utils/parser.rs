@@ -110,7 +110,7 @@ pub fn contains_path_traversal(path: &str) -> bool {
 pub fn contains_sql_injection(input: &str) -> bool {
     static SQL_PATTERNS: Lazy<Regex> = Lazy::new(|| {
         Regex::new(
-            r"(?i)(\bunion\b.*\bselect\b|\bselect\b.*\bfrom\b|;\s*drop\b|;\s*delete\b|'.*or.*'.*=.*'|--|\#|/\*|\*/|xp_cmdshell|exec\s*\()",
+            r"(?i)(\bunion\b.*\bselect\b|\bselect\b.*\bfrom\b|;\s*drop\b|;\s*delete\b|'.*or.*'.*=.*'|--|\#|/\*|\*/|xp_cmdshell|exec\s*\(|\bsleep\s*\(|\bwaitfor\b|\bbenchmark\s*\()",
         )
         .unwrap()
     });
@@ -136,6 +136,26 @@ pub fn contains_xss(input: &str) -> bool {
     });
 
     XSS_PATTERNS.is_match(input)
+}
+
+/// Check if string contains command injection patterns
+///
+/// # Arguments
+///
+/// * `input` - Input string to check
+///
+/// # Returns
+///
+/// `true` if command injection patterns detected
+pub fn contains_command_injection(input: &str) -> bool {
+    static CMD_PATTERNS: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(
+            r"(?i)(;\s*(cat|ls|whoami|id|pwd|wget|curl|nc|bash|sh|chmod|chown)|`[^`]+`|\$\([^)]+\)|\|\s*(cat|ls|whoami))",
+        )
+        .unwrap()
+    });
+
+    CMD_PATTERNS.is_match(input)
 }
 
 /// Normalize HTTP method to uppercase
