@@ -1,17 +1,20 @@
 <!--
 RAPPORT D'IMPACT DE SYNCHRONISATION
-Version: 0.0.0 → 1.0.0
-Type de Changement: MAJEUR - Établissement initial de la constitution
-Principes Modifiés: Tous (nouvellement définis)
+Version: 1.0.0 → 1.1.0
+Type de Changement: MINEUR - Ajout conventions de commit
+Principes Modifiés: Aucun
 Sections Ajoutées:
-  - Principes Fondamentaux (5 principes: Rust-First, TDD, Design Patterns, Documentation, Triade Qualité)
-  - Standards de Sécurité
-  - Workflow de Développement
-  - Gouvernance
+  - Workflow de Développement > Conventions de Commit
+Sections Modifiées:
+  - Aucune
+Changements:
+  - Ajout section "Conventions de Commit" dans Workflow de Développement
+  - Spécification format Conventional Commits
+  - Interdiction explicite de références aux outils d'IA dans les commits
+  - Interdiction de footers "Co-Authored-By" pour outils automatisés
+  - Exemples corrects et interdits fournis
 Templates Nécessitant Mise à Jour:
-  ✅ plan-template.md - Section Constitution Check référence les nouveaux principes
-  ✅ spec-template.md - Scénarios utilisateur alignés avec exigences TDD
-  ✅ tasks-template.md - Workflow test-first conforme au principe TDD
+  ✅ Aucun - Cette modification n'affecte pas les templates
 TODOs de Suivi: Aucun
 -->
 
@@ -143,6 +146,34 @@ La complexité DOIT être justifiée. Avant d'introduire :
 
 Documenter la justification dans la description de la PR.
 
+### Conventions de Commit
+
+Les messages de commit DOIVENT suivre ces règles :
+
+- Format : `type(scope): description` (Conventional Commits)
+- Types autorisés : `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `ci`
+- Description en français, impératif présent (ex: "ajouter" pas "ajouté")
+- Corps du message optionnel pour détails supplémentaires
+- **INTERDIT** : Aucune référence à des outils d'IA ou assistants (Claude, ChatGPT, Copilot, etc.)
+- **INTERDIT** : Aucun footer "Co-Authored-By" pour des outils automatisés
+
+**Exemples corrects** :
+```
+feat(detector): ajouter détecteur de bots malveillants
+fix(ratelimit): corriger fuite mémoire dans le token bucket
+docs: mettre à jour le README avec exemples d'utilisation
+```
+
+**Exemples interdits** :
+```
+❌ feat: ajouter détecteur
+
+   Généré avec Claude Code
+   Co-Authored-By: Claude <noreply@anthropic.com>
+
+❌ fix: corriger bug (via ChatGPT)
+```
+
 ## Gouvernance
 
 Cette constitution supplante toutes les autres pratiques de développement.
@@ -162,4 +193,4 @@ Cette constitution supplante toutes les autres pratiques de développement.
 - Les violations nécessitent une justification explicite dans la table de suivi de complexité
 - Les mainteneurs résolvent les disputes via interprétation de la constitution
 
-**Version** : 1.0.0 | **Ratifiée** : 2025-11-18 | **Dernière Modification** : 2025-11-18
+**Version** : 1.1.0 | **Ratifiée** : 2025-11-18 | **Dernière Modification** : 2025-11-18
