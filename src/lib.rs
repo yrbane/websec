@@ -34,6 +34,7 @@ pub mod cli;
 pub mod config;
 pub mod detectors;
 pub mod geolocation;
+pub mod lists;
 pub mod models;
 pub mod observability;
 pub mod proxy;

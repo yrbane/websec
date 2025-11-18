@@ -9,6 +9,7 @@
 use super::profile::ReputationProfile;
 use super::score::{determine_decision, recalculate_and_update, ProxyDecision, ScoringThresholds};
 use crate::detectors::{DetectionResult, DetectorRegistry, HttpRequestContext};
+use crate::lists::{Blacklist, Whitelist};
 use crate::storage::ReputationRepository;
 use crate::Result;
 use std::net::IpAddr;
@@ -25,6 +26,22 @@ pub struct DecisionEngineConfig {
     pub correlation_penalty_bonus: u8,
     /// Scoring thresholds
     pub thresholds: ScoringThresholds,
+    /// IP blacklist (block immediately)
+    pub blacklist: Option<Blacklist>,
+    /// IP whitelist (always allow)
+    pub whitelist: Option<Whitelist>,
+}
+
+impl DecisionEngineConfig {
+    /// Set the blacklist
+    pub fn set_blacklist(&mut self, blacklist: Blacklist) {
+        self.blacklist = Some(blacklist);
+    }
+
+    /// Set the whitelist
+    pub fn set_whitelist(&mut self, whitelist: Whitelist) {
+        self.whitelist = Some(whitelist);
+    }
 }
 
 impl Default for DecisionEngineConfig {
@@ -34,6 +51,8 @@ impl Default for DecisionEngineConfig {
             decay_half_life_hours: 24.0,
             correlation_penalty_bonus: 10,
             thresholds: ScoringThresholds::default(),
+            blacklist: None,
+            whitelist: None,
         }
     }
 }
@@ -92,12 +111,45 @@ impl DecisionEngine {
     /// # Returns
     ///
     /// `DecisionEngineResult` with decision, score, and detection details.
+    ///
+    /// # Priority Order
+    ///
+    /// 1. Check blacklist (highest priority) → immediate BLOCK
+    /// 2. Check whitelist → immediate ALLOW with score 100
+    /// 3. Normal scoring pipeline
     pub async fn process_request(
         &self,
         context: &HttpRequestContext,
     ) -> Result<DecisionEngineResult> {
         let ip = context.ip;
 
+        // Priority 1: Check blacklist (immediate block)
+        if let Some(ref blacklist) = self.config.blacklist {
+            if blacklist.contains(&ip) {
+                tracing::info!(ip = %ip, "IP in blacklist - blocking immediately");
+                return Ok(DecisionEngineResult {
+                    decision: ProxyDecision::Block,
+                    score: 0,
+                    detection: DetectionResult::clean(),
+                    is_new_ip: false,
+                });
+            }
+        }
+
+        // Priority 2: Check whitelist (bypass all scoring)
+        if let Some(ref whitelist) = self.config.whitelist {
+            if whitelist.contains(&ip) {
+                tracing::debug!(ip = %ip, "IP in whitelist - allowing with perfect score");
+                return Ok(DecisionEngineResult {
+                    decision: ProxyDecision::Allow,
+                    score: 100,
+                    detection: DetectionResult::clean(),
+                    is_new_ip: false,
+                });
+            }
+        }
+
+        // Priority 3: Normal scoring pipeline
         // Step 1: Load or create profile
         let mut profile = self.get_or_create_profile(&ip).await?;
         let is_new_ip = profile.request_count == 0;
