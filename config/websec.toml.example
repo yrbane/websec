@@ -40,10 +40,11 @@ FailedLogin = 20                # Multiple failed login attempts from same IP
 LoginAttemptPattern = 20        # Rapid sequential login attempts (password spray)
 CredentialStuffing = 25         # Same credentials from multiple IPs
 
-# Injection attacks
-SqlInjectionAttempt = 30
-XssAttempt = 30
-PathTraversalAttempt = 30
+# Injection attacks (US4)
+SqlInjectionAttempt = 30        # UNION SELECT, DROP TABLE, OR '1'='1, SLEEP()
+XssAttempt = 30                 # <script>, onerror, onload, javascript:
+PathTraversalAttempt = 30       # ../, ..\\, %2e%2e%2f
+RceAttempt = 50                 # Command injection: ;cat, backticks, $()
 
 [storage]
 # Storage type: "redis" or "memory" (for testing)

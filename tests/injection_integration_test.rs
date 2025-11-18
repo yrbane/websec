@@ -152,7 +152,7 @@ async fn test_mixed_injection_types_correlation() {
 
     // XSS attempt
     let context2 = create_context(ip, "/search", Some("q=<script>alert(1)</script>"));
-    let result2 = engine.process_request(&context2).await.unwrap();
+    let _result2 = engine.process_request(&context2).await.unwrap();
 
     // Path traversal attempt
     let context3 = create_context(ip, "/file", Some("path=../../../etc/passwd"));

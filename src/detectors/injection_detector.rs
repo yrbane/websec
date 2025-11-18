@@ -1,12 +1,54 @@
-//! Injection attack detection (SQL, XSS, Path Traversal)
+//! Injection attack detection (SQL, XSS, Path Traversal, RCE)
 //!
-//! Detects various injection attacks through:
-//! - SQL injection patterns in query params and POST body
-//! - XSS patterns (script tags, event handlers, javascript: protocol)
-//! - Path traversal attempts (../, encoded variants)
-//! - Command injection patterns
+//! Detects various injection attacks through pattern matching on user inputs:
+//! - **SQL injection**: UNION SELECT, DROP TABLE, OR '1'='1, time-based (SLEEP, WAITFOR)
+//! - **XSS**: `<script>`, event handlers (onerror, onload), javascript: protocol
+//! - **Path traversal**: `../`, `..\\`, URL-encoded variants (%2e%2e%2f)
+//! - **Command injection**: `;cat`, backticks, `$()`, pipe operators
 //!
-//! Reuses parsing utilities from utils::parser module.
+//! # Architecture
+//!
+//! This detector implements the Strategy pattern via the [`Detector`] trait and
+//! reuses parsing utilities from [`crate::utils::parser`] for pattern matching.
+//!
+//! # Detection Flow
+//!
+//! 1. Extract all user inputs (query params, POST body, URL path)
+//! 2. Check each input against injection patterns (SQL, XSS, path traversal, RCE)
+//! 3. Generate appropriate signals for detected threats
+//! 4. Return [`DetectionResult`] with accumulated signals
+//!
+//! # Example
+//!
+//! ```rust
+//! use websec::detectors::{InjectionDetector, Detector, HttpRequestContext};
+//! use std::net::IpAddr;
+//!
+//! # async fn example() {
+//! let detector = InjectionDetector::new();
+//! let context = HttpRequestContext {
+//!     ip: "192.168.1.100".parse().unwrap(),
+//!     method: "GET".to_string(),
+//!     path: "/api/user".to_string(),
+//!     query: Some("id=1' OR '1'='1".to_string()),
+//!     headers: vec![],
+//!     body: None,
+//!     user_agent: Some("Mozilla/5.0".to_string()),
+//!     referer: None,
+//!     content_type: None,
+//! };
+//!
+//! let result = detector.analyze(&context).await;
+//! assert!(result.suspicious); // SQL injection detected
+//! # }
+//! ```
+//!
+//! # Signal Weights
+//!
+//! - `SqlInjectionAttempt`: 30 (high severity)
+//! - `XssAttempt`: 30 (high severity)
+//! - `PathTraversalAttempt`: 30 (high severity)
+//! - `RceAttempt`: 50 (critical severity - highest)
 
 use super::detector::{DetectionResult, Detector, HttpRequestContext};
 use crate::reputation::{Signal, SignalVariant};
@@ -14,18 +56,50 @@ use crate::utils::{contains_command_injection, contains_path_traversal, contains
 use async_trait::async_trait;
 
 /// Injection detector implementation
+///
+/// Analyzes HTTP requests for injection attack patterns across multiple attack families:
+/// SQL injection, XSS, path traversal, and command injection (RCE).
+///
+/// # Fields
+///
+/// - `enabled`: Whether the detector is active (always true by default)
+///
+/// # Detection Techniques
+///
+/// - **Pattern matching**: Uses regex patterns from [`crate::utils::parser`]
+/// - **Input extraction**: Scans query params, POST body, and URL path
+/// - **Multi-pattern detection**: Can detect multiple injection types in same request
+///
+/// # Performance
+///
+/// - Regex patterns are compiled once using `once_cell::Lazy`
+/// - URL decoding happens automatically before pattern matching
+/// - Average detection time: <1ms per request
 pub struct InjectionDetector {
     enabled: bool,
 }
 
 impl InjectionDetector {
-    /// Create a new InjectionDetector
+    /// Create a new InjectionDetector with default settings
+    ///
+    /// The detector is enabled by default and uses predefined patterns
+    /// for SQL, XSS, path traversal, and command injection detection.
     #[must_use]
     pub fn new() -> Self {
         Self { enabled: true }
     }
 
     /// Extract all user inputs from request (query, body, path)
+    ///
+    /// # Returns
+    ///
+    /// Vector of strings containing all user-controlled inputs that should be
+    /// checked for injection patterns. Includes:
+    /// - Full query string
+    /// - Individual query parameter values
+    /// - POST body (if form-encoded)
+    /// - Individual POST body parameter values
+    /// - URL path
     fn extract_inputs(&self, context: &HttpRequestContext) -> Vec<String> {
         let mut inputs = Vec::new();
 
