@@ -126,6 +126,7 @@ fn test_bot_detector_new_is_repeatable() {
 // ============================================================================
 
 use websec::detectors::bruteforce_detector::BruteForceDetector;
+use std::sync::Arc;
 
 /// Contract test: BruteForceDetector must implement Detector trait
 #[tokio::test]

@@ -15,9 +15,11 @@
 //! - Suspicious geo patterns (impossible travel, high-risk countries)
 
 pub mod bot_detector;
+pub mod bruteforce_detector;
 pub mod detector;
 pub mod registry;
 
 pub use bot_detector::BotDetector;
+pub use bruteforce_detector::BruteForceDetector;
 pub use detector::{DetectionResult, Detector, HttpRequestContext};
 pub use registry::DetectorRegistry;
