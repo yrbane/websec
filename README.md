@@ -2,9 +2,14 @@
 
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![CI](https://img.shields.io/badge/CI-passing-brightgreen.svg)](https://github.com)
+[![Status](https://img.shields.io/badge/status-planning-yellow.svg)](https://github.com/SinceAndCo/websec)
+[![Branch](https://img.shields.io/badge/branch-001--websec--proxy-blue.svg)](https://github.com/SinceAndCo/websec/tree/001-websec-proxy)
 
 **WebSec** est un proxy/reverse proxy de sécurité haute performance écrit en Rust, conçu pour protéger proactivement vos serveurs web contre les menaces HTTP(S). Placé en amont de votre serveur web, WebSec analyse chaque requête, calcule un score de réputation dynamique pour chaque IP source, et prend des décisions automatiques pour bloquer, ralentir ou autoriser le trafic.
+
+> **📋 État du Projet** : Phase de **Planification Complète** ✅
+> Documentation technique, architecture et plan d'implémentation finalisés. Prêt pour Phase 3 (implémentation TDD).
+> Voir [`specs/001-websec-proxy/`](specs/001-websec-proxy/) pour les spécifications détaillées.
 
 ## 🎯 Objectif
 
@@ -395,12 +400,27 @@ git push origin feature/ma-fonctionnalite
 
 ## 📚 Documentation Complète
 
-- [**Spécification Fonctionnelle**](specs/001-websec-proxy/spec.md) : User stories, exigences, critères de succès
-- [**Plan d'Implémentation**](specs/001-websec-proxy/plan.md) : Architecture détaillée, phases de développement
-- [**Liste des Tâches**](specs/001-websec-proxy/tasks.md) : 166 tâches organisées en 18 phases
-- [**IDEA**](docs/IDEA.md) : Vision initiale du projet
+### Spécifications du Projet
+
+- [**Spécification Fonctionnelle**](specs/001-websec-proxy/spec.md) : 13 user stories, 43 exigences fonctionnelles, 24 critères de succès
+- [**IDEA**](docs/IDEA.md) : Vision initiale du projet avec objectifs et contraintes
 - [**Menaces**](docs/Menaces.md) : Cartographie complète des 12 familles de menaces
-- [**Constitution**](.specify/memory/constitution.md) : Principes de développement
+- [**Constitution**](.specify/memory/constitution.md) : Principes de développement (Rust-First, TDD, Patterns, Documentation, Qualité)
+
+### Plan d'Implémentation (Phase 0-1-2)
+
+- [**Plan d'Implémentation**](specs/001-websec-proxy/plan.md) : Architecture technique, constitution check, success criteria, risk mitigation (463 lignes)
+- [**Research**](specs/001-websec-proxy/research.md) : Décisions techniques pour 10 composants majeurs avec justifications (1009 lignes)
+- [**Data Model**](specs/001-websec-proxy/data-model.md) : 8 entités Rust complètes, 25+ variantes Signal, formules mathématiques (1475 lignes)
+- [**Quickstart**](specs/001-websec-proxy/quickstart.md) : Guide développeur complet avec TDD workflow (977 lignes)
+- [**Contracts**](specs/001-websec-proxy/contracts/) : 60+ contrats comportementaux Given-When-Then pour TDD (475 lignes)
+- [**Tasks**](specs/001-websec-proxy/tasks.md) : 166 tâches organisées par user story et phase (499 lignes)
+
+### Outils de Développement
+
+- [**Commandes Slash**](.claude/commands/) : 9 commandes `/speckit.*` pour workflow automatisé
+- [**Scripts**](.specify/scripts/bash/) : Scripts d'infrastructure (setup, validation, conversion)
+- [**Templates**](.specify/templates/) : Templates pour spec, plan, tasks, checklists
 
 ## 🎯 Roadmap
 
