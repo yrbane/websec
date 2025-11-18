@@ -5,6 +5,16 @@
 **Statut** : Brouillon
 **Input** : docs/IDEA.md et docs/Menaces.md
 
+## Clarifications
+
+### Session 2025-11-18
+
+- Q: Quel algorithme de rate limiting doit être utilisé pour gérer les différents niveaux de limitation (normal, agressif) ? → A: Token Bucket avec fenêtre glissante combinée
+- Q: Comment le score de réputation d'une IP doit-il évoluer dans le temps en l'absence de nouveaux signaux (récupération après comportement suspect) ? → A: Décroissance exponentielle (demi-vie 24h) par défaut, mais aucune récupération automatique pour signaux rédibitoires
+- Q: Quelle stratégie de stockage de l'état de réputation permet de respecter à la fois l'exigence stateless (NFR-004) et la contrainte de latence (< 5ms p95) ? → A: Stockage Redis centralisé avec cache local L1
+- Q: Comment les multiples signaux détectés pour une même IP doivent-ils être agrégés pour calculer le score de réputation final (échelle 0-100) ? → A: Formule additive pondérée avec plancher/plafond, plus bonus de pénalité si signaux différents détectés en peu de temps (corrélation d'attaques)
+- Q: En cas d'indisponibilité de Redis (impossible de récupérer le profil de réputation d'une IP), quel comportement le proxy doit-il adopter ? → A: Mode dégradé (détection locale sans historique) avec logs d'urgence dans fichiers
+
 ## Scénarios Utilisateur & Tests *(obligatoire)*
 
 ### Scénario Utilisateur 1 - Protection contre les Bots Malveillants (Priorité : P1)
@@ -223,6 +233,28 @@ En tant qu'administrateur, je veux détecter les hijacking de session et les par
 
 ---
 
+### Scénario Utilisateur 13 - Administration et Monitoring via CLI (Priorité : P2)
+
+En tant qu'administrateur, je veux disposer d'un CLI pour gérer les listes de contrôle, consulter l'état du système, et débloquer rapidement des IPs légitimes en cas de faux positif.
+
+**Pourquoi cette priorité** : Outil opérationnel essentiel pour la gestion quotidienne et la réponse aux incidents. Critique pour corriger rapidement les faux positifs (objectif < 2 minutes selon SC-017).
+
+**Test Indépendant** : Peut être testé en exécutant les commandes CLI et en vérifiant leur effet sur le système sans interaction avec le trafic HTTP.
+
+**Scénarios d'Acceptation** :
+
+1. **Étant donné** qu'une IP légitime `203.0.113.50` est bloquée par erreur, **Quand** l'administrateur exécute `websec-cli ip unblock 203.0.113.50`, **Alors** l'IP est immédiatement débloquée et son score réinitialisé à 100.
+
+2. **Étant donné** qu'un administrateur veut voir le profil d'une IP suspecte, **Quand** il exécute `websec-cli ip show 198.51.100.42`, **Alors** le CLI affiche le score actuel, l'historique des 10 derniers signaux avec timestamps, et les statistiques (nombre de requêtes, taux d'erreur).
+
+3. **Étant donné** qu'un administrateur veut voir les statistiques globales, **Quand** il exécute `websec-cli stats`, **Alors** le CLI affiche en temps réel : req/s, taux de blocage, top 10 IPs malveillantes, top 5 signaux générés.
+
+4. **Étant donné** qu'un administrateur modifie websec.toml, **Quand** il exécute `websec-cli config reload`, **Alors** la nouvelle configuration est chargée en moins de 100ms sans perte de requêtes.
+
+5. **Étant donné** qu'un administrateur veut ajouter une IP en whitelist, **Quand** il exécute `websec-cli whitelist add 192.0.2.100`, **Alors** l'IP est immédiatement whitelistée sans redémarrage du proxy.
+
+---
+
 ### Cas Limites
 
 - Que se passe-t-il quand une IP légitime est temporairement bloquée à tort (faux positif) ?
@@ -260,14 +292,15 @@ En tant qu'administrateur, je veux détecter les hijacking de session et les par
 
 - **FR-001** : Le système DOIT intercepter toutes les requêtes HTTP(S) avant qu'elles n'atteignent le serveur web backend.
 - **FR-002** : Le système DOIT extraire et analyser les éléments suivants de chaque requête : IP source, User-Agent, méthode HTTP, URL/URI, paramètres GET/POST, headers HTTP, referer, cookies.
-- **FR-003** : Le système DOIT calculer un score de réputation pour chaque IP source basé sur les signaux détectés.
+- **FR-003** : Le système DOIT calculer un score de réputation pour chaque IP source basé sur les signaux détectés, en utilisant une formule additive pondérée (Score = max(0, min(100, base - Σ(poids_signal)))) avec bonus de pénalité si multiples signaux différents sont détectés en peu de temps (corrélation d'attaques).
 - **FR-004** : Le système DOIT détecter les 12 familles de menaces définies dans docs/Menaces.md.
 - **FR-005** : Le système DOIT générer des signaux typés pour chaque comportement suspect détecté (ex: `SqlInjectionAttempt`, `Flooding`, `SuspiciousUserAgent`).
+- **FR-005-bis** : Le système DOIT classifier certains signaux comme rédibitoires (pas de récupération automatique de réputation) : tentatives d'upload de webshells confirmées, exploitation active de vulnérabilités (RCE), credential stuffing à grande échelle.
 
 #### Décision et Action
 
 - **FR-006** : Le système DOIT prendre une décision pour chaque requête : AUTORISER (forward au backend), RATE_LIMIT (ralentir), CHALLENGE (CAPTCHA), BLOQUER.
-- **FR-007** : Le système DOIT implémenter un rate limiting adaptatif basé sur le score de réputation.
+- **FR-007** : Le système DOIT implémenter un rate limiting adaptatif basé sur le score de réputation, utilisant l'algorithme Token Bucket avec fenêtre glissante combinée pour équilibrer flexibilité et précision anti-gaming.
 - **FR-008** : Le système DOIT supporter des listes noires (blocage immédiat) et des listes blanches (toujours autorisées).
 - **FR-009** : Le système DOIT bloquer immédiatement les IPs en liste noire sans calcul de score.
 - **FR-010** : Le système DOIT permettre un traitement privilégié des IPs en liste blanche.
@@ -280,8 +313,8 @@ En tant qu'administrateur, je veux détecter les hijacking de session et les par
 #### Persistance et Mémoire
 
 - **FR-013** : Le système DOIT maintenir un historique des comportements par IP sur des fenêtres temporelles glissantes.
-- **FR-014** : Le système DOIT persister les scores de réputation pour survivre aux redémarrages.
-- **FR-015** : Le système DOIT implémenter une expiration automatique des données de réputation anciennes.
+- **FR-014** : Le système DOIT persister les scores de réputation pour survivre aux redémarrages, en utilisant Redis centralisé avec cache local L1 en mémoire (pour respecter contraintes stateless NFR-004 et latence < 5ms).
+- **FR-015** : Le système DOIT implémenter une expiration automatique des données de réputation anciennes avec décroissance exponentielle (demi-vie de 24h) pour récupération progressive, SAUF pour les signaux rédibitoires qui ne récupèrent jamais automatiquement.
 
 #### Observabilité
 
@@ -312,6 +345,16 @@ En tant qu'administrateur, je veux détecter les hijacking de session et les par
 - **FR-031** : Le système DOIT supporter l'intégration d'un mécanisme de CAPTCHA pour les IPs en score intermédiaire.
 - **FR-032** : Le système DOIT permettre la présentation d'un formulaire de demande de déblocage pour les IPs bloquées à tort.
 
+#### Administration et Monitoring
+
+- **FR-033** : Le système DOIT fournir un CLI (Command Line Interface) pour les opérations d'administration et de monitoring de base.
+- **FR-034** : Le CLI DOIT permettre d'ajouter/retirer des IPs dans les listes noires et blanches sans redémarrage.
+- **FR-035** : Le CLI DOIT permettre de consulter le profil de réputation d'une IP spécifique (score actuel, historique des signaux, statistiques).
+- **FR-036** : Le CLI DOIT permettre de réinitialiser manuellement le score d'une IP (déblocage d'urgence).
+- **FR-037** : Le CLI DOIT afficher les statistiques en temps réel : nombre de requêtes/s, taux de blocage, top IPs malveillantes, top signaux générés.
+- **FR-038** : Le CLI DOIT permettre de recharger la configuration à chaud (sans interruption de service).
+- **FR-039** : Le CLI DOIT fournir un mode "dry-run" pour tester l'impact d'une modification de configuration avant application.
+
 ### Exigences Non Fonctionnelles
 
 #### Performance
@@ -337,14 +380,14 @@ En tant qu'administrateur, je veux détecter les hijacking de session et les par
 
 #### Fiabilité
 
-- **NFR-013** : Le système DOIT avoir un mode de dégradation gracieuse : en cas d'erreur interne, autoriser la requête plutôt que de bloquer.
+- **NFR-013** : Le système DOIT avoir un mode de dégradation gracieuse : en cas d'indisponibilité de Redis (perte d'accès à l'historique de réputation), passer en mode dégradé avec détection locale sans historique et logs d'urgence dans fichiers locaux.
 - **NFR-014** : Le système DOIT gérer correctement les erreurs et NE DOIT JAMAIS paniquer en production.
 - **NFR-015** : Le système DOIT permettre le déploiement sans interruption (graceful shutdown).
 
 ### Entités Clés
 
 - **Requête HTTP** : Représente une requête interceptée avec tous ses attributs (IP, headers, body, metadata).
-- **Score de Réputation** : Score numérique associé à une IP, calculé dynamiquement sur base des signaux. Échelle typique : 0 (malveillant) à 100 (légitime).
+- **Score de Réputation** : Score numérique associé à une IP, calculé dynamiquement sur base des signaux. Échelle : 0 (malveillant) à 100 (légitime). Calcul via formule additive pondérée avec pénalité accrue pour corrélation de signaux différents. Récupération par décroissance exponentielle (demi-vie 24h) sauf pour signaux rédibitoires (pas de récupération automatique).
 - **Signal** : Événement typé représentant un comportement suspect détecté. 20+ types définis : `SqlInjectionAttempt`, `Flooding`, `SuspiciousUserAgent`, `TorDetected`, `SessionHijackingSuspected`, etc.
 - **Profil IP** : Historique et contexte d'une IP source incluant : score actuel, liste des signaux récents avec timestamps, compteurs (requêtes/temps, tentatives auth, 404s), métadonnées de géolocalisation (pays, région, ASN), liste des User-Agents observés, liste des session IDs associés.
 - **Règle de Décision** : Configuration des seuils et actions en fonction du score de réputation. Structure : score >= seuil_autoriser → ALLOW, seuil_rate_limit <= score < seuil_autoriser → RATE_LIMIT, seuil_bloquer <= score < seuil_rate_limit → CHALLENGE, score < seuil_bloquer → BLOCK.
@@ -384,7 +427,9 @@ En tant qu'administrateur, je veux détecter les hijacking de session et les par
 
 #### Opérationnel
 
-- **SC-017** : Les faux positifs peuvent être corrigés en moins de 2 minutes via whitelist manuelle.
+- **SC-017** : Les faux positifs peuvent être corrigés en moins de 2 minutes via whitelist manuelle ou commande CLI.
 - **SC-018** : Le système exporte au moins 20 métriques Prometheus pour monitoring complet.
 - **SC-019** : 100% des décisions de blocage sont logguées avec contexte complet (IP, raison, score, signaux, timestamp).
 - **SC-020** : La géolocalisation identifie correctement le pays pour 95% des IPs publiques.
+- **SC-021** : Le CLI répond en moins de 500ms pour les commandes de consultation (stats, show IP).
+- **SC-022** : Le CLI applique les modifications (whitelist, blacklist, reload config) en moins de 100ms.
