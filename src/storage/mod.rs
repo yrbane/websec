@@ -7,4 +7,8 @@
 //!
 //! Repository trait abstraction allows testing with in-memory implementation.
 
-// Placeholder: Phase 2 (T016-T017) will define ReputationRepository trait and InMemoryRepository
+pub mod memory;
+pub mod repository;
+
+pub use memory::InMemoryRepository;
+pub use repository::ReputationRepository;

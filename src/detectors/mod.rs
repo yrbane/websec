@@ -14,5 +14,8 @@
 //! - Protocol violation detection (RFC non-compliance)
 //! - Suspicious geo patterns (impossible travel, high-risk countries)
 
-// Placeholder: Phase 2 (T015) will define Detector trait
-// Phase 3+ will implement each detector family
+pub mod detector;
+pub mod registry;
+
+pub use detector::{DetectionResult, Detector, HttpRequestContext};
+pub use registry::DetectorRegistry;

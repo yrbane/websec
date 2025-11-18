@@ -12,10 +12,12 @@
 //! - 20-39: CHALLENGE
 //! - <20: BLOCK
 
+pub mod decision;
 pub mod profile;
 pub mod score;
 pub mod signal;
 
+pub use decision::{DecisionEngine, DecisionEngineConfig, DecisionEngineResult};
 pub use profile::ReputationProfile;
 pub use score::{
     calculate_score, determine_decision, recalculate_and_update, ProxyDecision, ScoringThresholds,

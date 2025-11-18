@@ -6,4 +6,8 @@
 //! - Header preservation (X-Forwarded-For, X-Real-IP)
 //! - Request/response streaming for large payloads
 
-// Placeholder: Phase 2 (T022-T024) will implement basic proxy server
+pub mod backend;
+pub mod middleware;
+pub mod server;
+
+pub use server::ProxyServer;

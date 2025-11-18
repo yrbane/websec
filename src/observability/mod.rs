@@ -4,4 +4,8 @@
 //! - Prometheus metrics exposition (request counts, latency histograms, reputation distributions)
 //! - Distributed tracing with request IDs
 
-// Placeholder: Phase 2 (T020) will configure tracing/logging
+pub mod logging;
+pub mod metrics;
+
+pub use logging::init_logging;
+pub use metrics::{record_request_decision, record_signal, update_score_bucket};
