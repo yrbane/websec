@@ -17,11 +17,13 @@
 pub mod bot_detector;
 pub mod bruteforce_detector;
 pub mod detector;
+pub mod flood_detector;
 pub mod injection_detector;
 pub mod registry;
 
 pub use bot_detector::BotDetector;
 pub use bruteforce_detector::BruteForceDetector;
 pub use detector::{DetectionResult, Detector, HttpRequestContext};
+pub use flood_detector::FloodDetector;
 pub use injection_detector::InjectionDetector;
 pub use registry::DetectorRegistry;
