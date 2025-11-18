@@ -40,6 +40,11 @@ FailedLogin = 20                # Multiple failed login attempts from same IP
 LoginAttemptPattern = 20        # Rapid sequential login attempts (password spray)
 CredentialStuffing = 25         # Same credentials from multiple IPs
 
+# Flood/DDoS signals (US3)
+RequestFlood = 20               # 100+ req in 60s or 50+ req in 2s burst
+ConnectionFlood = 20            # SYN flood, slowloris (future)
+DistributedAttack = 10          # Coordinated multi-IP attack (future)
+
 # Injection attacks (US4)
 SqlInjectionAttempt = 30        # UNION SELECT, DROP TABLE, OR '1'='1, SLEEP()
 XssAttempt = 30                 # <script>, onerror, onload, javascript:

@@ -1,11 +1,70 @@
-//! Flood/DDoS detection (Request floods, connection floods)
+//! Flood/DDoS detection (Request floods, burst patterns)
 //!
-//! Detects volumetric attacks through rate limiting and pattern analysis:
-//! - High request volume (1000+ req in 10s)
-//! - Burst patterns (50+ req in 2s)
-//! - Sustained high rate (100 req/s for 1 min)
+//! Detects volumetric attacks through sliding window rate limiting and pattern analysis:
+//! - **High request volume**: 100+ requests in 60 seconds
+//! - **Burst patterns**: 50+ requests in 2 seconds
+//! - **Sustained high rate**: Continuous flooding over multiple windows
 //!
-//! Uses sliding window counters with DashMap for thread-safe per-IP tracking.
+//! # Architecture
+//!
+//! Uses sliding window counters with [`DashMap`] for lock-free, thread-safe per-IP tracking.
+//! Timestamps are stored as [`Instant`] values and automatically pruned outside the time window.
+//!
+//! # Detection Flow
+//!
+//! 1. Record request timestamp for source IP
+//! 2. Prune expired timestamps (outside 60s window)
+//! 3. Count requests in main window (60s) → if ≥ 100, signal `RequestFlood`
+//! 4. Count requests in burst window (2s) → if ≥ 50, signal `RequestFlood`
+//! 5. Return detection result with signals
+//!
+//! # Example
+//!
+//! ```rust
+//! use websec::detectors::{FloodDetector, Detector, HttpRequestContext};
+//! use std::net::IpAddr;
+//!
+//! # async fn example() {
+//! let detector = FloodDetector::new();
+//! let context = HttpRequestContext {
+//!     ip: "192.168.1.100".parse().unwrap(),
+//!     method: "GET".to_string(),
+//!     path: "/api/data".to_string(),
+//!     query: None,
+//!     headers: vec![],
+//!     body: None,
+//!     user_agent: Some("AttackBot/1.0".to_string()),
+//!     referer: None,
+//!     content_type: None,
+//! };
+//!
+//! // Simulate flood: 150 requests
+//! for _ in 0..150 {
+//!     let _ = detector.analyze(&context).await;
+//! }
+//!
+//! let result = detector.analyze(&context).await;
+//! assert!(result.suspicious); // Flood detected
+//! # }
+//! ```
+//!
+//! # Performance
+//!
+//! - **Memory**: O(n) where n = number of active IPs × requests in window
+//! - **Time complexity**: O(m) where m = requests in window (typically < 200)
+//! - **Pruning**: Automatic on each request (amortized O(1))
+//! - **Concurrency**: Lock-free reads/writes via DashMap
+//!
+//! # Configuration
+//!
+//! Default thresholds:
+//! - `FLOOD_THRESHOLD`: 100 requests per 60s window
+//! - `BURST_THRESHOLD`: 50 requests per 2s window
+//! - `TIME_WINDOW_SECS`: 60 seconds
+//!
+//! # Signal Weights
+//!
+//! - `RequestFlood`: 20 (medium-high severity)
 
 use super::detector::{DetectionResult, Detector, HttpRequestContext};
 use crate::reputation::{Signal, SignalVariant};
@@ -64,6 +123,24 @@ impl IpFloodData {
 }
 
 /// Flood detector implementation
+///
+///  Tracks request rates per IP using sliding window counters and generates
+/// `RequestFlood` signals when thresholds are exceeded.
+///
+/// # Fields
+///
+/// - `ip_tracking`: Concurrent map of IP → request timestamps
+/// - `enabled`: Detector activation flag (always true by default)
+///
+/// # Thread Safety
+///
+/// This detector is fully thread-safe and lock-free thanks to [`DashMap`].
+/// Multiple threads can analyze requests concurrently without blocking.
+///
+/// # Memory Management
+///
+/// Old timestamps are automatically pruned on each request to prevent unbounded growth.
+/// Memory usage is bounded by: `active_ips × requests_per_window × sizeof(Instant)`.
 pub struct FloodDetector {
     /// Per-IP tracking data
     ip_tracking: Arc<DashMap<IpAddr, IpFloodData>>,
@@ -72,7 +149,9 @@ pub struct FloodDetector {
 }
 
 impl FloodDetector {
-    /// Create a new FloodDetector
+    /// Create a new FloodDetector with default thresholds
+    ///
+    /// Initializes empty tracking map. Memory is allocated lazily as IPs are seen.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -82,6 +161,18 @@ impl FloodDetector {
     }
 
     /// Track request and check for flood patterns
+    ///
+    /// # Algorithm
+    ///
+    /// 1. Get or create tracking entry for source IP
+    /// 2. Add current timestamp and prune old entries
+    /// 3. Count requests in main window (60s)
+    /// 4. Count requests in burst window (2s)
+    /// 5. Generate signals if thresholds exceeded
+    ///
+    /// # Returns
+    ///
+    /// Vector of signals (empty if no flood detected)
     fn track_and_analyze(&self, context: &HttpRequestContext) -> Vec<Signal> {
         let mut signals = Vec::new();
         let now = Instant::now();
