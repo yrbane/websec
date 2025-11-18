@@ -46,11 +46,27 @@ WebSec intercepte **toutes** les requêtes HTTP(S) avant qu'elles n'atteignent v
 - **Rechargement à Chaud** : Mise à jour de configuration sans interruption de service
 - **Géolocalisation** : Pénalités différenciées par pays/région
 
+### 🔌 Transparence Totale
+
+- **Zéro Configuration Backend** : Aucune modification requise sur Apache, Nginx, Caddy ou tout autre serveur web
+- **Déploiement Plug-and-Play** : Installer WebSec en amont et tout fonctionne immédiatement
+- **Préservation des Headers** : Tous les headers HTTP originaux transmis (Host, X-Forwarded-For, X-Real-IP, etc.)
+- **Support WebSocket** : Upgrade transparent des connexions WebSocket sans configuration
+
 ### 📊 Observabilité
 
 - **Logging Structuré** : Tous les événements en JSON avec contexte complet
 - **Métriques Prometheus** : 20+ métriques pour monitoring temps réel
 - **Traçabilité Complète** : Chaque décision documentée avec IP, raison, score, signaux
+
+### 💻 CLI d'Administration
+
+- **Gestion des Listes** : Ajout/retrait d'IPs en blacklist/whitelist sans redémarrage
+- **Inspection des Profils** : Consultation du score, historique et statistiques d'une IP
+- **Déblocage d'Urgence** : Réinitialisation rapide du score d'une IP légitime (<2 min)
+- **Monitoring Temps Réel** : Stats globales (req/s, taux de blocage, top IPs/signaux)
+- **Rechargement à Chaud** : Application de nouvelle configuration sans interruption
+- **Mode Dry-Run** : Test de l'impact d'une modification avant application
 
 ## 🚀 Installation Rapide
 
@@ -152,26 +168,17 @@ Internet
 [ Application ]
 ```
 
-### Exemple avec Nginx Backend
+### Déploiement Transparent avec Nginx
+
+**Configuration WebSec uniquement** (aucune modification de Nginx requise) :
 
 ```toml
 [server]
 listen = "0.0.0.0:80"
-backend = "http://127.0.0.1:8080"  # Nginx écoute sur 8080
+backend = "http://127.0.0.1:8080"  # Nginx écoute déjà sur 8080
 ```
 
-Configuration Nginx :
-```nginx
-server {
-    listen 8080;
-    server_name localhost;
-
-    location / {
-        # Votre application
-        proxy_pass http://localhost:3000;
-    }
-}
-```
+Nginx continue de fonctionner sans aucun changement. WebSec intercepte le trafic sur le port 80 et transmet les requêtes légitimes à Nginx sur le port 8080 avec tous les headers HTTP préservés automatiquement (Host, X-Forwarded-For, X-Real-IP, etc.).
 
 ## 🔍 Détection des Menaces
 
@@ -191,6 +198,62 @@ WebSec implémente 12 détecteurs correspondant aux familles de menaces document
 | **SsrfDetector** | `SsrfSuspected` | P3 |
 | **SessionDetector** | `SessionHijackingSuspected`, `SessionAnomaly` | P3 |
 | **TlsDetector** | `WeakTlsClient`, `KnownBadFingerprint` | P3 |
+
+### Architecture Technique du Scoring
+
+**Calcul du Score de Réputation** :
+```
+Score = max(0, min(100, base - Σ(poids_signal)))
+```
+
+- **Score initial** : 100 (légitime)
+- **Pénalité par signal** : Chaque signal détecté diminue le score selon son poids
+- **Pénalité de corrélation** : Bonus de pénalité si multiples signaux différents détectés en peu de temps
+- **Récupération progressive** : Décroissance exponentielle (demi-vie 24h) en l'absence de nouveaux signaux
+- **Signaux rédibitoires** : Certains signaux critiques (webshells, RCE, credential stuffing massif) ne permettent aucune récupération automatique
+
+**Rate Limiting** :
+- Algorithme **Token Bucket avec fenêtre glissante combinée**
+- Équilibre entre flexibilité pour bursts légitimes et protection anti-gaming
+
+**Stockage et Scalabilité** :
+- Architecture **stateless** pour scaling horizontal
+- **Redis centralisé** pour partage d'état entre instances multiples
+- **Cache L1 local** en mémoire pour réduire la latence (< 5ms p95)
+- **Mode dégradé** : En cas de panne Redis, détection locale sans historique avec logs d'urgence dans fichiers
+
+## 💻 Administration CLI
+
+WebSec fournit un CLI complet pour la gestion opérationnelle :
+
+```bash
+# Débloquer une IP légitime bloquée par erreur
+websec-cli ip unblock 203.0.113.50
+
+# Consulter le profil de réputation d'une IP
+websec-cli ip show 198.51.100.42
+# Affiche : score actuel, historique des signaux, statistiques
+
+# Afficher les statistiques globales en temps réel
+websec-cli stats
+# Affiche : req/s, taux de blocage, top IPs malveillantes, top signaux
+
+# Ajouter/retirer des IPs dans les listes de contrôle
+websec-cli whitelist add 192.0.2.100
+websec-cli blacklist add 203.0.113.0/24
+websec-cli whitelist remove 192.0.2.100
+
+# Recharger la configuration à chaud (sans interruption)
+websec-cli config reload
+
+# Tester l'impact d'une modification avant application
+websec-cli config dry-run --new-config /etc/websec/websec-test.toml
+```
+
+**Performance CLI** :
+- Requêtes (show, stats) : < 500ms
+- Modifications (add, remove, unblock) : < 100ms
+- Déblocage d'urgence : < 2 minutes du signalement à la résolution
 
 ## 📈 Monitoring
 
@@ -343,24 +406,27 @@ git push origin feature/ma-fonctionnalite
 
 ### Version 0.1.0 (MVP) - En Cours
 - [x] Constitution et spécifications
-- [ ] Infrastructure de base (proxy HTTP, middleware)
+- [ ] Infrastructure de base (proxy HTTP transparent, middleware)
 - [ ] Détecteurs P1 : Bots + Brute Force
-- [ ] Moteur de réputation
-- [ ] Rate limiting
+- [ ] Moteur de réputation (scoring additive pondéré avec corrélation)
+- [ ] Rate limiting (Token Bucket + fenêtre glissante)
 - [ ] Listes noires/blanches
+- [ ] Storage Redis + cache L1 local
+- [ ] CLI d'administration de base
 - [ ] Observabilité basique
 
 ### Version 0.2.0
 - [ ] Détecteurs P2 : Flood + Injections
-- [ ] Géolocalisation
-- [ ] Persistance Redis
-- [ ] Mécanisme CAPTCHA
+- [ ] Géolocalisation avec pénalités par pays/région
+- [ ] Mécanisme CAPTCHA et formulaire de déblocage
+- [ ] CLI avancé (dry-run, mode dégradé)
 - [ ] Dashboard monitoring
 
 ### Version 0.3.0
-- [ ] Détecteurs P3 : Path traversal, Scans, Uploads, TOR, SSRF, Sessions
-- [ ] TLS fingerprinting
-- [ ] API de gestion
+- [ ] Détecteurs P3 : Path traversal, Scans, Uploads, TOR, SSRF, Sessions, TLS
+- [ ] TLS fingerprinting (JA3)
+- [ ] Décroissance exponentielle du score (demi-vie 24h)
+- [ ] Gestion signaux rédibitoires sans récupération
 - [ ] Mode apprentissage (tuning automatique)
 
 ### Version 1.0.0
@@ -375,12 +441,14 @@ git push origin feature/ma-fonctionnalite
 WebSec est conçu pour la sécurité dès la conception :
 
 - ✅ Aucun secret hardcodé
-- ✅ Validation de tous les inputs
-- ✅ Fail-closed par défaut (bloquer en cas d'erreur)
-- ✅ Pas de panic en production
+- ✅ Validation de tous les inputs à toutes les frontières
+- ✅ Fail-closed par défaut (bloquer en cas d'erreur, mode dégradé en cas de panne Redis)
+- ✅ Pas de panic en production (utilisation de Result/Option)
 - ✅ Bibliothèques crypto validées (rustls, ring)
-- ✅ cargo audit dans CI
-- ✅ Revue de code systématique
+- ✅ cargo audit dans CI (zéro vulnérabilités tolérées)
+- ✅ Revue de code systématique avec checklist sécurité
+- ✅ Principe du moindre privilège pour permissions et capacités
+- ✅ Modélisation des menaces pour toutes les nouvelles fonctionnalités
 
 ### Signaler une Vulnérabilité
 
