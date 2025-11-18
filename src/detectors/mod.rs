@@ -14,8 +14,10 @@
 //! - Protocol violation detection (RFC non-compliance)
 //! - Suspicious geo patterns (impossible travel, high-risk countries)
 
+pub mod bot_detector;
 pub mod detector;
 pub mod registry;
 
+pub use bot_detector::BotDetector;
 pub use detector::{DetectionResult, Detector, HttpRequestContext};
 pub use registry::DetectorRegistry;
