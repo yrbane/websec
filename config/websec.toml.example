@@ -51,6 +51,21 @@ XssAttempt = 30                 # <script>, onerror, onload, javascript:
 PathTraversalAttempt = 30       # ../, ..\\, %2e%2e%2f
 RceAttempt = 50                 # Command injection: ;cat, backticks, $()
 
+[lists]
+# Blacklist: IPs to block immediately (score = 0, decision = BLOCK)
+# Takes highest priority - overrides whitelist and scoring
+blacklist = [
+    # "192.168.1.100",
+    # "10.0.0.50",
+]
+
+# Whitelist: Trusted IPs (score = 100, decision = ALLOW)
+# Bypasses all detectors and scoring logic
+whitelist = [
+    # "127.0.0.1",
+    # "::1",
+]
+
 [storage]
 # Storage type: "redis" or "memory" (for testing)
 type = "redis"

@@ -1,6 +1,39 @@
 //! Whitelist management for trusted IPs
 //!
 //! Whitelisted IPs bypass reputation scoring and are always allowed.
+//!
+//! # Priority
+//!
+//! Whitelist has **second priority** (after blacklist):
+//! 1. Blacklist → Block (score = 0)
+//! 2. **Whitelist** → Allow (score = 100)
+//! 3. Normal scoring
+//!
+//! # Use Cases
+//!
+//! - Trusted office IPs
+//! - Monitoring services (uptime monitors, health checks)
+//! - Known good bots (Google, Bing crawlers)
+//! - CI/CD pipelines
+//!
+//! # Example
+//!
+//! ```rust
+//! use websec::lists::Whitelist;
+//! use std::net::IpAddr;
+//!
+//! let mut whitelist = Whitelist::new();
+//! let office_ip: IpAddr = "203.0.113.10".parse().unwrap();
+//!
+//! whitelist.add(office_ip);
+//! assert!(whitelist.contains(&office_ip));
+//! // This IP will bypass all detectors and always be allowed
+//! ```
+//!
+//! # Thread Safety
+//!
+//! Thread-safe via `Arc<RwLock<HashSet>>`. Can be cloned cheaply (Arc clone)
+//! and shared across threads. Multiple readers can check simultaneously.
 
 use std::collections::HashSet;
 use std::net::IpAddr;

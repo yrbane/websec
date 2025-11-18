@@ -1,6 +1,32 @@
 //! Blacklist management for immediate IP blocking
 //!
 //! Blacklisted IPs are blocked immediately regardless of reputation score.
+//!
+//! # Priority
+//!
+//! Blacklist has the **highest priority** in the decision pipeline:
+//! 1. **Blacklist** → Block (score = 0)
+//! 2. Whitelist → Allow (score = 100)
+//! 3. Normal scoring
+//!
+//! # Example
+//!
+//! ```rust
+//! use websec::lists::Blacklist;
+//! use std::net::IpAddr;
+//!
+//! let mut blacklist = Blacklist::new();
+//! let ip: IpAddr = "192.168.1.100".parse().unwrap();
+//!
+//! blacklist.add(ip);
+//! assert!(blacklist.contains(&ip));
+//! // This IP will be blocked immediately in DecisionEngine
+//! ```
+//!
+//! # Thread Safety
+//!
+//! Thread-safe via `Arc<RwLock<HashSet>>`. Can be cloned cheaply (Arc clone)
+//! and shared across threads. Multiple readers can check simultaneously.
 
 use std::collections::HashSet;
 use std::net::IpAddr;
