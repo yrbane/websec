@@ -1,0 +1,43 @@
+# Rust
+target/
+debug/
+release/
+**/*.rs.bk
+*.rlib
+*.prof*
+
+# Cargo
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+*.tmp
+
+# Test coverage
+coverage/
+*.profraw
+*.profdata
+
+# Documentation build
+docs/_build/
+
+
+# Added by cargo
+
+/target

@@ -1,0 +1,17 @@
+# WebSec Clippy Configuration (Strict Mode)
+# Constitution Principle V: Quality Triad
+
+# Deny all warnings in CI
+warn-on-all-wildcard-imports = true
+
+# Pedantic lints
+pedantic-lints = "warn"
+
+# Complexity
+cognitive-complexity-threshold = 15
+type-complexity-threshold = 150
+
+# Performance
+single-char-lifetime-names = false
+too-many-arguments-threshold = 5
+too-many-lines-threshold = 150
