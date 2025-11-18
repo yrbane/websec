@@ -113,7 +113,41 @@ En fonction du score calculé pour une IP (et éventuellement pour la combinaiso
 ### Contraintes générales
 
 * Le système doit être développé en **Rust**.
-* Il doit être **hautement performant** et capable de supporter un volume élevé de requêtes.
-* Il doit être **extensible**, de manière à permettre d’ajouter facilement de nouveaux signaux ou règles de scoring.
-* Il doit être capable de fonctionner en **production** devant un serveur web (ex. Nginx, Apache, etc.) sans introduire de latence excessive.
+* Il doit être **hautement performant** et capable de supporter un volume élevé de requêtes (objectif : 10 000+ req/s, latence < 5ms p95).
+* Il doit être **extensible**, de manière à permettre d'ajouter facilement de nouveaux signaux ou règles de scoring.
+* Il doit être capable de fonctionner en **production** devant un serveur web (ex. Nginx, Apache, Caddy, etc.) sans introduire de latence excessive.
+* Il doit être **totalement transparent** : aucune modification ou configuration requise côté serveur web backend.
 * Il doit être capable de détecter les menaces listées dans [Menaces](./Menaces.md)
+
+---
+
+### Administration et Opérations
+
+Le système doit fournir un **CLI (Command Line Interface)** pour :
+
+* **Gestion des listes de contrôle** : Ajouter/retirer des IPs en liste noire ou blanche sans redémarrage
+* **Consultation des profils** : Afficher le score de réputation, l'historique des signaux, et les statistiques d'une IP
+* **Déblocage d'urgence** : Réinitialiser le score d'une IP légitime bloquée par erreur (< 2 minutes)
+* **Monitoring temps réel** : Statistiques globales (req/s, taux de blocage, top IPs malveillantes, top signaux)
+* **Rechargement de configuration** : Appliquer une nouvelle configuration à chaud sans interruption
+* **Mode dry-run** : Tester l'impact d'une modification de configuration avant application
+
+---
+
+### Architecture Technique
+
+**Calcul du Score de Réputation** :
+* Formule additive pondérée : `Score = max(0, min(100, base - Σ(poids_signal)))`
+* Bonus de pénalité si multiples signaux différents détectés en peu de temps (corrélation d'attaques)
+* Récupération progressive par décroissance exponentielle (demi-vie 24h)
+* Exception : signaux rédibitoires (webshells, RCE, credential stuffing massif) sans récupération automatique
+
+**Rate Limiting** :
+* Algorithme Token Bucket avec fenêtre glissante combinée
+* Équilibre entre flexibilité pour bursts légitimes et protection anti-gaming
+
+**Stockage et Scalabilité** :
+* Architecture stateless pour scaling horizontal
+* Redis centralisé pour partage d'état entre instances
+* Cache L1 local en mémoire pour réduire la latence (< 5ms p95)
+* Mode dégradé : détection locale sans historique + logs fichiers en cas de panne Redis
