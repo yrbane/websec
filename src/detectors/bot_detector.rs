@@ -62,6 +62,11 @@ impl BotDetector {
 
         // Check for missing/empty User-Agent
         if self.is_missing_user_agent(context.user_agent.as_deref()) {
+            tracing::debug!(
+                ip = %context.ip,
+                path = %context.path,
+                "Bot detected: Missing User-Agent header"
+            );
             signals.push(Signal::new(SignalVariant::BotBehaviorPattern));
             return signals;
         }
@@ -70,12 +75,24 @@ impl BotDetector {
 
         // Check for vulnerability scanners (high severity)
         if self.is_scanner(user_agent) {
+            tracing::warn!(
+                ip = %context.ip,
+                path = %context.path,
+                user_agent = %user_agent,
+                "Vulnerability scanner detected"
+            );
             signals.push(Signal::new(SignalVariant::VulnerabilityScan));
             return signals;
         }
 
         // Check for generic bots/tools (medium severity)
         if self.is_generic_bot(user_agent) {
+            tracing::info!(
+                ip = %context.ip,
+                path = %context.path,
+                user_agent = %user_agent,
+                "Generic bot/tool detected"
+            );
             signals.push(Signal::new(SignalVariant::SuspiciousUserAgent));
             return signals;
         }
