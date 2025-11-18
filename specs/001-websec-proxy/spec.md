@@ -14,6 +14,7 @@
 - Q: Quelle stratégie de stockage de l'état de réputation permet de respecter à la fois l'exigence stateless (NFR-004) et la contrainte de latence (< 5ms p95) ? → A: Stockage Redis centralisé avec cache local L1
 - Q: Comment les multiples signaux détectés pour une même IP doivent-ils être agrégés pour calculer le score de réputation final (échelle 0-100) ? → A: Formule additive pondérée avec plancher/plafond, plus bonus de pénalité si signaux différents détectés en peu de temps (corrélation d'attaques)
 - Q: En cas d'indisponibilité de Redis (impossible de récupérer le profil de réputation d'une IP), quel comportement le proxy doit-il adopter ? → A: Mode dégradé (détection locale sans historique) avec logs d'urgence dans fichiers
+- Q: WebSec doit-il nécessiter une configuration côté serveur web (Apache, Nginx, etc.) ? → A: Non, WebSec doit être totalement transparent - déploiement en amont sans modification du serveur web backend
 
 ## Scénarios Utilisateur & Tests *(obligatoire)*
 
@@ -284,13 +285,19 @@ En tant qu'administrateur, je veux disposer d'un CLI pour gérer les listes de c
 - Comment gérer les faux positifs sur la détection de TLS fingerprinting ?
   → Liste blanche de fingerprints connus (navigateurs populaires, bots légitimes), seuils ajustables, mode apprentissage pour calibrer.
 
+- Comment s'assurer que WebSec reste invisible pour le serveur web backend ?
+  → Aucune configuration requise côté backend, headers originaux préservés, forwarding automatique des headers proxy standards (X-Forwarded-*), support WebSocket transparent.
+
+- Que se passe-t-il si le backend utilise déjà des headers X-Forwarded-For ?
+  → WebSec préserve et enrichit la chaîne X-Forwarded-For existante en y ajoutant l'IP client réelle, respectant la RFC 7239.
+
 ## Exigences *(obligatoire)*
 
 ### Exigences Fonctionnelles
 
 #### Détection et Analyse
 
-- **FR-001** : Le système DOIT intercepter toutes les requêtes HTTP(S) avant qu'elles n'atteignent le serveur web backend.
+- **FR-001** : Le système DOIT intercepter toutes les requêtes HTTP(S) avant qu'elles n'atteignent le serveur web backend, en fonctionnant comme proxy transparent ne nécessitant aucune configuration côté serveur web (Apache, Nginx, etc.).
 - **FR-002** : Le système DOIT extraire et analyser les éléments suivants de chaque requête : IP source, User-Agent, méthode HTTP, URL/URI, paramètres GET/POST, headers HTTP, referer, cookies.
 - **FR-003** : Le système DOIT calculer un score de réputation pour chaque IP source basé sur les signaux détectés, en utilisant une formule additive pondérée (Score = max(0, min(100, base - Σ(poids_signal)))) avec bonus de pénalité si multiples signaux différents sont détectés en peu de temps (corrélation d'attaques).
 - **FR-004** : Le système DOIT détecter les 12 familles de menaces définies dans docs/Menaces.md.
@@ -345,15 +352,22 @@ En tant qu'administrateur, je veux disposer d'un CLI pour gérer les listes de c
 - **FR-031** : Le système DOIT supporter l'intégration d'un mécanisme de CAPTCHA pour les IPs en score intermédiaire.
 - **FR-032** : Le système DOIT permettre la présentation d'un formulaire de demande de déblocage pour les IPs bloquées à tort.
 
+#### Transparence et Intégration
+
+- **FR-033** : Le système DOIT fonctionner de manière totalement transparente sans nécessiter aucune modification ou configuration du serveur web backend (Apache, Nginx, Caddy, etc.).
+- **FR-034** : Le système DOIT préserver les headers HTTP originaux de la requête client et les transmettre au backend, en ajoutant optionnellement des headers informationnels (X-WebSec-Score, X-WebSec-Decision).
+- **FR-035** : Le système DOIT gérer automatiquement le forwarding des headers critiques (Host, X-Forwarded-For, X-Real-IP, X-Forwarded-Proto) pour maintenir la compatibilité avec les applications backend.
+- **FR-036** : Le système DOIT supporter le passage des connexions WebSocket sans modification (upgrade transparent).
+
 #### Administration et Monitoring
 
-- **FR-033** : Le système DOIT fournir un CLI (Command Line Interface) pour les opérations d'administration et de monitoring de base.
-- **FR-034** : Le CLI DOIT permettre d'ajouter/retirer des IPs dans les listes noires et blanches sans redémarrage.
-- **FR-035** : Le CLI DOIT permettre de consulter le profil de réputation d'une IP spécifique (score actuel, historique des signaux, statistiques).
-- **FR-036** : Le CLI DOIT permettre de réinitialiser manuellement le score d'une IP (déblocage d'urgence).
-- **FR-037** : Le CLI DOIT afficher les statistiques en temps réel : nombre de requêtes/s, taux de blocage, top IPs malveillantes, top signaux générés.
-- **FR-038** : Le CLI DOIT permettre de recharger la configuration à chaud (sans interruption de service).
-- **FR-039** : Le CLI DOIT fournir un mode "dry-run" pour tester l'impact d'une modification de configuration avant application.
+- **FR-037** : Le système DOIT fournir un CLI (Command Line Interface) pour les opérations d'administration et de monitoring de base.
+- **FR-038** : Le CLI DOIT permettre d'ajouter/retirer des IPs dans les listes noires et blanches sans redémarrage.
+- **FR-039** : Le CLI DOIT permettre de consulter le profil de réputation d'une IP spécifique (score actuel, historique des signaux, statistiques).
+- **FR-040** : Le CLI DOIT permettre de réinitialiser manuellement le score d'une IP (déblocage d'urgence).
+- **FR-041** : Le CLI DOIT afficher les statistiques en temps réel : nombre de requêtes/s, taux de blocage, top IPs malveillantes, top signaux générés.
+- **FR-042** : Le CLI DOIT permettre de recharger la configuration à chaud (sans interruption de service).
+- **FR-043** : Le CLI DOIT fournir un mode "dry-run" pour tester l'impact d'une modification de configuration avant application.
 
 ### Exigences Non Fonctionnelles
 
@@ -433,3 +447,5 @@ En tant qu'administrateur, je veux disposer d'un CLI pour gérer les listes de c
 - **SC-020** : La géolocalisation identifie correctement le pays pour 95% des IPs publiques.
 - **SC-021** : Le CLI répond en moins de 500ms pour les commandes de consultation (stats, show IP).
 - **SC-022** : Le CLI applique les modifications (whitelist, blacklist, reload config) en moins de 100ms.
+- **SC-023** : Le déploiement de WebSec en amont d'un serveur web existant ne nécessite aucune modification de configuration du backend (test avec Apache, Nginx, Caddy).
+- **SC-024** : Les applications backend reçoivent l'IP client réelle via X-Forwarded-For et peuvent logger correctement sans modification.
