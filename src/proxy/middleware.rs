@@ -208,7 +208,9 @@ pub async fn proxy_handler(
 /// Handler pour l'endpoint `/metrics` Prometheus
 ///
 /// Expose les métriques au format Prometheus pour scraping.
-pub async fn metrics_handler(State(state): State<Arc<ProxyState>>) -> impl axum::response::IntoResponse {
+pub async fn metrics_handler(
+    State(state): State<Arc<ProxyState>>,
+) -> impl axum::response::IntoResponse {
     let metrics_text = state.metrics.export_prometheus();
 
     axum::response::Response::builder()
@@ -408,9 +410,6 @@ mod tests {
         assert_eq!(context.path, "/api/users");
         assert_eq!(context.query, Some("page=1".to_string()));
         assert_eq!(context.user_agent, Some("Mozilla/5.0".to_string()));
-        assert_eq!(
-            context.content_type,
-            Some("application/json".to_string())
-        );
+        assert_eq!(context.content_type, Some("application/json".to_string()));
     }
 }

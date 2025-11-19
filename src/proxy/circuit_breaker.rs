@@ -240,7 +240,8 @@ impl CircuitBreaker {
     /// Transition to closed state
     async fn transition_to_closed(&self) {
         info!(backend = %self.name, "Circuit breaker: OPEN/HALF_OPEN -> CLOSED");
-        self.state.store(CircuitState::Closed as u8, Ordering::SeqCst);
+        self.state
+            .store(CircuitState::Closed as u8, Ordering::SeqCst);
         self.consecutive_failures.store(0, Ordering::SeqCst);
         self.consecutive_successes.store(0, Ordering::SeqCst);
         *self.opened_at.write().await = None;
@@ -413,9 +414,7 @@ mod tests {
     async fn test_execute_success() {
         let cb = CircuitBreaker::with_defaults("test");
 
-        let result = cb
-            .execute(|| async { Ok::<_, String>("success") })
-            .await;
+        let result = cb.execute(|| async { Ok::<_, String>("success") }).await;
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "success");
@@ -430,18 +429,14 @@ mod tests {
         let cb = CircuitBreaker::new("test", config);
 
         // First failure
-        let result = cb
-            .execute(|| async { Err::<String, _>("error") })
-            .await;
+        let result = cb.execute(|| async { Err::<String, _>("error") }).await;
         assert!(matches!(
             result,
             Err(CircuitBreakerError::OperationFailed(_))
         ));
 
         // Second failure should open circuit
-        let result = cb
-            .execute(|| async { Err::<String, _>("error") })
-            .await;
+        let result = cb.execute(|| async { Err::<String, _>("error") }).await;
         assert!(matches!(
             result,
             Err(CircuitBreakerError::OperationFailed(_))
@@ -449,7 +444,9 @@ mod tests {
         assert_eq!(cb.state(), CircuitState::Open);
 
         // Third attempt should fail immediately (circuit open)
-        let result = cb.execute(|| async { Ok::<_, String>("won't execute") }).await;
+        let result = cb
+            .execute(|| async { Ok::<_, String>("won't execute") })
+            .await;
         assert!(matches!(result, Err(CircuitBreakerError::CircuitOpen)));
     }
 

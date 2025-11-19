@@ -104,9 +104,7 @@ async fn make_request(
         .build_http();
 
     let uri = format!("http://127.0.0.1:{proxy_port}{path}");
-    let request = Request::builder()
-        .uri(uri)
-        .body(Full::new(Bytes::new()))?;
+    let request = Request::builder().uri(uri).body(Full::new(Bytes::new()))?;
 
     let response = client.request(request).await?;
     Ok(response)
@@ -153,10 +151,7 @@ async fn test_proxy_server_creation() {
     let proxy = ProxyServer::new(&settings);
 
     assert!(proxy.is_ok());
-    assert_eq!(
-        proxy.unwrap().listen_addr().to_string(),
-        "127.0.0.1:18002"
-    );
+    assert_eq!(proxy.unwrap().listen_addr().to_string(), "127.0.0.1:18002");
 }
 
 #[tokio::test]
@@ -261,7 +256,10 @@ async fn test_metrics_endpoint() {
         .headers()
         .get("Content-Type")
         .and_then(|v| v.to_str().ok());
-    assert_eq!(content_type, Some("text/plain; version=0.0.4; charset=utf-8"));
+    assert_eq!(
+        content_type,
+        Some("text/plain; version=0.0.4; charset=utf-8")
+    );
 
     // 6. Vérifier le contenu des métriques
     let body_bytes = response.into_body().collect().await.unwrap().to_bytes();

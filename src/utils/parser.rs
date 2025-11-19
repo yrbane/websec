@@ -23,7 +23,8 @@ use std::collections::HashMap;
 /// let params = parse_query_string("user=admin&pass=123");
 /// assert_eq!(params.get("user"), Some(&"admin".to_string()));
 /// ```
-#[must_use] pub fn parse_query_string(query: &str) -> HashMap<String, String> {
+#[must_use]
+pub fn parse_query_string(query: &str) -> HashMap<String, String> {
     let mut params = HashMap::new();
 
     for pair in query.split('&') {
@@ -59,14 +60,16 @@ pub fn is_bot_user_agent(user_agent: &str) -> bool {
 }
 
 /// Check if User-Agent is empty or missing
-#[must_use] pub fn is_empty_user_agent(user_agent: Option<&str>) -> bool {
+#[must_use]
+pub fn is_empty_user_agent(user_agent: Option<&str>) -> bool {
     user_agent.is_none_or(|ua| ua.trim().is_empty())
 }
 
 /// Extract User-Agent browser family
 ///
 /// Returns basic browser classification: Chrome, Firefox, Safari, Edge, etc.
-#[must_use] pub fn extract_browser_family(user_agent: &str) -> Option<String> {
+#[must_use]
+pub fn extract_browser_family(user_agent: &str) -> Option<String> {
     if user_agent.contains("Chrome") && !user_agent.contains("Edge") {
         Some("Chrome".to_string())
     } else if user_agent.contains("Firefox") {
@@ -90,8 +93,9 @@ pub fn is_bot_user_agent(user_agent: &str) -> bool {
 ///
 /// `true` if path contains ../, ..\ or encoded variants
 pub fn contains_path_traversal(path: &str) -> bool {
-    static TRAVERSAL_PATTERNS: std::sync::LazyLock<Regex> =
-        std::sync::LazyLock::new(|| Regex::new(r"(\.\./|\.\.\\|%2e%2e%2f|%2e%2e/|\.\.%2f)").unwrap());
+    static TRAVERSAL_PATTERNS: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r"(\.\./|\.\.\\|%2e%2e%2f|%2e%2e/|\.\.%2f)").unwrap()
+    });
 
     TRAVERSAL_PATTERNS.is_match(&path.to_lowercase())
 }
@@ -157,7 +161,8 @@ pub fn contains_command_injection(input: &str) -> bool {
 }
 
 /// Normalize HTTP method to uppercase
-#[must_use] pub fn normalize_method(method: &str) -> String {
+#[must_use]
+pub fn normalize_method(method: &str) -> String {
     method.to_uppercase()
 }
 
@@ -170,7 +175,8 @@ pub fn contains_command_injection(input: &str) -> bool {
 /// # Returns
 ///
 /// First IP address in the chain, or None if invalid
-#[must_use] pub fn extract_xff_ip(xff_header: &str) -> Option<String> {
+#[must_use]
+pub fn extract_xff_ip(xff_header: &str) -> Option<String> {
     xff_header
         .split(',')
         .next()

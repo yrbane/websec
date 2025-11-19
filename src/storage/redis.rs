@@ -313,12 +313,8 @@ mod tests {
         let ip1 = IpAddr::from_str("192.168.1.1").unwrap();
         let ip2 = IpAddr::from_str("192.168.1.2").unwrap();
 
-        repo.save(&ReputationProfile::new(ip1, 100))
-            .await
-            .unwrap();
-        repo.save(&ReputationProfile::new(ip2, 100))
-            .await
-            .unwrap();
+        repo.save(&ReputationProfile::new(ip1, 100)).await.unwrap();
+        repo.save(&ReputationProfile::new(ip2, 100)).await.unwrap();
 
         let all = repo.list_all().await.unwrap();
         assert_eq!(all.len(), 2);

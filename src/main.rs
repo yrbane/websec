@@ -15,7 +15,13 @@ use websec::cli;
 #[command(about = "Proxy de sécurité HTTP intelligent avec système de réputation", long_about = None)]
 struct Args {
     /// Chemin vers le fichier de configuration TOML
-    #[arg(short, long, value_name = "FILE", default_value = "config/websec.toml", global = true)]
+    #[arg(
+        short,
+        long,
+        value_name = "FILE",
+        default_value = "config/websec.toml",
+        global = true
+    )]
     config: PathBuf,
 
     #[command(subcommand)]

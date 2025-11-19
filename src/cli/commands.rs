@@ -262,10 +262,7 @@ pub async fn show_stats(metrics_url: &str, interval_secs: u64) -> Result<()> {
                         eprintln!("⚠️  Failed to read response body");
                     }
                 } else {
-                    eprintln!(
-                        "⚠️  HTTP error: {} - Is WebSec running?",
-                        response.status()
-                    );
+                    eprintln!("⚠️  HTTP error: {} - Is WebSec running?", response.status());
                 }
             }
             Err(e) => {
@@ -319,9 +316,21 @@ fn display_metrics(metrics_text: &str) {
     // Display requests
     println!("📊 Requests:");
     println!("  Total:        {total_requests}");
-    println!("  ✅ Allowed:    {} ({:.1}%)", allowed, percentage(allowed, total_requests));
-    println!("  ❌ Blocked:    {} ({:.1}%)", blocked, percentage(blocked, total_requests));
-    println!("  ⏱️  Rate Limited: {} ({:.1}%)", rate_limited, percentage(rate_limited, total_requests));
+    println!(
+        "  ✅ Allowed:    {} ({:.1}%)",
+        allowed,
+        percentage(allowed, total_requests)
+    );
+    println!(
+        "  ❌ Blocked:    {} ({:.1}%)",
+        blocked,
+        percentage(blocked, total_requests)
+    );
+    println!(
+        "  ⏱️  Rate Limited: {} ({:.1}%)",
+        rate_limited,
+        percentage(rate_limited, total_requests)
+    );
 
     println!();
     println!("🌐 Tracked IPs: {tracked_ips}");

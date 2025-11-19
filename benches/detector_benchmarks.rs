@@ -2,14 +2,14 @@
 //!
 //! Mesure les performances des détecteurs individuels et du registry complet.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 use websec::detectors::{
-    BotDetector, BruteForceDetector, Detector, DetectorRegistry, FloodDetector,
-    GeoDetector, HeaderDetector, HttpRequestContext, InjectionDetector,
-    ProtocolDetector, ScanDetector, SessionDetector,
+    BotDetector, BruteForceDetector, Detector, DetectorRegistry, FloodDetector, GeoDetector,
+    HeaderDetector, HttpRequestContext, InjectionDetector, ProtocolDetector, ScanDetector,
+    SessionDetector,
 };
 
 fn create_normal_request() -> HttpRequestContext {
@@ -19,12 +19,17 @@ fn create_normal_request() -> HttpRequestContext {
         path: "/api/users".to_string(),
         query: Some("page=1&limit=10".to_string()),
         headers: vec![
-            ("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36".to_string()),
+            (
+                "User-Agent".to_string(),
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36".to_string(),
+            ),
             ("Accept".to_string(), "application/json".to_string()),
             ("Content-Type".to_string(), "application/json".to_string()),
         ],
         body: Some(b"{\"username\":\"john\"}".to_vec()),
-        user_agent: Some("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36".to_string()),
+        user_agent: Some(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36".to_string(),
+        ),
         referer: Some("https://example.com/login".to_string()),
         content_type: Some("application/json".to_string()),
     }
@@ -70,7 +75,9 @@ fn bench_individual_detectors(c: &mut Criterion) {
     });
     c.bench_function("injection_detector/malicious", |b| {
         b.to_async(tokio::runtime::Runtime::new().unwrap())
-            .iter(|| async { black_box(injection_detector.analyze(black_box(&malicious_ctx)).await) });
+            .iter(|| async {
+                black_box(injection_detector.analyze(black_box(&malicious_ctx)).await)
+            });
     });
 
     // Scan Detector
@@ -133,23 +140,23 @@ fn bench_detector_scalability(c: &mut Criterion) {
             BenchmarkId::from_parameter(concurrent_requests),
             concurrent_requests,
             |b, &concurrent| {
-                b.to_async(tokio::runtime::Runtime::new().unwrap()).iter(|| async {
-                    let registry = registry.clone();
-                    let mut handles = Vec::new();
-
-                    for _ in 0..concurrent {
+                b.to_async(tokio::runtime::Runtime::new().unwrap())
+                    .iter(|| async {
                         let registry = registry.clone();
-                        let ctx = create_normal_request();
-                        let handle = tokio::spawn(async move {
-                            registry.analyze_all(&ctx).await
-                        });
-                        handles.push(handle);
-                    }
+                        let mut handles = Vec::new();
 
-                    for handle in handles {
-                        let _ = handle.await;
-                    }
-                });
+                        for _ in 0..concurrent {
+                            let registry = registry.clone();
+                            let ctx = create_normal_request();
+                            let handle =
+                                tokio::spawn(async move { registry.analyze_all(&ctx).await });
+                            handles.push(handle);
+                        }
+
+                        for handle in handles {
+                            let _ = handle.await;
+                        }
+                    });
             },
         );
     }

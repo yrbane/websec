@@ -113,8 +113,7 @@ impl RetryPolicy {
                     if attempt > 1 {
                         info!(
                             operation = operation_name,
-                            attempt,
-                            "Operation succeeded after retry"
+                            attempt, "Operation succeeded after retry"
                         );
                     }
                     return Ok(result);
@@ -177,12 +176,7 @@ mod tests {
 
     #[test]
     fn test_delay_cap() {
-        let policy = RetryPolicy::new(
-            5,
-            Duration::from_secs(1),
-            Duration::from_secs(3),
-            2.0,
-        );
+        let policy = RetryPolicy::new(5, Duration::from_secs(1), Duration::from_secs(3), 2.0);
 
         // 1s, 2s, 4s (capped), 8s (capped)
         assert_eq!(policy.delay_for_attempt(1), Duration::from_secs(1));
@@ -213,12 +207,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_succeeds_after_failures() {
-        let policy = RetryPolicy::new(
-            3,
-            Duration::from_millis(10),
-            Duration::from_millis(50),
-            2.0,
-        );
+        let policy = RetryPolicy::new(3, Duration::from_millis(10), Duration::from_millis(50), 2.0);
         let counter = Arc::new(AtomicU32::new(0));
 
         let result = policy
@@ -242,12 +231,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_fails_after_max_attempts() {
-        let policy = RetryPolicy::new(
-            2,
-            Duration::from_millis(10),
-            Duration::from_millis(50),
-            2.0,
-        );
+        let policy = RetryPolicy::new(2, Duration::from_millis(10), Duration::from_millis(50), 2.0);
         let counter = Arc::new(AtomicU32::new(0));
 
         let result = policy

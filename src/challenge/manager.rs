@@ -239,7 +239,8 @@ impl ChallengeManager {
     ///
     /// Le challenge s'il existe, `None` sinon
     #[cfg(test)]
-    #[must_use] pub fn get_challenge(&self, ip: IpAddr) -> Option<Challenge> {
+    #[must_use]
+    pub fn get_challenge(&self, ip: IpAddr) -> Option<Challenge> {
         self.challenges.lock().ok()?.get(&ip).cloned()
     }
 }

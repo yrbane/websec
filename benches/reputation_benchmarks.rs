@@ -2,7 +2,7 @@
 //!
 //! Mesure les performances du scoring, decay, et décisions.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -40,14 +40,7 @@ fn bench_score_calculation(c: &mut Criterion) {
             BenchmarkId::from_parameter(signal_count),
             signal_count,
             |b, _| {
-                b.iter(|| {
-                    black_box(calculate_score(
-                        black_box(&profile),
-                        100,
-                        24.0,
-                        10,
-                    ))
-                });
+                b.iter(|| black_box(calculate_score(black_box(&profile), 100, 24.0, 10)));
             },
         );
     }
@@ -62,12 +55,7 @@ fn bench_decision_determination(c: &mut Criterion) {
 
     for score in scores {
         c.bench_function(&format!("determine_decision/score_{score}"), |b| {
-            b.iter(|| {
-                black_box(determine_decision(
-                    black_box(score),
-                    black_box(&thresholds),
-                ))
-            });
+            b.iter(|| black_box(determine_decision(black_box(score), black_box(&thresholds))));
         });
     }
 }
@@ -84,9 +72,7 @@ fn bench_decision_engine_e2e(c: &mut Criterion) {
         method: "GET".to_string(),
         path: "/api/users".to_string(),
         query: None,
-        headers: vec![
-            ("User-Agent".to_string(), "Mozilla/5.0".to_string()),
-        ],
+        headers: vec![("User-Agent".to_string(), "Mozilla/5.0".to_string())],
         body: None,
         user_agent: Some("Mozilla/5.0".to_string()),
         referer: None,
@@ -94,9 +80,10 @@ fn bench_decision_engine_e2e(c: &mut Criterion) {
     };
 
     c.bench_function("decision_engine/process_request", |b| {
-        b.to_async(tokio::runtime::Runtime::new().unwrap()).iter(|| async {
-            black_box(engine.process_request(black_box(&context)).await.unwrap())
-        });
+        b.to_async(tokio::runtime::Runtime::new().unwrap())
+            .iter(|| async {
+                black_box(engine.process_request(black_box(&context)).await.unwrap())
+            });
     });
 }
 
@@ -105,9 +92,8 @@ fn bench_repository_operations(c: &mut Criterion) {
     let ip = IpAddr::from_str("192.168.1.100").unwrap();
 
     c.bench_function("repository/get/miss", |b| {
-        b.to_async(tokio::runtime::Runtime::new().unwrap()).iter(|| async {
-            black_box(repository.get(black_box(&ip)).await.unwrap())
-        });
+        b.to_async(tokio::runtime::Runtime::new().unwrap())
+            .iter(|| async { black_box(repository.get(black_box(&ip)).await.unwrap()) });
     });
 
     // Pré-charger un profil
@@ -118,17 +104,17 @@ fn bench_repository_operations(c: &mut Criterion) {
     });
 
     c.bench_function("repository/get/hit", |b| {
-        b.to_async(tokio::runtime::Runtime::new().unwrap()).iter(|| async {
-            black_box(repository.get(black_box(&ip)).await.unwrap())
-        });
+        b.to_async(tokio::runtime::Runtime::new().unwrap())
+            .iter(|| async { black_box(repository.get(black_box(&ip)).await.unwrap()) });
     });
 
     c.bench_function("repository/save", |b| {
-        b.to_async(tokio::runtime::Runtime::new().unwrap()).iter(|| async {
-            let profile = create_profile_with_signals(50);
-            let _: () = repository.save(black_box(&profile)).await.unwrap();
-            black_box(())
-        });
+        b.to_async(tokio::runtime::Runtime::new().unwrap())
+            .iter(|| async {
+                let profile = create_profile_with_signals(50);
+                let _: () = repository.save(black_box(&profile)).await.unwrap();
+                black_box(())
+            });
     });
 }
 

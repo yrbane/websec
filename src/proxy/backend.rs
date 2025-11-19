@@ -74,7 +74,11 @@ impl BackendClient {
     #[must_use]
     pub fn new(backend_url: impl Into<String>) -> Self {
         let url = backend_url.into();
-        Self::with_policies(url.clone(), RetryPolicy::default(), CircuitBreakerConfig::default())
+        Self::with_policies(
+            url.clone(),
+            RetryPolicy::default(),
+            CircuitBreakerConfig::default(),
+        )
     }
 
     /// Crée un client backend avec retry et circuit breaker personnalisés
@@ -166,10 +170,7 @@ impl BackendClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn forward(
-        &self,
-        request: Request<Full<Bytes>>,
-    ) -> Result<Response<Incoming>> {
+    pub async fn forward(&self, request: Request<Full<Bytes>>) -> Result<Response<Incoming>> {
         // Construire l'URI complète en combinant backend_url + path original
         let path_and_query = request
             .uri()
@@ -222,10 +223,7 @@ impl BackendClient {
                             // Check if response indicates backend error (5xx)
                             if response.status().is_server_error() {
                                 cb.record_failure().await;
-                                Err(Error::Http(format!(
-                                    "Backend error: {}",
-                                    response.status()
-                                )))
+                                Err(Error::Http(format!("Backend error: {}", response.status())))
                             } else {
                                 cb.record_success().await;
                                 Ok(response)

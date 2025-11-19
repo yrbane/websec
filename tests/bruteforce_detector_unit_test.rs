@@ -140,11 +140,13 @@ async fn test_credential_stuffing_same_creds_different_ips() {
     let detector = BruteForceDetector::new();
 
     // Same credentials attempted from multiple IPs (credential stuffing attack)
-    let ips = ["192.168.1.10",
+    let ips = [
+        "192.168.1.10",
         "192.168.1.11",
         "192.168.1.12",
         "192.168.1.13",
-        "192.168.1.14"];
+        "192.168.1.14",
+    ];
     let username = "admin";
     let password = "password123";
 

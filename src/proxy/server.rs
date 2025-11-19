@@ -218,7 +218,10 @@ impl ProxyServer {
         let listener = TcpListener::bind(self.listen_addr).await?;
 
         tracing::info!("🚀 WebSec proxy server listening on {}", self.listen_addr);
-        tracing::info!("📊 Prometheus metrics available at http://{}/metrics", self.listen_addr);
+        tracing::info!(
+            "📊 Prometheus metrics available at http://{}/metrics",
+            self.listen_addr
+        );
         tracing::info!("✅ Server ready to accept connections");
 
         // Démarrer le serveur axum
