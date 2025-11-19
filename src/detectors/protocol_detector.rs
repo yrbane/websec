@@ -1,22 +1,22 @@
-//! HTTP protocol violation detection (RFC 7230/7231 compliance)
+//! Détection des violations de protocole HTTP (conformité RFC 7230/7231)
 //!
-//! Detects requests that violate HTTP/1.1 specifications including invalid methods,
-//! malformed paths, and missing required headers. Critical for preventing protocol-level
-//! attacks like HTTP request smuggling and CRLF injection.
+//! Détecte les requêtes qui violent les spécifications HTTP/1.1 incluant les méthodes invalides,
+//! les chemins malformés et les en-têtes requis manquants. Critique pour prévenir les attaques
+//! au niveau du protocole comme la contrebande de requêtes HTTP et l'injection CRLF.
 //!
-//! # Detection Techniques
+//! # Techniques de détection
 //!
-//! 1. **Method Validation**: RFC 7231 compliant method checking
-//! 2. **Path Validation**: Format, length, and character validation
-//! 3. **Header Validation**: Required headers per HTTP/1.1 spec
+//! 1. **Validation de méthode** : Vérification de conformité RFC 7231
+//! 2. **Validation de chemin** : Validation de format, longueur et caractères
+//! 3. **Validation d'en-têtes** : En-têtes requis selon spécification HTTP/1.1
 //!
-//! # Common Violations Detected
+//! # Violations courantes détectées
 //!
-//! - **Invalid methods**: Non-standard HTTP methods (HACK, EXPLOIT, etc.)
-//! - **Smuggling attempts**: Spaces in HTTP method (request smuggling)
-//! - **Path attacks**: Null bytes, CRLF injection, oversized paths (>8KB)
-//! - **Missing headers**: Host header required by HTTP/1.1 RFC 7230 §5.4
-//! - **Format errors**: Paths without leading slash
+//! - **Méthodes invalides** : Méthodes HTTP non standard (HACK, EXPLOIT, etc.)
+//! - **Tentatives de contrebande** : Espaces dans la méthode HTTP (contrebande de requête)
+//! - **Attaques de chemin** : Octets nuls, injection CRLF, chemins surdimensionnés (>8KB)
+//! - **En-têtes manquants** : En-tête Host requis par HTTP/1.1 RFC 7230 §5.4
+//! - **Erreurs de format** : Chemins sans slash initial
 //!
 //! # Example
 //!
