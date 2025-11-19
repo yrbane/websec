@@ -51,6 +51,10 @@ XssAttempt = 30                 # <script>, onerror, onload, javascript:
 PathTraversalAttempt = 30       # ../, ..\\, %2e%2e%2f
 RceAttempt = 50                 # Command injection: ;cat, backticks, $()
 
+# Geographic signals (Geo Detection)
+HighRiskCountry = 15            # Request from high-risk country (CN, RU, KP, IR, SY)
+ImpossibleTravel = 20           # Country changed within 1 hour for same IP
+
 [lists]
 # Blacklist: IPs to block immediately (score = 0, decision = BLOCK)
 # Takes highest priority - overrides whitelist and scoring
@@ -79,14 +83,17 @@ cache_size = 10000
 [geolocation]
 enabled = true
 
-# Path to GeoIP2 database
-database = "/usr/share/GeoIP/GeoLite2-City.mmdb"
+# Path to GeoIP2 database (MaxMind GeoLite2-Country.mmdb)
+# Download from: https://dev.maxmind.com/geoip/geolite2-free-geolocation-data
+database = "/usr/share/GeoIP/GeoLite2-Country.mmdb"
 
-# Geographic penalties (optional)
-[geolocation.penalties]
-RU = 15  # Russia
-CN = 15  # China  
-KP = 30  # North Korea
+# High-risk countries (ISO 3166-1 alpha-2 codes)
+# Requests from these countries generate HighRiskCountry signal (weight 15)
+risk_countries = ["CN", "RU", "KP", "IR", "SY"]
+
+# Impossible travel detection window (seconds)
+# If IP country changes within this window, generates ImpossibleTravel signal (weight 20)
+impossible_travel_window = 3600  # 1 hour
 
 [ratelimit]
 # Normal tier (score 80-100)

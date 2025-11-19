@@ -1,9 +1,82 @@
 //! Geographic threat detection
 //!
-//! Detects threats based on IP geolocation:
-//! - Requests from high-risk countries
-//! - Impossible travel (rapid geolocation changes)
-//! - Country-based reputation scoring
+//! Detects threats based on IP geolocation patterns.
+//!
+//! # Threat Families Detected
+//!
+//! - **High-Risk Countries**: Requests originating from countries with high attack frequency
+//! - **Impossible Travel**: Rapid geolocation changes indicating session hijacking or VPN hopping
+//!
+//! # Implementation Strategy
+//!
+//! This detector uses IP geolocation to identify geographic threat patterns:
+//!
+//! 1. **Country Risk Assessment**: Compares request IP country against configurable risk list
+//! 2. **Travel Velocity**: Tracks IP location history to detect impossible geographic jumps
+//! 3. **Exemption Rules**: Automatically exempts localhost and private IPs
+//!
+//! # Signals Generated
+//!
+//! - `HighRiskCountry` (weight 15): Request from configured risk country
+//! - `ImpossibleTravel` (weight 20): Country changed within 1 hour for same IP
+//!
+//! # Production Integration
+//!
+//! **Note**: Current implementation uses mock GeoIP lookup for testing.
+//! For production, replace `mock_geo_lookup()` with `maxminddb::Reader`:
+//!
+//! ```ignore
+//! use maxminddb::{Reader, geoip2};
+//!
+//! let reader = Reader::open_readfile("GeoLite2-Country.mmdb")?;
+//! let country: geoip2::Country = reader.lookup(ip)?;
+//! let country_code = country.country
+//!     .and_then(|c| c.iso_code)
+//!     .map(String::from);
+//! ```
+//!
+//! # Example Usage
+//!
+//! ```rust
+//! use websec::detectors::{GeoDetector, Detector, HttpRequestContext};
+//! use std::net::IpAddr;
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! // Create detector with default risk countries
+//! let detector = GeoDetector::new();
+//!
+//! // Or customize risk countries
+//! let custom_detector = GeoDetector::with_risk_countries(vec![
+//!     "CN".to_string(),
+//!     "RU".to_string(),
+//! ]);
+//!
+//! // Analyze request
+//! let context = HttpRequestContext {
+//!     ip: "1.2.3.4".parse()?,
+//!     method: "GET".to_string(),
+//!     path: "/".to_string(),
+//!     query: None,
+//!     headers: vec![],
+//!     body: None,
+//!     user_agent: Some("Mozilla/5.0".to_string()),
+//!     referer: None,
+//!     content_type: None,
+//! };
+//!
+//! let result = detector.analyze(&context).await;
+//! if result.suspicious {
+//!     println!("Geographic threat: {:?}", result.signals);
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Thread Safety
+//!
+//! - Uses `Arc<HashSet>` for shared risk country list
+//! - Uses `DashMap` for concurrent location history tracking
+//! - Clone-safe for use across multiple tasks
 
 use crate::detectors::{Detector, HttpRequestContext};
 use crate::reputation::{Signal, SignalVariant};
