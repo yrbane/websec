@@ -136,7 +136,6 @@ pub fn init_logging(format: LogFormat, log_level: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use once_cell::sync::Lazy;
     use std::sync::Mutex;
 
     // Ensure logging is only initialized once during tests
