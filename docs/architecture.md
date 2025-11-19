@@ -56,10 +56,11 @@ WebSec est un reverse proxy de sécurité construit en Rust utilisant le framewo
 **Rôle**: Point d'entrée HTTP, orchestrateur principal
 
 **Responsabilités**:
-- Binding TCP sur l'adresse configurée
+- Binding TCP sur une ou plusieurs adresses configurées (listeners HTTP/HTTPS)
 - Initialisation de tous les composants au démarrage
 - Routing des requêtes vers le middleware
 - Graceful shutdown sur SIGTERM/SIGINT
+- Gestion optionnelle du TLS (via `server.listeners.tls`)
 
 **Composants initialisés**:
 - `InMemoryRepository` (ou RedisRepository)
@@ -68,6 +69,7 @@ WebSec est un reverse proxy de sécurité construit en Rust utilisant le framewo
 - `BackendClient`
 - `ChallengeManager`
 - `MetricsRegistry`
+- `ListenerRuntime` (multi-port, TLS rustls)
 
 **Fichier**: `src/proxy/server.rs`
 

@@ -28,6 +28,7 @@
 //! ```
 
 use crate::challenge::ChallengeManager;
+use crate::config::settings::{ListenerConfig, ListenerTlsConfig, ServerConfig};
 use crate::config::Settings;
 use crate::detectors::DetectorRegistry;
 use crate::observability::logging::{init_logging, LogFormat};
@@ -38,6 +39,9 @@ use crate::reputation::decision::{DecisionEngine, DecisionEngineConfig};
 use crate::storage::InMemoryRepository;
 use crate::{Error, Result};
 use axum::{routing::get, Router};
+#[cfg(feature = "tls")]
+use axum_server::tls_rustls::RustlsConfig;
+use futures::future::try_join_all;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -52,13 +56,25 @@ use tokio::net::TcpListener;
 /// - `ChallengeManager` (CAPTCHA)
 /// - `MetricsRegistry` (Prometheus)
 pub struct ProxyServer {
-    /// Adresse d'écoute
-    listen_addr: SocketAddr,
-    /// Application axum configurée
-    app: Router,
+    listeners: Vec<ListenerRuntime>,
+    info: Vec<ListenerInfo>,
+}
+
+/// Informations publiques sur un listener (utilisé pour l'affichage CLI)
+#[derive(Clone, Debug)]
+pub struct ListenerInfo {
+    pub addr: SocketAddr,
+    pub tls: bool,
+    pub backend: String,
 }
 
 impl ProxyServer {
+    /// Informations sur les listeners configurés
+    #[must_use]
+    pub fn listener_infos(&self) -> &[ListenerInfo] {
+        &self.info
+    }
+
     /// Crée un nouveau serveur proxy depuis la configuration
     ///
     /// Initialise tous les composants :
@@ -152,39 +168,58 @@ impl ProxyServer {
 
         tracing::info!("DecisionEngine initialized");
 
-        // 6. Créer le BackendClient
-        let backend_client = Arc::new(BackendClient::new(&settings.server.backend));
-        tracing::info!("BackendClient initialized: {}", settings.server.backend);
-
-        // 7. Créer le ChallengeManager (timeout 5 minutes)
+        // 6. Challenge manager et métriques
         let challenge_manager = Arc::new(ChallengeManager::new(Duration::from_secs(300)));
         tracing::info!("ChallengeManager initialized");
 
-        // 8. Créer le registry de métriques
         let metrics = Arc::new(MetricsRegistry::new());
         tracing::info!("MetricsRegistry initialized");
 
-        // 9. Créer l'état partagé du proxy
-        let proxy_state = Arc::new(ProxyState::new(
-            decision_engine,
-            backend_client,
-            challenge_manager,
-            metrics,
-        ));
+        let effective_listeners = resolve_listeners(&settings.server)?;
+        if effective_listeners.is_empty() {
+            return Err(Error::Config(
+                "Aucun listener configuré (définissez server.listen ou server.listeners)"
+                    .to_string(),
+            ));
+        }
 
-        // 10. Construire l'application axum avec le middleware et l'endpoint metrics
-        let app = Router::new()
-            .route("/metrics", get(metrics_handler))
-            .fallback(proxy_handler)
-            .with_state(proxy_state);
+        let mut runtimes = Vec::new();
+        let mut info = Vec::new();
 
-        // 11. Parser l'adresse d'écoute
-        let listen_addr = SocketAddr::from_str(&settings.server.listen)
-            .map_err(|e| Error::Config(format!("Invalid listen address: {e}")))?;
+        for listener in effective_listeners {
+            tracing::info!(
+                "Listener configured on {} -> {}{}",
+                listener.addr,
+                listener.backend,
+                if listener.tls.is_some() { " (TLS)" } else { "" }
+            );
 
-        tracing::info!("Proxy server configured on {}", listen_addr);
+            let backend_client = Arc::new(BackendClient::new(&listener.backend));
+            let proxy_state = Arc::new(ProxyState::new(
+                decision_engine.clone(),
+                backend_client,
+                challenge_manager.clone(),
+                metrics.clone(),
+            ));
+            let app = build_router(proxy_state);
 
-        Ok(Self { listen_addr, app })
+            info.push(ListenerInfo {
+                addr: listener.addr,
+                tls: listener.tls.is_some(),
+                backend: listener.backend.clone(),
+            });
+
+            runtimes.push(ListenerRuntime {
+                addr: listener.addr,
+                app,
+                tls: listener.tls.clone(),
+            });
+        }
+
+        Ok(Self {
+            listeners: runtimes,
+            info,
+        })
     }
 
     /// Démarre le serveur proxy
@@ -215,45 +250,111 @@ impl ProxyServer {
     /// # }
     /// ```
     pub async fn run(self) -> Result<()> {
-        let listener = TcpListener::bind(self.listen_addr).await.map_err(|e| {
-            // Amélioration du message d'erreur pour les conflits de port
-            if e.kind() == std::io::ErrorKind::AddrInUse {
-                let port = self.listen_addr.port();
-                let detailed_msg = crate::utils::port_checker::format_port_conflict_error(
-                    port,
-                    &self.listen_addr.to_string(),
-                );
-                Error::Io(std::io::Error::new(
-                    std::io::ErrorKind::AddrInUse,
-                    detailed_msg,
-                ))
-            } else {
-                Error::Io(e)
-            }
-        })?;
-
-        tracing::info!("🚀 WebSec proxy server listening on {}", self.listen_addr);
-        tracing::info!(
-            "📊 Prometheus metrics available at http://{}/metrics",
-            self.listen_addr
-        );
-        tracing::info!("✅ Server ready to accept connections");
-
-        // Démarrer le serveur axum
-        axum::serve(
-            listener,
-            self.app.into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .await
-        .map_err(|e| Error::Http(format!("Server error: {e}")))?;
-
+        try_join_all(self.listeners.into_iter().map(|listener| listener.run())).await?;
         Ok(())
     }
+}
 
-    /// Récupère l'adresse d'écoute
-    #[must_use]
-    pub fn listen_addr(&self) -> SocketAddr {
-        self.listen_addr
+struct ListenerRuntime {
+    addr: SocketAddr,
+    app: Router,
+    tls: Option<ListenerTlsConfig>,
+}
+
+impl ListenerRuntime {
+    async fn run(self) -> Result<()> {
+        if let Some(tls_conf) = self.tls {
+            run_tls_listener(self.addr, self.app, tls_conf).await
+        } else {
+            run_http_listener(self.addr, self.app).await
+        }
+    }
+}
+
+struct EffectiveListener {
+    addr: SocketAddr,
+    backend: String,
+    tls: Option<ListenerTlsConfig>,
+}
+
+fn build_router(state: Arc<ProxyState>) -> Router {
+    Router::new()
+        .route("/metrics", get(metrics_handler))
+        .fallback(proxy_handler)
+        .with_state(state)
+}
+
+fn resolve_listeners(server_cfg: &ServerConfig) -> Result<Vec<EffectiveListener>> {
+    if server_cfg.listeners.is_empty() {
+        let addr = SocketAddr::from_str(&server_cfg.listen)
+            .map_err(|e| Error::Config(format!("Invalid listen address: {e}")))?;
+        return Ok(vec![EffectiveListener {
+            addr,
+            backend: server_cfg.backend.clone(),
+            tls: None,
+        }]);
+    }
+
+    server_cfg
+        .listeners
+        .iter()
+        .map(|listener| {
+            let addr = SocketAddr::from_str(&listener.listen)
+                .map_err(|e| Error::Config(format!("Invalid listen address: {e}")))?;
+            Ok(EffectiveListener {
+                addr,
+                backend: listener.backend.clone(),
+                tls: listener.tls.clone(),
+            })
+        })
+        .collect()
+}
+
+async fn run_http_listener(addr: SocketAddr, app: Router) -> Result<()> {
+    let listener = TcpListener::bind(addr)
+        .await
+        .map_err(|e| map_bind_error(e, addr))?;
+    tracing::info!("🚀 HTTP listener ready on {}", addr);
+    tracing::info!(
+        "📊 Prometheus metrics available at http://{addr}/metrics",
+        addr = addr
+    );
+
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .map_err(|e| Error::Http(format!("Server error on {addr}: {e}")))
+}
+
+#[cfg(feature = "tls")]
+async fn run_tls_listener(addr: SocketAddr, app: Router, tls: ListenerTlsConfig) -> Result<()> {
+    let config = RustlsConfig::from_pem_file(tls.cert_file, tls.key_file)
+        .await
+        .map_err(|e| Error::Config(format!("Failed to load TLS config: {e}")))?;
+
+    tracing::info!("🔒 HTTPS listener ready on {}", addr);
+    axum_server::bind_rustls(addr, config)
+        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
+        .await
+        .map_err(|e| Error::Http(format!("TLS server error on {addr}: {e}")))
+}
+
+#[cfg(not(feature = "tls"))]
+async fn run_tls_listener(_addr: SocketAddr, _app: Router, _tls: ListenerTlsConfig) -> Result<()> {
+    Err(Error::Config(
+        "Listener TLS configuré mais la fonctionnalité 'tls' n'est pas activée".to_string(),
+    ))
+}
+
+fn map_bind_error(error: io::Error, addr: SocketAddr) -> Error {
+    if error.kind() == io::ErrorKind::AddrInUse {
+        let detailed_msg =
+            crate::utils::port_checker::format_port_conflict_error(addr.port(), &addr.to_string());
+        Error::Io(io::Error::new(io::ErrorKind::AddrInUse, detailed_msg))
+    } else {
+        Error::Io(error)
     }
 }
 
@@ -271,6 +372,7 @@ mod tests {
                 listen: "127.0.0.1:18080".to_string(), // Port de test différent
                 backend: "http://127.0.0.1:13000".to_string(),
                 workers: 4,
+                listeners: Vec::new(),
             },
             reputation: ReputationConfig {
                 base_score: 100,
@@ -316,7 +418,10 @@ mod tests {
         let settings = create_test_settings();
         let server = ProxyServer::new(&settings).unwrap();
 
-        assert_eq!(server.listen_addr().to_string(), "127.0.0.1:18080");
+        let infos = server.listener_infos();
+        assert_eq!(infos.len(), 1);
+        assert_eq!(infos[0].addr.to_string(), "127.0.0.1:18080");
+        assert!(!infos[0].tls);
     }
 
     #[test]
@@ -326,6 +431,26 @@ mod tests {
 
         let result = ProxyServer::new(&settings);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_multiple_listeners_configuration() {
+        let mut settings = create_test_settings();
+        settings.server.listeners = vec![
+            ListenerConfig {
+                listen: "127.0.0.1:18080".to_string(),
+                backend: "http://127.0.0.1:13000".to_string(),
+                tls: None,
+            },
+            ListenerConfig {
+                listen: "127.0.0.1:18443".to_string(),
+                backend: "http://127.0.0.1:13001".to_string(),
+                tls: None,
+            },
+        ];
+
+        let server = ProxyServer::new(&settings).unwrap();
+        assert_eq!(server.listener_infos().len(), 2);
     }
 
     // Note: Les tests end-to-end avec vraies requêtes HTTP seront dans

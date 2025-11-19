@@ -11,6 +11,20 @@ backend = "http://127.0.0.1:3000"
 # Number of worker threads (default: CPU cores)
 workers = 4
 
+# Optionnel : définir plusieurs listeners (HTTP / HTTPS)
+# Quand ce bloc est présent, la configuration ci-dessus sert de valeur par défaut.
+# Exemple :
+# [[server.listeners]]
+# listen = "0.0.0.0:80"
+# backend = "http://127.0.0.1:8081"
+#
+# [[server.listeners]]
+# listen = "0.0.0.0:443"
+# backend = "http://127.0.0.1:8443"
+# [server.listeners.tls]
+# cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
+# key_file = "/etc/letsencrypt/live/example.com/privkey.pem"
+
 [reputation]
 # Base score for new IPs (0-100, where 100 is excellent)
 base_score = 100

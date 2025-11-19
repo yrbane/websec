@@ -53,8 +53,14 @@ pub async fn run_server(config_path: &Path, dry_run: bool) -> Result<()> {
     let server = crate::proxy::server::ProxyServer::new(&settings)?;
 
     println!("✅ WebSec initialized successfully");
-    println!("📍 Listening on: {}", server.listen_addr());
-    println!("🎯 Backend target: {}", settings.server.backend);
+    let listeners = server.listener_infos().to_vec();
+    for info in &listeners {
+        let mode = if info.tls { "HTTPS" } else { "HTTP" };
+        println!("📍 Listener {mode}: {} -> {}", info.addr, info.backend);
+    }
+    if listeners.is_empty() {
+        println!("⚠️  Aucun listener actif");
+    }
     println!();
     println!("Press Ctrl+C to stop");
     println!();
@@ -99,6 +105,13 @@ pub fn show_config(config_path: &Path) -> Result<()> {
     println!("  Listen: {}", settings.server.listen);
     println!("  Backend: {}", settings.server.backend);
     println!("  Workers: {}", settings.server.workers);
+    if !settings.server.listeners.is_empty() {
+        println!("  Listeners:");
+        for listener in &settings.server.listeners {
+            let tls = if listener.tls.is_some() { " (TLS)" } else { "" };
+            println!("    - {} -> {}{}", listener.listen, listener.backend, tls);
+        }
+    }
 
     println!("\n🎯 Reputation:");
     println!("  Base score: {}", settings.reputation.base_score);

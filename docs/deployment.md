@@ -199,6 +199,48 @@ docker rm websec-proxy
 - ✅ Intégration système native
 - ✅ Contrôle total
 
+### Intégrer WebSec devant Apache (HTTP + HTTPS)
+
+1. **Préparez Apache** : assurez-vous que les VirtualHosts ":80"/":443" sont opérationnels.
+2. **Lancez l’assistant** :
+
+   ```bash
+   sudo websec setup --config /opt/websec/config/websec.toml
+   ```
+
+   L’outil détecte les VirtualHosts, propose ceux à migrer, met à jour `ports.conf` (ex. 80→8081, 443→8443) et ajoute les entrées `server.listeners` correspondantes.
+
+3. **Configurez TLS** : pour chaque listener HTTPS, renseignez les chemins `cert_file`/`key_file` dans `websec.toml` (Let’s Encrypt ou certificat interne).
+
+4. **Redémarrez Apache** puis lancez WebSec (binaire compilé avec `--features tls` pour capturer 443).
+
+### Exemple de configuration multi-listeners
+
+```toml
+[server]
+listen = "0.0.0.0:80"                # valeur de repli
+backend = "http://127.0.0.1:8081"
+workers = 4
+
+[[server.listeners]]                 # Listener HTTP public
+listen = "0.0.0.0:80"
+backend = "http://127.0.0.1:8081"
+
+[[server.listeners]]                 # Listener HTTPS public
+listen = "0.0.0.0:443"
+backend = "http://127.0.0.1:8443"
+[server.listeners.tls]
+cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
+key_file  = "/etc/letsencrypt/live/example.com/privkey.pem"
+```
+
+Compilez ensuite :
+
+```bash
+cargo build --release --features tls
+sudo ./target/release/websec run --config /opt/websec/config/websec.toml
+```
+
 ### Installation
 
 ```bash

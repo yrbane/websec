@@ -13,6 +13,16 @@ WebSec utilise le format TOML pour sa configuration. Le fichier par défaut est 
 listen = "0.0.0.0:8080"           # Obligatoire
 backend = "http://127.0.0.1:3000" # Obligatoire
 workers = 4                        # Optionnel, défaut: 4
+[[server.listeners]]               # Optionnel : listeners explicites
+listen = "0.0.0.0:80"
+backend = "http://127.0.0.1:8081"
+
+[[server.listeners]]
+listen = "0.0.0.0:443"
+backend = "http://127.0.0.1:8443"
+[server.listeners.tls]
+cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
+key_file  = "/etc/letsencrypt/live/example.com/privkey.pem"
 ```
 
 #### `listen`
@@ -38,6 +48,26 @@ workers = 4                        # Optionnel, défaut: 4
 - **Défaut**: 4
 - **Recommandation**: Nombre de CPU cores
 - **Min**: 1, **Max**: 256
+
+#### `[[server.listeners]]`
+- **Type**: tableau d'objets
+- **Description**: Permet de déclarer plusieurs listeners indépendants (HTTP ou HTTPS). Si ce tableau est vide, WebSec n'utilise que `server.listen`/`server.backend`.
+- **Champs** :
+  - `listen` : adresse d'écoute (`IP:PORT`)
+  - `backend` : URL du backend cible spécifique à ce listener
+  - `tls` : bloc optionnel (voir ci-dessous)
+- **Exemples d'usage** :
+  - Écouter sur `80` et `443` tout en relayant vers deux ports Apache différents.
+  - Terminer plusieurs certificats TLS (un bloc `[[server.listeners]]` par certificat).
+
+#### `[server.listeners.tls]`
+- **Disponibilité**: nécessite la compilation avec `--features tls`.
+- **Champs** :
+  - `cert_file` : chemin vers le certificat (PEM, chaîne complète)
+  - `key_file` : clé privée PEM correspondante
+- **Comportement** : si défini, WebSec démarre un listener HTTPS avec Rustls sur l’adresse spécifiée. Le backend peut rester en HTTP (terminaison TLS côté WebSec) ou HTTPS.
+
+> ℹ️ Lorsque `server.listeners` est présent, l’assistant `websec setup` (Apache) mettra à jour automatiquement la première entrée HTTP. Les listeners HTTPS restent à configurer manuellement (certificat + backend correspondant).
 
 ---
 

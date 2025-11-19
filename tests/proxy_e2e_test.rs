@@ -55,6 +55,7 @@ fn create_test_settings(proxy_port: u16, backend_port: u16) -> Settings {
             listen: format!("127.0.0.1:{proxy_port}"),
             backend: format!("http://127.0.0.1:{backend_port}"),
             workers: 2,
+            listeners: Vec::new(),
         },
         reputation: ReputationConfig {
             base_score: 100,

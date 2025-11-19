@@ -74,11 +74,7 @@ fn try_lsof(port: u16) -> Option<PortUser> {
             // Essayer d'obtenir la commande complète
             let command = get_process_command(&pid);
 
-            return Some(PortUser {
-                pid,
-                name,
-                command,
-            });
+            return Some(PortUser { pid, name, command });
         }
     }
 
@@ -87,10 +83,7 @@ fn try_lsof(port: u16) -> Option<PortUser> {
 
 /// Essaye d'utiliser ss pour trouver le processus (Linux)
 fn try_ss(port: u16) -> Option<PortUser> {
-    let output = Command::new("ss")
-        .arg("-tulpn")
-        .output()
-        .ok()?;
+    let output = Command::new("ss").arg("-tulpn").output().ok()?;
 
     if !output.status.success() {
         return None;
@@ -115,11 +108,7 @@ fn try_ss(port: u16) -> Option<PortUser> {
                                 let pid = pid_part[..pid_end].to_string();
                                 let command = get_process_command(&pid);
 
-                                return Some(PortUser {
-                                    pid,
-                                    name,
-                                    command,
-                                });
+                                return Some(PortUser { pid, name, command });
                             }
                         }
                     }
@@ -153,9 +142,7 @@ fn get_process_command(pid: &str) -> Option<String> {
         .ok()?;
 
     if output.status.success() {
-        let command = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .to_string();
+        let command = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !command.is_empty() {
             return Some(command);
         }
@@ -199,12 +186,16 @@ pub fn format_port_conflict_error(port: u16, addr: &str) -> String {
 
         message.push_str(&format!("\n💡 To fix this issue:\n"));
         message.push_str(&format!("   • Stop the process: sudo kill {}\n", user.pid));
-        message.push_str(&format!("   • Or choose a different port in config/websec.toml\n"));
+        message.push_str(&format!(
+            "   • Or choose a different port in config/websec.toml\n"
+        ));
     } else {
         message.push_str(&format!("\n💡 To find what's using port {port}, try:\n"));
         message.push_str(&format!("   • Linux/Mac: sudo lsof -i :{port}\n"));
         message.push_str(&format!("   • Linux: sudo ss -tulpn | grep :{port}\n"));
-        message.push_str(&format!("   • Or choose a different port in config/websec.toml\n"));
+        message.push_str(&format!(
+            "   • Or choose a different port in config/websec.toml\n"
+        ));
     }
 
     message

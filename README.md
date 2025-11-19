@@ -197,6 +197,44 @@ format = "json"
 
 Pour une configuration complète avec tous les paramètres, voir [`config/websec.toml.example`](config/websec.toml.example).
 
+### Intercepter HTTP **et** HTTPS
+
+WebSec peut écouter sur plusieurs ports dans un seul binaire (ex : 80 + 443). Déclarez simplement plusieurs `[[server.listeners]]` :
+
+```toml
+[server]
+listen = "0.0.0.0:80"          # Valeur par défaut (fallback)
+backend = "http://127.0.0.1:8081"
+
+[[server.listeners]]            # Listener HTTP
+listen = "0.0.0.0:80"
+backend = "http://127.0.0.1:8081"
+
+[[server.listeners]]            # Listener HTTPS
+listen = "0.0.0.0:443"
+backend = "http://127.0.0.1:8443"
+[server.listeners.tls]
+cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
+key_file  = "/etc/letsencrypt/live/example.com/privkey.pem"
+```
+
+- HTTP et HTTPS partagent le même moteur de réputation et les mêmes métriques.
+- Compilez WebSec avec la feature `tls` pour activer l’écoute 443 : `cargo build --release --features tls`.
+- Rien n’empêche de définir plusieurs listeners HTTPS (certificats différents) ou de pointer chaque port vers un backend distinct.
+
+### Assistant `websec setup` (Apache)
+
+Pour placer automatiquement WebSec devant Apache :
+
+```bash
+sudo websec setup --config config/websec.toml
+```
+
+L’assistant détecte les VirtualHosts (`/etc/apache2/sites-enabled`), propose ceux à migrer, déplace les ports (80 → 8081, 443 → 8443), met à jour `ports.conf` et ajuste `config/websec.toml` (section `server.listeners`). Des sauvegardes horodatées sont créées pour chaque fichier modifié. Après exécution :
+
+1. Redémarrez Apache (`sudo systemctl restart apache2`).
+2. Lancez WebSec (`websec run` ou service systemd) – il écoutera directement sur 80/443 et relayra vers les ports internes.
+
 ## 🎮 Utilisation
 
 ### Démarrage Basique

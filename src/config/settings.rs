@@ -34,6 +34,30 @@ pub struct ServerConfig {
     /// Number of worker threads (defaults to CPU cores)
     #[serde(default = "default_workers")]
     pub workers: usize,
+    /// Optional list of explicit listeners (HTTP/HTTPS)
+    #[serde(default)]
+    pub listeners: Vec<ListenerConfig>,
+}
+
+/// Individual listener configuration (port/backend/TLS)
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ListenerConfig {
+    /// Address to bind (e.g., 0.0.0.0:80)
+    pub listen: String,
+    /// Backend URL for this listener
+    pub backend: String,
+    /// TLS configuration (if HTTPS)
+    #[serde(default)]
+    pub tls: Option<ListenerTlsConfig>,
+}
+
+/// TLS certificate/key configuration for HTTPS listeners
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ListenerTlsConfig {
+    /// Path to PEM-encoded certificate chain
+    pub cert_file: String,
+    /// Path to private key (PEM)
+    pub key_file: String,
 }
 
 /// Reputation scoring parameters

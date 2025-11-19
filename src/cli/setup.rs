@@ -13,6 +13,7 @@
 //! current repository the command is implemented but not executed.
 
 use crate::config::load_from_file;
+use crate::config::settings::ListenerConfig;
 use crate::{Error, Result};
 use chrono::Utc;
 use regex::Regex;
@@ -565,6 +566,11 @@ fn update_websec_config(config_path: &Path, backend_port: Option<u16>) -> Result
     let old_listen = settings.server.listen.clone();
     settings.server.listen = "0.0.0.0:80".to_string();
     settings.server.backend = format!("http://127.0.0.1:{port}");
+    settings.server.listeners = vec![ListenerConfig {
+        listen: settings.server.listen.clone(),
+        backend: settings.server.backend.clone(),
+        tls: None,
+    }];
 
     let backup_path = backup_file(config_path)?;
     println!(
@@ -710,6 +716,12 @@ Listen 8080
         let new_settings = load_from_file(&cfg_path).expect("updated config should be valid");
         assert_eq!(new_settings.server.listen, "0.0.0.0:80");
         assert_eq!(new_settings.server.backend, "http://127.0.0.1:8081");
+        assert_eq!(new_settings.server.listeners.len(), 1);
+        assert_eq!(new_settings.server.listeners[0].listen, "0.0.0.0:80");
+        assert_eq!(
+            new_settings.server.listeners[0].backend,
+            "http://127.0.0.1:8081"
+        );
 
         let backups = list_backups(cfg_path.parent().unwrap(), "websec.toml.websec.bak");
         assert_eq!(backups.len(), 1);
@@ -725,5 +737,6 @@ Listen 8080
         let settings = load_from_file(&cfg_path).unwrap();
         assert_eq!(settings.server.listen, "0.0.0.0:8080");
         assert_eq!(settings.server.backend, "http://127.0.0.1:3000");
+        assert!(settings.server.listeners.is_empty());
     }
 }
