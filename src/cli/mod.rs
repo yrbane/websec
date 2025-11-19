@@ -7,6 +7,12 @@
 //! - Live statistics monitoring
 
 pub mod commands;
+/// Docker helper commands (build/test)
+pub mod docker;
+/// E2E test harness and dev backend server
+pub mod e2e;
+/// Blacklist/whitelist management helpers
+pub mod lists;
 pub mod setup;
 
 pub use commands::{check_storage, run_server, show_config, show_stats};

@@ -22,7 +22,6 @@ docs/
 
 # Tests
 tests/
-scripts/
 
 # Docker
 Dockerfile

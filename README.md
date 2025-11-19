@@ -117,8 +117,8 @@ cargo install websec
 #### Build rapide
 
 ```bash
-# Construire l'image avec le script optimisé
-./scripts/docker-build.sh
+# Construire l'image optimisée (BuildKit auto)
+websec docker build
 
 # Lancer le conteneur standalone
 docker run -d \
@@ -133,25 +133,16 @@ docker run -d \
 #### Stack complet avec docker-compose
 
 ```bash
-# Démarre WebSec + Backend de test + Redis + Prometheus
-docker-compose up -d
+# Démarre WebSec + Backend de test + Redis + Prometheus, exécute les tests
+websec docker test
 
-# Tester le stack complet (5 tests E2E)
-./scripts/docker-test.sh
-
-# Accès aux services
-# - WebSec:     http://localhost:8080
-# - Metrics:    http://localhost:8080/metrics
-# - Backend:    http://localhost:3000
-# - Prometheus: http://localhost:9091
-
-# Arrêter le stack
-docker-compose down
+# Garder le stack en fonctionnement pour inspection
+websec docker test --keep-up
 ```
 
 Le stack docker-compose inclut :
 - **websec-proxy** : Le reverse proxy WebSec (ports 8080, 9090)
-- **websec-backend** : Backend HTTP de test Python
+- **websec-backend** : Backend HTTP de test (basé sur `websec dev-backend`)
 - **websec-redis** : Redis pour storage distribué (port 6379)
 - **websec-prometheus** : Monitoring Prometheus préconfiguré (port 9091)
 
@@ -338,6 +329,18 @@ websec check-storage
 # Statistiques live (auto-refresh 5s)
 websec stats
 websec stats --url http://localhost:8080/metrics --interval 10
+
+# Docker helper
+websec docker build
+websec docker test --keep-up
+
+# Gestionnaire de listes
+websec lists blacklist add 192.168.1.100
+websec lists stats
+
+# Backend et tests intégrés
+websec dev-backend --port 3000
+websec e2e --backend-port 3000 --proxy-port 8080
 ```
 
 **Fonctionnalités CLI** :
@@ -348,27 +351,27 @@ websec stats --url http://localhost:8080/metrics --interval 10
 
 ### Gestionnaire de Listes (Blacklist/Whitelist)
 
-Script Bash pour gérer les listes d'IPs sans redémarrage :
+La CLI gère directement les listes :
 
 ```bash
 # Blacklist
-./scripts/websec-lists.sh blacklist add 192.168.1.100
-./scripts/websec-lists.sh blacklist add 10.0.0.0/8      # Support CIDR
-./scripts/websec-lists.sh blacklist remove 192.168.1.100
-./scripts/websec-lists.sh blacklist list
-./scripts/websec-lists.sh blacklist clear
+websec lists blacklist add 192.168.1.100
+websec lists blacklist add 10.0.0.0/8      # Support CIDR
+websec lists blacklist remove 192.168.1.100
+websec lists blacklist list
+websec lists blacklist clear
 
 # Whitelist
-./scripts/websec-lists.sh whitelist add 203.0.113.50
-./scripts/websec-lists.sh whitelist add 172.16.0.0/12   # Support CIDR
-./scripts/websec-lists.sh whitelist remove 203.0.113.50
-./scripts/websec-lists.sh whitelist list
+websec lists whitelist add 203.0.113.50
+websec lists whitelist add 172.16.0.0/12   # Support CIDR
+websec lists whitelist remove 203.0.113.50
+websec lists whitelist list
 
 # Utilitaires
-./scripts/websec-lists.sh check 192.168.1.100           # Vérifier une IP
-./scripts/websec-lists.sh stats                          # Statistiques
-./scripts/websec-lists.sh export json > lists.json       # Export JSON/CSV
-./scripts/websec-lists.sh import lists.json              # Import
+websec lists check 192.168.1.100           # Vérifier une IP
+websec lists stats                          # Statistiques
+websec lists export json > lists.json       # Export JSON/CSV
+websec lists import lists.json              # Import
 ```
 
 **Fonctionnalités** :
@@ -377,8 +380,6 @@ Script Bash pour gérer les listes d'IPs sans redémarrage :
 - ✅ Export/Import (JSON, CSV)
 - ✅ Statistiques en temps réel
 - ✅ Code couleur pour lisibilité
-
-Voir [`scripts/README.md`](scripts/README.md) pour la documentation complète.
 
 ### CLI d'Administration (Future)
 
@@ -506,8 +507,8 @@ cargo test --lib
 # Tests d'intégration
 cargo test --test '*'
 
-# Tests E2E avec backend réel
-./scripts/e2e-test.sh
+# Tests E2E avec backend intégré
+websec e2e --backend-port 3000 --proxy-port 8080
 
 # Tests avec couverture
 cargo tarpaulin --out Html
@@ -518,23 +519,20 @@ cargo bench
 
 ### Suite de Tests E2E
 
-Script automatisé complet avec backend HTTP Python :
+Disponible directement via la CLI :
 
 ```bash
-./scripts/e2e-test.sh
+websec e2e --backend-port 3000 --proxy-port 8080
 ```
 
-**Tests exécutés** :
-- ✅ Proxy forwarding basique
-- ✅ Endpoint `/metrics` Prometheus
-- ✅ Headers WebSec personnalisés
-- ✅ Requêtes GET et POST
-- ⚡ Test de charge optionnel (100 req, 10 concurrent)
-
-**Stack de test** :
-- Backend Python sur port 3000 (6 endpoints)
-- WebSec proxy sur port 8080
-- Logs dans `/tmp/websec.log` et `/tmp/backend.log`
+- Un backend HTTP minimal (écrit en Rust) est lancé automatiquement.
+- WebSec est démarré en mémoire et soumis aux tests suivants :
+  - Proxy forwarding basique (`GET /`)
+  - Endpoint `/metrics`
+  - API JSON (`/api/users`)
+  - POST `/api/echo`
+  - Présence des en-têtes `X-WebSec-*`
+- Les métriques finales sont affichées à la fin du test.
 
 ### CI/CD Automatisé
 
@@ -669,7 +667,7 @@ git push origin feature/ma-fonctionnalite
 
 ### Version 0.2.0 - ✅ **100% Complété**
 - [x] **Endpoint `/metrics` Prometheus** : Métriques exportées pour scraping
-- [x] **Tests E2E** : Suite complète avec backend Python de test
+- [x] **Tests E2E** : Suite complète avec backend Rust intégré
 - [x] **Docker** : Multi-stage Dockerfile + docker-compose stack complet
 - [x] **CI/CD** : GitHub Actions (lint, test, build, release multi-plateforme)
 - [x] **Dashboard Web** : Interface monitoring temps réel

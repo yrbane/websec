@@ -148,7 +148,7 @@ docker exec websec-redis redis-cli ping
 # Doit retourner: PONG
 
 # 2. Construire l'image WebSec
-./scripts/docker-build.sh
+websec docker build
 
 # 3. Démarrer WebSec
 docker run -d \
@@ -185,7 +185,7 @@ docker rm websec-proxy
 
 # Mise à jour
 git pull
-./scripts/docker-build.sh
+websec docker build
 docker stop websec-proxy
 docker rm websec-proxy
 # Relancer avec la nouvelle image
@@ -960,7 +960,7 @@ sudo nano /etc/logrotate.d/websec
 ```bash
 cd websec
 git pull
-./scripts/docker-build.sh
+websec docker build
 docker stop websec-proxy
 docker rm websec-proxy
 # Relancer avec docker run...
