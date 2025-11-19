@@ -11,5 +11,5 @@ pub mod middleware;
 pub mod server;
 
 pub use backend::BackendClient;
-pub use middleware::{proxy_handler, ProxyState};
+pub use middleware::{metrics_handler, proxy_handler, ProxyState};
 pub use server::ProxyServer;

@@ -33,11 +33,11 @@ use crate::detectors::DetectorRegistry;
 use crate::observability::logging::{init_logging, LogFormat};
 use crate::observability::metrics::MetricsRegistry;
 use crate::proxy::backend::BackendClient;
-use crate::proxy::middleware::{proxy_handler, ProxyState};
+use crate::proxy::middleware::{metrics_handler, proxy_handler, ProxyState};
 use crate::reputation::decision::{DecisionEngine, DecisionEngineConfig};
 use crate::storage::InMemoryRepository;
 use crate::{Error, Result};
-use axum::Router;
+use axum::{routing::get, Router};
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -172,8 +172,9 @@ impl ProxyServer {
             metrics,
         ));
 
-        // 10. Construire l'application axum avec le middleware
+        // 10. Construire l'application axum avec le middleware et l'endpoint metrics
         let app = Router::new()
+            .route("/metrics", get(metrics_handler))
             .fallback(proxy_handler)
             .with_state(proxy_state);
 
@@ -217,7 +218,7 @@ impl ProxyServer {
         let listener = TcpListener::bind(self.listen_addr).await?;
 
         tracing::info!("🚀 WebSec proxy server listening on {}", self.listen_addr);
-        tracing::info!("📊 Prometheus metrics available (call MetricsRegistry::export_prometheus())");
+        tracing::info!("📊 Prometheus metrics available at http://{}/metrics", self.listen_addr);
         tracing::info!("✅ Server ready to accept connections");
 
         // Démarrer le serveur axum

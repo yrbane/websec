@@ -229,3 +229,49 @@ async fn test_proxy_extracts_client_ip() {
     proxy_handle.abort();
     backend_handle.abort();
 }
+
+#[tokio::test]
+async fn test_metrics_endpoint() {
+    // 1. Démarrer le backend sur port 13005
+    let backend_handle = start_test_backend(13005).await;
+    sleep(Duration::from_millis(100)).await;
+
+    // 2. Démarrer le proxy sur port 18005
+    let settings = create_test_settings(18005, 13005);
+    let proxy = ProxyServer::new(&settings).unwrap();
+
+    let proxy_handle = tokio::spawn(async move {
+        proxy.run().await.unwrap();
+    });
+
+    sleep(Duration::from_millis(200)).await;
+
+    // 3. Faire une requête normale pour générer des métriques
+    let _ = make_request(18005, "/").await;
+
+    sleep(Duration::from_millis(100)).await;
+
+    // 4. Requêter l'endpoint /metrics
+    let response = make_request(18005, "/metrics").await.unwrap();
+
+    // 5. Vérifier le status et le content-type
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let content_type = response
+        .headers()
+        .get("Content-Type")
+        .and_then(|v| v.to_str().ok());
+    assert_eq!(content_type, Some("text/plain; version=0.0.4; charset=utf-8"));
+
+    // 6. Vérifier le contenu des métriques
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
+
+    // Vérifier que les métriques Prometheus sont présentes
+    assert!(body_str.contains("requests_total"));
+    assert!(body_str.contains("TYPE requests_total counter"));
+
+    // Cleanup
+    proxy_handle.abort();
+    backend_handle.abort();
+}

@@ -205,6 +205,19 @@ pub async fn proxy_handler(
     response
 }
 
+/// Handler pour l'endpoint `/metrics` Prometheus
+///
+/// Expose les métriques au format Prometheus pour scraping.
+pub async fn metrics_handler(State(state): State<Arc<ProxyState>>) -> impl axum::response::IntoResponse {
+    let metrics_text = state.metrics.export_prometheus();
+
+    axum::response::Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+        .body(axum::body::Body::from(metrics_text))
+        .unwrap()
+}
+
 /// Extrait l'IP du client depuis les headers ou la socket
 ///
 /// Priorité :
