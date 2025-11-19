@@ -8,9 +8,9 @@
 //! - Whitelist add/remove operations
 //! - Whitelist always allows (bypasses scoring)
 
-use websec::lists::Whitelist;
 use std::net::IpAddr;
 use std::str::FromStr;
+use websec::lists::Whitelist;
 
 // ============================================================================
 // T106: Whitelist Bypass Tests
@@ -34,18 +34,17 @@ fn test_non_whitelisted_ip_not_bypassed() {
     let ip = IpAddr::from_str("192.168.1.100").unwrap();
 
     // IP not in whitelist
-    assert!(!whitelist.contains(&ip), "Non-whitelisted IP should go through normal scoring");
+    assert!(
+        !whitelist.contains(&ip),
+        "Non-whitelisted IP should go through normal scoring"
+    );
 }
 
 #[test]
 fn test_add_multiple_ips_to_whitelist() {
     let mut whitelist = Whitelist::new();
 
-    let ips = vec![
-        "192.168.1.100",
-        "10.0.0.50",
-        "172.16.0.1",
-    ];
+    let ips = vec!["192.168.1.100", "10.0.0.50", "172.16.0.1"];
 
     for ip_str in &ips {
         let ip = IpAddr::from_str(ip_str).unwrap();
@@ -69,7 +68,10 @@ fn test_remove_ip_from_whitelist() {
     assert!(whitelist.contains(&ip));
 
     whitelist.remove(&ip);
-    assert!(!whitelist.contains(&ip), "Removed IP should no longer be whitelisted");
+    assert!(
+        !whitelist.contains(&ip),
+        "Removed IP should no longer be whitelisted"
+    );
 }
 
 #[test]
@@ -77,7 +79,10 @@ fn test_empty_whitelist() {
     let whitelist = Whitelist::new();
     let ip = IpAddr::from_str("192.168.1.100").unwrap();
 
-    assert!(!whitelist.contains(&ip), "Empty whitelist should not bypass any IP");
+    assert!(
+        !whitelist.contains(&ip),
+        "Empty whitelist should not bypass any IP"
+    );
 }
 
 // ============================================================================
@@ -93,7 +98,10 @@ fn test_whitelist_clone() {
 
     // Clone should have same IPs
     let cloned = whitelist.clone();
-    assert!(cloned.contains(&ip), "Cloned whitelist should contain same IPs");
+    assert!(
+        cloned.contains(&ip),
+        "Cloned whitelist should contain same IPs"
+    );
 }
 
 // ============================================================================

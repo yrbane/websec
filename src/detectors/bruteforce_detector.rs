@@ -111,7 +111,10 @@ impl BruteForceDetector {
     }
 
     /// Extract username and password from request body
-    fn extract_credentials(&self, context: &HttpRequestContext) -> (Option<String>, Option<String>) {
+    fn extract_credentials(
+        &self,
+        context: &HttpRequestContext,
+    ) -> (Option<String>, Option<String>) {
         let body = match &context.body {
             Some(b) => String::from_utf8_lossy(b).to_string(),
             None => return (None, None),
@@ -321,9 +324,10 @@ mod tests {
             if i >= 4 {
                 // After 5th attempt (index 4), should generate signal
                 assert!(result.suspicious);
-                let has_failed_login = result.signals.iter().any(|s| {
-                    matches!(s.variant, SignalVariant::FailedLogin)
-                });
+                let has_failed_login = result
+                    .signals
+                    .iter()
+                    .any(|s| matches!(s.variant, SignalVariant::FailedLogin));
                 assert!(has_failed_login);
             }
         }

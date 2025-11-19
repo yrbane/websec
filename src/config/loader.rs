@@ -21,8 +21,7 @@ pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Settings> {
     let contents = std::fs::read_to_string(path.as_ref())
         .map_err(|e| Error::Config(format!("Failed to read config file: {}", e)))?;
 
-    toml::from_str(&contents)
-        .map_err(|e| Error::Config(format!("Failed to parse TOML: {}", e)))
+    toml::from_str(&contents).map_err(|e| Error::Config(format!("Failed to parse TOML: {}", e)))
 }
 
 /// Load configuration with environment variable overrides

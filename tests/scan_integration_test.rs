@@ -7,13 +7,13 @@
 //! - Score degradation with scan activity
 //! - Multiple scan patterns correlation
 
-use websec::detectors::{DetectorRegistry, HttpRequestContext};
-use websec::detectors::scan_detector::ScanDetector;
-use websec::reputation::{DecisionEngine, DecisionEngineConfig, SignalVariant, ProxyDecision};
-use websec::storage::InMemoryRepository;
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::Arc;
+use websec::detectors::scan_detector::ScanDetector;
+use websec::detectors::{DetectorRegistry, HttpRequestContext};
+use websec::reputation::{DecisionEngine, DecisionEngineConfig, ProxyDecision, SignalVariant};
+use websec::storage::InMemoryRepository;
 
 /// Helper to create test engine with ScanDetector
 fn create_test_engine() -> DecisionEngine {
@@ -66,13 +66,21 @@ async fn test_404_burst_generates_scan_signal() {
     assert!(result.detection.suspicious, "404 burst should be detected");
 
     // Check for VulnerabilityScan signal
-    let has_scan = result.detection.signals.iter().any(|s| {
-        matches!(s.variant, SignalVariant::VulnerabilityScan)
-    });
-    assert!(has_scan, "Should generate VulnerabilityScan signal after 404 burst");
+    let has_scan = result
+        .detection
+        .signals
+        .iter()
+        .any(|s| matches!(s.variant, SignalVariant::VulnerabilityScan));
+    assert!(
+        has_scan,
+        "Should generate VulnerabilityScan signal after 404 burst"
+    );
 
     // Score should have decreased
-    assert!(result.score < 100, "Score should decrease after scan detection");
+    assert!(
+        result.score < 100,
+        "Score should decrease after scan detection"
+    );
 }
 
 #[tokio::test]
@@ -84,12 +92,20 @@ async fn test_suspicious_path_generates_scan_signal() {
     let context = create_context(ip, "/wp-admin/");
     let result = engine.process_request(&context).await.unwrap();
 
-    assert!(result.detection.suspicious, "wp-admin access should be detected");
+    assert!(
+        result.detection.suspicious,
+        "wp-admin access should be detected"
+    );
 
-    let has_scan = result.detection.signals.iter().any(|s| {
-        matches!(s.variant, SignalVariant::VulnerabilityScan)
-    });
-    assert!(has_scan, "Suspicious path should generate VulnerabilityScan signal");
+    let has_scan = result
+        .detection
+        .signals
+        .iter()
+        .any(|s| matches!(s.variant, SignalVariant::VulnerabilityScan));
+    assert!(
+        has_scan,
+        "Suspicious path should generate VulnerabilityScan signal"
+    );
 }
 
 #[tokio::test]
@@ -115,9 +131,12 @@ async fn test_multiple_scan_paths_lower_score() {
 
     // Score should decrease progressively
     assert!(scores.len() >= 3, "Should have multiple score samples");
-    assert!(scores.last().unwrap() < scores.first().unwrap(),
+    assert!(
+        scores.last().unwrap() < scores.first().unwrap(),
         "Score should decrease with multiple scan attempts (first: {}, last: {})",
-        scores.first().unwrap(), scores.last().unwrap());
+        scores.first().unwrap(),
+        scores.last().unwrap()
+    );
 }
 
 #[tokio::test]
@@ -147,8 +166,8 @@ async fn test_scan_eventually_triggers_block() {
     // Eventually should block or rate limit aggressive scanner
     assert!(
         final_decision == ProxyDecision::Block
-        || final_decision == ProxyDecision::RateLimit
-        || final_decision == ProxyDecision::Challenge,
+            || final_decision == ProxyDecision::RateLimit
+            || final_decision == ProxyDecision::Challenge,
         "Aggressive scanning should eventually trigger blocking (got {:?})",
         final_decision
     );
@@ -159,21 +178,21 @@ async fn test_normal_paths_not_affected() {
     let engine = create_test_engine();
     let ip = "192.168.1.101";
 
-    let normal_paths = vec![
-        "/",
-        "/index.html",
-        "/api/users",
-        "/products/123",
-        "/about",
-    ];
+    let normal_paths = vec!["/", "/index.html", "/api/users", "/products/123", "/about"];
 
     for path in &normal_paths {
         let context = create_context(ip, path);
         let result = engine.process_request(&context).await.unwrap();
 
-        assert!(!result.detection.suspicious,
-            "Normal path {} should not be flagged", path);
-        assert_eq!(result.score, 100, "Score should remain perfect for normal paths");
+        assert!(
+            !result.detection.suspicious,
+            "Normal path {} should not be flagged",
+            path
+        );
+        assert_eq!(
+            result.score, 100,
+            "Score should remain perfect for normal paths"
+        );
     }
 }
 
@@ -191,8 +210,14 @@ async fn test_different_ips_dont_affect_each_other() {
     let context = create_context("192.168.1.101", "/");
     let result = engine.process_request(&context).await.unwrap();
 
-    assert_eq!(result.score, 100, "Different IP should start with clean score");
-    assert!(!result.detection.suspicious, "Different IP should not be affected");
+    assert_eq!(
+        result.score, 100,
+        "Different IP should start with clean score"
+    );
+    assert!(
+        !result.detection.suspicious,
+        "Different IP should not be affected"
+    );
 }
 
 #[tokio::test]
@@ -214,8 +239,11 @@ async fn test_mixed_scan_and_normal_traffic() {
         let result = engine.process_request(&context).await.unwrap();
 
         if is_scan {
-            assert!(result.detection.suspicious,
-                "Scan path {} should be detected", path);
+            assert!(
+                result.detection.suspicious,
+                "Scan path {} should be detected",
+                path
+            );
         }
     }
 }
@@ -227,11 +255,11 @@ async fn test_scan_pattern_correlation() {
 
     // Access multiple types of suspicious paths (shows scanning behavior)
     let patterns = vec![
-        "/wp-admin/",      // WordPress
-        "/phpmyadmin/",    // Database
-        "/.git/config",    // Source control
-        "/.env",           // Config files
-        "/admin/",         // Generic admin
+        "/wp-admin/",   // WordPress
+        "/phpmyadmin/", // Database
+        "/.git/config", // Source control
+        "/.env",        // Config files
+        "/admin/",      // Generic admin
     ];
 
     let mut final_result = None;
@@ -245,7 +273,10 @@ async fn test_scan_pattern_correlation() {
     let result = final_result.unwrap();
 
     // Multiple different scan patterns indicate reconnaissance
-    assert!(result.score < 100, "Multiple scan patterns should lower score");
+    assert!(
+        result.score < 100,
+        "Multiple scan patterns should lower score"
+    );
 }
 
 #[tokio::test]

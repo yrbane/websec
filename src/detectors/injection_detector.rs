@@ -52,7 +52,10 @@
 
 use super::detector::{DetectionResult, Detector, HttpRequestContext};
 use crate::reputation::{Signal, SignalVariant};
-use crate::utils::{contains_command_injection, contains_path_traversal, contains_sql_injection, contains_xss, parse_query_string};
+use crate::utils::{
+    contains_command_injection, contains_path_traversal, contains_sql_injection, contains_xss,
+    parse_query_string,
+};
 use async_trait::async_trait;
 
 /// Injection detector implementation
@@ -257,9 +260,10 @@ mod tests {
         let result = detector.analyze(&context).await;
 
         assert!(result.suspicious);
-        let has_sqli = result.signals.iter().any(|s| {
-            matches!(s.variant, SignalVariant::SqlInjectionAttempt)
-        });
+        let has_sqli = result
+            .signals
+            .iter()
+            .any(|s| matches!(s.variant, SignalVariant::SqlInjectionAttempt));
         assert!(has_sqli);
     }
 
@@ -271,9 +275,10 @@ mod tests {
         let result = detector.analyze(&context).await;
 
         assert!(result.suspicious);
-        let has_xss = result.signals.iter().any(|s| {
-            matches!(s.variant, SignalVariant::XssAttempt)
-        });
+        let has_xss = result
+            .signals
+            .iter()
+            .any(|s| matches!(s.variant, SignalVariant::XssAttempt));
         assert!(has_xss);
     }
 
@@ -285,9 +290,10 @@ mod tests {
         let result = detector.analyze(&context).await;
 
         assert!(result.suspicious);
-        let has_traversal = result.signals.iter().any(|s| {
-            matches!(s.variant, SignalVariant::PathTraversalAttempt)
-        });
+        let has_traversal = result
+            .signals
+            .iter()
+            .any(|s| matches!(s.variant, SignalVariant::PathTraversalAttempt));
         assert!(has_traversal);
     }
 
@@ -297,13 +303,16 @@ mod tests {
         // Both SQLi and XSS in same request
         let context = create_context(
             Some("id=1' UNION SELECT password"),
-            Some("comment=<script>alert(1)</script>")
+            Some("comment=<script>alert(1)</script>"),
         );
 
         let result = detector.analyze(&context).await;
 
         assert!(result.suspicious);
-        assert!(result.signals.len() >= 2, "Should detect multiple injection types");
+        assert!(
+            result.signals.len() >= 2,
+            "Should detect multiple injection types"
+        );
     }
 
     #[tokio::test]
@@ -320,10 +329,7 @@ mod tests {
     #[test]
     fn test_extract_inputs() {
         let detector = InjectionDetector::new();
-        let context = create_context(
-            Some("id=1&name=test"),
-            Some("email=test@example.com")
-        );
+        let context = create_context(Some("id=1&name=test"), Some("email=test@example.com"));
 
         let inputs = detector.extract_inputs(&context);
 

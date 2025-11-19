@@ -144,8 +144,7 @@ mod tests {
 
     #[test]
     fn test_detection_result_with_message() {
-        let result = DetectionResult::clean()
-            .with_message("Test message".to_string());
+        let result = DetectionResult::clean().with_message("Test message".to_string());
         assert_eq!(result.message.unwrap(), "Test message");
     }
 
@@ -157,9 +156,7 @@ mod tests {
             method: "GET".to_string(),
             path: "/api/login".to_string(),
             query: Some("user=admin".to_string()),
-            headers: vec![
-                ("User-Agent".to_string(), "curl/7.68.0".to_string()),
-            ],
+            headers: vec![("User-Agent".to_string(), "curl/7.68.0".to_string())],
             body: None,
             user_agent: Some("curl/7.68.0".to_string()),
             referer: None,

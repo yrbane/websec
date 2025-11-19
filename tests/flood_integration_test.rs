@@ -7,13 +7,13 @@
 //! - Score degradation under sustained load
 //! - Recovery after flood stops
 
-use websec::detectors::{DetectorRegistry, HttpRequestContext};
-use websec::detectors::flood_detector::FloodDetector;
-use websec::reputation::{DecisionEngine, DecisionEngineConfig, SignalVariant, ProxyDecision};
-use websec::storage::InMemoryRepository;
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::Arc;
+use websec::detectors::flood_detector::FloodDetector;
+use websec::detectors::{DetectorRegistry, HttpRequestContext};
+use websec::reputation::{DecisionEngine, DecisionEngineConfig, ProxyDecision, SignalVariant};
+use websec::storage::InMemoryRepository;
 
 /// Helper to create test engine with FloodDetector
 fn create_test_engine() -> DecisionEngine {
@@ -60,13 +60,21 @@ async fn test_high_volume_generates_flood_signal() {
     let result = last_result.unwrap();
 
     // Should have detected flooding
-    assert!(result.detection.suspicious, "High volume should be detected");
+    assert!(
+        result.detection.suspicious,
+        "High volume should be detected"
+    );
 
     // Check for RequestFlood signal
-    let has_flood = result.detection.signals.iter().any(|s| {
-        matches!(s.variant, SignalVariant::RequestFlood)
-    });
-    assert!(has_flood, "Should generate RequestFlood signal after high volume");
+    let has_flood = result
+        .detection
+        .signals
+        .iter()
+        .any(|s| matches!(s.variant, SignalVariant::RequestFlood));
+    assert!(
+        has_flood,
+        "Should generate RequestFlood signal after high volume"
+    );
 
     // Score should have decreased
     assert!(result.score < 100, "Score should decrease after flooding");
@@ -92,9 +100,12 @@ async fn test_sustained_flood_lowers_score_progressively() {
 
     // Score should trend downward
     assert!(scores.len() >= 3, "Should have multiple score samples");
-    assert!(scores.last().unwrap() < scores.first().unwrap(),
+    assert!(
+        scores.last().unwrap() < scores.first().unwrap(),
         "Score should decrease under sustained flood (first: {}, last: {})",
-        scores.first().unwrap(), scores.last().unwrap());
+        scores.first().unwrap(),
+        scores.last().unwrap()
+    );
 }
 
 #[tokio::test]
@@ -118,8 +129,8 @@ async fn test_flood_eventually_triggers_block() {
     // Eventually should block or rate limit
     assert!(
         final_decision == ProxyDecision::Block
-        || final_decision == ProxyDecision::RateLimit
-        || final_decision == ProxyDecision::Challenge,
+            || final_decision == ProxyDecision::RateLimit
+            || final_decision == ProxyDecision::Challenge,
         "Sustained flood should eventually trigger blocking (got {:?})",
         final_decision
     );
@@ -160,8 +171,14 @@ async fn test_different_ips_dont_affect_each_other() {
     let context = create_context("192.168.1.101", "/test");
     let result = engine.process_request(&context).await.unwrap();
 
-    assert_eq!(result.score, 100, "Different IP should start with clean score");
-    assert!(!result.detection.suspicious, "Different IP should not be affected");
+    assert_eq!(
+        result.score, 100,
+        "Different IP should start with clean score"
+    );
+    assert!(
+        !result.detection.suspicious,
+        "Different IP should not be affected"
+    );
 }
 
 #[tokio::test]
@@ -174,8 +191,11 @@ async fn test_moderate_volume_not_flagged() {
         let context = create_context(ip, &format!("/page{}", i));
         let result = engine.process_request(&context).await.unwrap();
 
-        assert!(!result.detection.suspicious,
-            "Moderate volume should not be flagged on request {}", i);
+        assert!(
+            !result.detection.suspicious,
+            "Moderate volume should not be flagged on request {}",
+            i
+        );
     }
 }
 
@@ -189,7 +209,10 @@ async fn test_clean_traffic_maintains_perfect_score() {
         let context = create_context(ip, &format!("/page{}", i));
         let result = engine.process_request(&context).await.unwrap();
 
-        assert_eq!(result.score, 100, "Clean traffic should maintain perfect score");
+        assert_eq!(
+            result.score, 100,
+            "Clean traffic should maintain perfect score"
+        );
         assert_eq!(result.decision, ProxyDecision::Allow);
     }
 }

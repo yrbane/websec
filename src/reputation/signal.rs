@@ -128,9 +128,7 @@ impl SignalVariant {
             Self::SqlInjectionAttempt | Self::XssAttempt | Self::PathTraversalAttempt => 30,
 
             // High severity - patterns with high confidence
-            Self::CredentialStuffing
-            | Self::VulnerabilityScan
-            | Self::SessionFixationAttempt => 25,
+            Self::CredentialStuffing | Self::VulnerabilityScan | Self::SessionFixationAttempt => 25,
 
             // Medium-high severity
             Self::FailedLogin
@@ -310,10 +308,7 @@ mod tests {
             SignalVariant::SqlInjectionAttempt.family(),
             SignalFamily::SqlInjection
         );
-        assert_eq!(
-            SignalVariant::XssAttempt.family(),
-            SignalFamily::Xss
-        );
+        assert_eq!(SignalVariant::XssAttempt.family(), SignalFamily::Xss);
         assert_eq!(
             SignalVariant::FailedLogin.family(),
             SignalFamily::BruteForce

@@ -6,14 +6,19 @@
 //! - T025: Suspicious User-Agent detection
 //! - T026: Non-human client profile detection
 
-use websec::detectors::{Detector, HttpRequestContext};
-use websec::reputation::SignalVariant;
 use std::net::IpAddr;
 use std::str::FromStr;
 use websec::detectors::bot_detector::BotDetector;
+use websec::detectors::{Detector, HttpRequestContext};
+use websec::reputation::SignalVariant;
 
 /// Helper to create test context
-fn create_context(ip: &str, method: &str, path: &str, user_agent: Option<&str>) -> HttpRequestContext {
+fn create_context(
+    ip: &str,
+    method: &str,
+    path: &str,
+    user_agent: Option<&str>,
+) -> HttpRequestContext {
     let headers = if let Some(ua) = user_agent {
         vec![("User-Agent".to_string(), ua.to_string())]
     } else {
@@ -41,40 +46,52 @@ async fn test_detect_suspicious_user_agent_sqlmap() {
         "192.168.1.100",
         "GET",
         "/admin/login",
-        Some("sqlmap/1.4.7#stable (http://sqlmap.org)")
+        Some("sqlmap/1.4.7#stable (http://sqlmap.org)"),
     );
 
     let result = detector.analyze(&context).await;
 
-    assert!(result.suspicious, "sqlmap User-Agent should be detected as suspicious");
-    assert!(!result.signals.is_empty(), "Should generate at least one signal");
+    assert!(
+        result.suspicious,
+        "sqlmap User-Agent should be detected as suspicious"
+    );
+    assert!(
+        !result.signals.is_empty(),
+        "Should generate at least one signal"
+    );
 
     // Check that VulnerabilityScan signal was generated
-    let has_vuln_scan = result.signals.iter().any(|s| {
-        matches!(s.variant, SignalVariant::VulnerabilityScan)
-    });
-    assert!(has_vuln_scan, "Should generate VulnerabilityScan signal for sqlmap");
+    let has_vuln_scan = result
+        .signals
+        .iter()
+        .any(|s| matches!(s.variant, SignalVariant::VulnerabilityScan));
+    assert!(
+        has_vuln_scan,
+        "Should generate VulnerabilityScan signal for sqlmap"
+    );
 }
 
 #[tokio::test]
 async fn test_detect_suspicious_user_agent_curl() {
     let detector = BotDetector::new();
-    let context = create_context(
-        "192.168.1.100",
-        "GET",
-        "/api/users",
-        Some("curl/7.68.0")
-    );
+    let context = create_context("192.168.1.100", "GET", "/api/users", Some("curl/7.68.0"));
 
     let result = detector.analyze(&context).await;
 
-    assert!(result.suspicious, "curl User-Agent should be detected as suspicious");
+    assert!(
+        result.suspicious,
+        "curl User-Agent should be detected as suspicious"
+    );
 
     // Check for SuspiciousUserAgent signal
-    let has_suspicious_ua = result.signals.iter().any(|s| {
-        matches!(s.variant, SignalVariant::SuspiciousUserAgent)
-    });
-    assert!(has_suspicious_ua, "Should generate SuspiciousUserAgent signal for curl");
+    let has_suspicious_ua = result
+        .signals
+        .iter()
+        .any(|s| matches!(s.variant, SignalVariant::SuspiciousUserAgent));
+    assert!(
+        has_suspicious_ua,
+        "Should generate SuspiciousUserAgent signal for curl"
+    );
 }
 
 #[tokio::test]
@@ -84,12 +101,15 @@ async fn test_detect_suspicious_user_agent_python() {
         "192.168.1.100",
         "POST",
         "/api/data",
-        Some("python-requests/2.25.1")
+        Some("python-requests/2.25.1"),
     );
 
     let result = detector.analyze(&context).await;
 
-    assert!(result.suspicious, "python-requests User-Agent should be detected");
+    assert!(
+        result.suspicious,
+        "python-requests User-Agent should be detected"
+    );
     assert!(!result.signals.is_empty());
 }
 
@@ -100,16 +120,17 @@ async fn test_detect_nikto_scanner() {
         "192.168.1.100",
         "GET",
         "/cgi-bin/test.cgi",
-        Some("Mozilla/5.00 (Nikto/2.1.6) (Evasions:None) (Test:Port Check)")
+        Some("Mozilla/5.00 (Nikto/2.1.6) (Evasions:None) (Test:Port Check)"),
     );
 
     let result = detector.analyze(&context).await;
 
     assert!(result.suspicious, "Nikto scanner should be detected");
 
-    let has_vuln_scan = result.signals.iter().any(|s| {
-        matches!(s.variant, SignalVariant::VulnerabilityScan)
-    });
+    let has_vuln_scan = result
+        .signals
+        .iter()
+        .any(|s| matches!(s.variant, SignalVariant::VulnerabilityScan));
     assert!(has_vuln_scan, "Should generate VulnerabilityScan for Nikto");
 }
 
@@ -125,8 +146,14 @@ async fn test_legitimate_user_agent_chrome() {
 
     let result = detector.analyze(&context).await;
 
-    assert!(!result.suspicious, "Legitimate Chrome User-Agent should NOT be flagged");
-    assert!(result.signals.is_empty(), "Should not generate signals for legitimate browsers");
+    assert!(
+        !result.suspicious,
+        "Legitimate Chrome User-Agent should NOT be flagged"
+    );
+    assert!(
+        result.signals.is_empty(),
+        "Should not generate signals for legitimate browsers"
+    );
 }
 
 #[tokio::test]
@@ -136,7 +163,7 @@ async fn test_legitimate_user_agent_firefox() {
         "192.168.1.100",
         "GET",
         "/page.html",
-        Some("Mozilla/5.0 (X11; Linux x86_64; rv:89.0) Gecko/20100101 Firefox/89.0")
+        Some("Mozilla/5.0 (X11; Linux x86_64; rv:89.0) Gecko/20100101 Firefox/89.0"),
     );
 
     let result = detector.analyze(&context).await;
@@ -153,17 +180,21 @@ async fn test_detect_missing_user_agent() {
         "192.168.1.100",
         "GET",
         "/api/endpoint",
-        None // No User-Agent header
+        None, // No User-Agent header
     );
 
     let result = detector.analyze(&context).await;
 
     assert!(result.suspicious, "Missing User-Agent should be flagged");
 
-    let has_bot_pattern = result.signals.iter().any(|s| {
-        matches!(s.variant, SignalVariant::BotBehaviorPattern)
-    });
-    assert!(has_bot_pattern, "Should generate BotBehaviorPattern for missing UA");
+    let has_bot_pattern = result
+        .signals
+        .iter()
+        .any(|s| matches!(s.variant, SignalVariant::BotBehaviorPattern));
+    assert!(
+        has_bot_pattern,
+        "Should generate BotBehaviorPattern for missing UA"
+    );
 }
 
 #[tokio::test]
@@ -173,7 +204,7 @@ async fn test_detect_empty_user_agent() {
         "192.168.1.100",
         "GET",
         "/api/endpoint",
-        Some("") // Empty User-Agent
+        Some(""), // Empty User-Agent
     );
 
     let result = detector.analyze(&context).await;
@@ -186,12 +217,7 @@ async fn test_detect_non_human_profile_missing_accept() {
     let detector = BotDetector::new();
 
     // Context with User-Agent but missing other standard browser headers
-    let mut context = create_context(
-        "192.168.1.100",
-        "GET",
-        "/page.html",
-        Some("Mozilla/5.0")
-    );
+    let mut context = create_context("192.168.1.100", "GET", "/page.html", Some("Mozilla/5.0"));
 
     // Real browsers send Accept, Accept-Language, Accept-Encoding headers
     // This request only has User-Agent
@@ -208,7 +234,10 @@ async fn test_detect_scanner_with_standard_headers() {
     let detector = BotDetector::new();
 
     let headers = vec![
-        ("User-Agent".to_string(), "Acunetix-Security-Scanner".to_string()),
+        (
+            "User-Agent".to_string(),
+            "Acunetix-Security-Scanner".to_string(),
+        ),
         ("Accept".to_string(), "*/*".to_string()),
     ];
 
@@ -228,9 +257,10 @@ async fn test_detect_scanner_with_standard_headers() {
 
     assert!(result.suspicious, "Acunetix scanner should be detected");
 
-    let has_vuln_scan = result.signals.iter().any(|s| {
-        matches!(s.variant, SignalVariant::VulnerabilityScan)
-    });
+    let has_vuln_scan = result
+        .signals
+        .iter()
+        .any(|s| matches!(s.variant, SignalVariant::VulnerabilityScan));
     assert!(has_vuln_scan, "Should generate VulnerabilityScan signal");
 }
 
@@ -243,5 +273,8 @@ async fn test_detector_name() {
 #[tokio::test]
 async fn test_detector_enabled_by_default() {
     let detector = BotDetector::new();
-    assert!(detector.enabled(), "BotDetector should be enabled by default");
+    assert!(
+        detector.enabled(),
+        "BotDetector should be enabled by default"
+    );
 }

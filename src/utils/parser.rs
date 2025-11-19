@@ -91,9 +91,8 @@ pub fn extract_browser_family(user_agent: &str) -> Option<String> {
 ///
 /// `true` if path contains ../, ..\ or encoded variants
 pub fn contains_path_traversal(path: &str) -> bool {
-    static TRAVERSAL_PATTERNS: Lazy<Regex> = Lazy::new(|| {
-        Regex::new(r"(\.\./|\.\.\\|%2e%2e%2f|%2e%2e/|\.\.%2f)").unwrap()
-    });
+    static TRAVERSAL_PATTERNS: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"(\.\./|\.\.\\|%2e%2e%2f|%2e%2e/|\.\.%2f)").unwrap());
 
     TRAVERSAL_PATTERNS.is_match(&path.to_lowercase())
 }

@@ -75,10 +75,7 @@ impl ReputationProfile {
     /// Used for calculating correlation penalty bonus.
     #[must_use]
     pub fn signal_families(&self) -> HashSet<SignalFamily> {
-        self.signals
-            .iter()
-            .map(|s| s.variant.family())
-            .collect()
+        self.signals.iter().map(|s| s.variant.family()).collect()
     }
 
     /// Calculate total active penalty from all signals with decay

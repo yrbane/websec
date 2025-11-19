@@ -7,13 +7,13 @@
 //! - T062: Burst detection (spike patterns)
 //! - Detection of sustained high rate (100 req/s)
 
-use websec::detectors::{Detector, HttpRequestContext};
-use websec::detectors::flood_detector::FloodDetector;
-use websec::reputation::SignalVariant;
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::time::Duration;
 use tokio::time::sleep;
+use websec::detectors::flood_detector::FloodDetector;
+use websec::detectors::{Detector, HttpRequestContext};
+use websec::reputation::SignalVariant;
 
 /// Helper to create basic request context
 fn create_context(ip: &str, path: &str) -> HttpRequestContext {
@@ -50,9 +50,10 @@ async fn test_high_volume_generates_flood_signal() {
     let result = detector.analyze(&context).await;
 
     assert!(result.suspicious, "High volume should be detected as flood");
-    let has_flood = result.signals.iter().any(|s| {
-        matches!(s.variant, SignalVariant::RequestFlood)
-    });
+    let has_flood = result
+        .signals
+        .iter()
+        .any(|s| matches!(s.variant, SignalVariant::RequestFlood));
     assert!(has_flood, "Should generate RequestFlood signal");
 }
 
@@ -107,9 +108,10 @@ async fn test_burst_detection_rapid_requests() {
     let result = detector.analyze(&context).await;
 
     assert!(result.suspicious, "Burst pattern should be detected");
-    let has_flood = result.signals.iter().any(|s| {
-        matches!(s.variant, SignalVariant::RequestFlood)
-    });
+    let has_flood = result
+        .signals
+        .iter()
+        .any(|s| matches!(s.variant, SignalVariant::RequestFlood));
     assert!(has_flood, "Burst should generate RequestFlood signal");
 }
 
@@ -133,8 +135,10 @@ async fn test_burst_with_delay_not_flagged() {
     let result = detector.analyze(&context).await;
 
     // Spaced requests should not trigger burst detection
-    assert!(!result.suspicious || result.signals.is_empty(),
-        "Spaced requests should not be flagged as burst");
+    assert!(
+        !result.suspicious || result.signals.is_empty(),
+        "Spaced requests should not be flagged as burst"
+    );
 }
 
 // ============================================================================
@@ -219,7 +223,10 @@ async fn test_different_ips_tracked_independently() {
     let context = create_context("192.168.1.101", "/test");
     let result = detector.analyze(&context).await;
 
-    assert!(!result.suspicious, "Different IP should have independent tracking");
+    assert!(
+        !result.suspicious,
+        "Different IP should have independent tracking"
+    );
 }
 
 // ============================================================================

@@ -6,13 +6,13 @@
 //! - T046: 5 failed login attempts generate FailedLogin signal
 //! - T047: 20 failed attempts trigger BLOCK decision
 
-use websec::detectors::{DetectorRegistry, HttpRequestContext};
-use websec::detectors::bruteforce_detector::BruteForceDetector;
-use websec::reputation::{DecisionEngine, DecisionEngineConfig, SignalVariant, ProxyDecision};
-use websec::storage::InMemoryRepository;
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::Arc;
+use websec::detectors::bruteforce_detector::BruteForceDetector;
+use websec::detectors::{DetectorRegistry, HttpRequestContext};
+use websec::reputation::{DecisionEngine, DecisionEngineConfig, ProxyDecision, SignalVariant};
+use websec::storage::InMemoryRepository;
 
 /// Helper to create test engine with BruteForceDetector
 fn create_test_engine() -> DecisionEngine {
@@ -35,9 +35,10 @@ fn create_failed_login(ip: &str, username: &str, password: &str) -> HttpRequestC
         method: "POST".to_string(),
         path: "/login".to_string(),
         query: None,
-        headers: vec![
-            ("Content-Type".to_string(), "application/x-www-form-urlencoded".to_string()),
-        ],
+        headers: vec![(
+            "Content-Type".to_string(),
+            "application/x-www-form-urlencoded".to_string(),
+        )],
         body: Some(body.into_bytes()),
         user_agent: Some("Mozilla/5.0 (Windows NT 10.0) Chrome/91.0".to_string()),
         referer: Some("/".to_string()),
@@ -63,16 +64,27 @@ async fn test_five_failed_logins_generate_signal() {
     let result = last_result.unwrap();
 
     // Should have detected failed login attempts
-    assert!(result.detection.suspicious, "After 5 failed logins, should be suspicious");
+    assert!(
+        result.detection.suspicious,
+        "After 5 failed logins, should be suspicious"
+    );
 
     // Check for FailedLogin signal
-    let has_failed_login = result.detection.signals.iter().any(|s| {
-        matches!(s.variant, SignalVariant::FailedLogin)
-    });
-    assert!(has_failed_login, "Should generate FailedLogin signal after 5 attempts");
+    let has_failed_login = result
+        .detection
+        .signals
+        .iter()
+        .any(|s| matches!(s.variant, SignalVariant::FailedLogin));
+    assert!(
+        has_failed_login,
+        "Should generate FailedLogin signal after 5 attempts"
+    );
 
     // Score should have decreased
-    assert!(result.score < 100, "Score should decrease after failed logins");
+    assert!(
+        result.score < 100,
+        "Score should decrease after failed logins"
+    );
 }
 
 /// T047: Integration test - 20 failed attempts trigger BLOCK decision
@@ -93,21 +105,27 @@ async fn test_twenty_failed_logins_trigger_block() {
     // Final result should have low score
     let final_result = results.last().unwrap();
 
-    assert!(final_result.score < 50, "After 20 failed logins, score should be very low");
+    assert!(
+        final_result.score < 50,
+        "After 20 failed logins, score should be very low"
+    );
 
     // Should eventually reach BLOCK or CHALLENGE decision
     assert!(
-        final_result.decision == ProxyDecision::Block ||
-        final_result.decision == ProxyDecision::Challenge,
+        final_result.decision == ProxyDecision::Block
+            || final_result.decision == ProxyDecision::Challenge,
         "After 20 failed logins, should BLOCK or CHALLENGE (got {:?})",
         final_result.decision
     );
 
     // Check progression: score should decrease significantly from start to end
     // Note: decay may cause non-linear progression, so we check start vs end
-    assert!(results[0].score > results[19].score,
+    assert!(
+        results[0].score > results[19].score,
         "Score should decrease from first ({}) to last ({}) attempt",
-        results[0].score, results[19].score);
+        results[0].score,
+        results[19].score
+    );
 }
 
 /// Test: Different IPs don't affect each other
@@ -125,8 +143,14 @@ async fn test_different_ips_tracked_independently() {
     let context = create_failed_login("192.168.1.101", "admin", "wrongpass");
     let result = engine.process_request(&context).await.unwrap();
 
-    assert_eq!(result.score, 100, "Different IP should start with clean score");
-    assert!(!result.detection.suspicious, "First attempt from new IP should not be suspicious");
+    assert_eq!(
+        result.score, 100,
+        "Different IP should start with clean score"
+    );
+    assert!(
+        !result.detection.suspicious,
+        "First attempt from new IP should not be suspicious"
+    );
 }
 
 /// Test: Successful login between failed attempts
@@ -168,9 +192,11 @@ async fn test_rapid_login_attempts_pattern() {
 
         // After threshold, should detect LoginAttemptPattern
         if i >= 7 {
-            let has_pattern = result.detection.signals.iter().any(|s| {
-                matches!(s.variant, SignalVariant::LoginAttemptPattern)
-            });
+            let has_pattern = result
+                .detection
+                .signals
+                .iter()
+                .any(|s| matches!(s.variant, SignalVariant::LoginAttemptPattern));
             // May or may not be detected depending on implementation sophistication
         }
     }
@@ -192,7 +218,10 @@ async fn test_non_login_endpoints_not_tracked() {
         let result = engine.process_request(&context).await.unwrap();
 
         // Should not trigger brute force detection
-        assert!(!result.detection.suspicious, "Non-auth endpoints should not be tracked");
+        assert!(
+            !result.detection.suspicious,
+            "Non-auth endpoints should not be tracked"
+        );
     }
 }
 
@@ -241,9 +270,11 @@ async fn test_credential_stuffing_detection() {
 
         // After seeing same credentials from multiple IPs, should detect credential stuffing
         if i >= 3 {
-            let has_stuffing = result.detection.signals.iter().any(|s| {
-                matches!(s.variant, SignalVariant::CredentialStuffing)
-            });
+            let has_stuffing = result
+                .detection
+                .signals
+                .iter()
+                .any(|s| matches!(s.variant, SignalVariant::CredentialStuffing));
             // This requires cross-IP correlation, which is advanced feature
         }
     }

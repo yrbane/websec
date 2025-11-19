@@ -21,10 +21,8 @@ static SCANNER_PATTERNS: Lazy<Regex> = Lazy::new(|| {
 
 /// Generic bot/tool patterns (less severe than scanners)
 static BOT_PATTERNS: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(
-        r"(?i)(curl|wget|python-requests|go-http-client|java/|apache-httpclient|okhttp)"
-    )
-    .unwrap()
+    Regex::new(r"(?i)(curl|wget|python-requests|go-http-client|java/|apache-httpclient|okhttp)")
+        .unwrap()
 });
 
 /// Bot detector implementation

@@ -11,7 +11,8 @@
 use std::net::IpAddr;
 use std::str::FromStr;
 use websec::detectors::geo_detector::GeoDetector;
-use websec::detectors::{Detector, HttpRequestContext};
+use websec::detectors::Detector;
+use websec::detectors::HttpRequestContext;
 use websec::reputation::SignalVariant;
 
 /// Helper to create test context
@@ -35,11 +36,13 @@ async fn test_high_risk_country_detection() {
 
     // China is considered high-risk in our test config
     let context = create_context("1.2.3.4"); // Chinese IP (example)
-    let signals = detector.analyze(&context).await.unwrap();
+    let result = detector.analyze(&context).await;
 
-    assert!(!signals.is_empty(), "Should detect high-risk country");
+    assert!(result.suspicious, "Should detect high-risk country");
+    assert!(!result.signals.is_empty(), "Should have signals");
     assert!(
-        signals
+        result
+            .signals
             .iter()
             .any(|s| matches!(s.variant, SignalVariant::HighRiskCountry)),
         "Should generate HighRiskCountry signal"
@@ -52,10 +55,10 @@ async fn test_safe_country_no_signal() {
 
     // US IP (generally safe)
     let context = create_context("8.8.8.8"); // Google DNS (US)
-    let signals = detector.analyze(&context).await.unwrap();
+    let result = detector.analyze(&context).await;
 
     assert!(
-        signals.is_empty() || !signals.iter().any(|s| matches!(s.variant, SignalVariant::HighRiskCountry)),
+        !result.suspicious || !result.signals.iter().any(|s| matches!(s.variant, SignalVariant::HighRiskCountry)),
         "Safe country should not generate HighRiskCountry signal"
     );
 }
@@ -66,15 +69,15 @@ async fn test_impossible_travel_detection() {
 
     // First request from US
     let context1 = create_context("8.8.8.8");
-    let _signals1 = detector.analyze(&context1).await.unwrap();
+    let _result1 = detector.analyze(&context1).await;
 
     // Second request from China 1 second later (impossible travel)
     let context2 = create_context("1.2.3.4");
-    let signals2 = detector.analyze(&context2).await.unwrap();
+    let result2 = detector.analyze(&context2).await;
 
     // Note: This test requires the detector to track previous locations
     // For now, we'll just check that the detector can process both requests
-    assert!(signals2.len() >= 0, "Detector should process request");
+    assert!(result2.signals.len() >= 0, "Detector should process request");
 }
 
 #[tokio::test]
@@ -83,10 +86,10 @@ async fn test_unknown_country_handling() {
 
     // Private IP (no geolocation)
     let context = create_context("192.168.1.1");
-    let signals = detector.analyze(&context).await.unwrap();
+    let result = detector.analyze(&context).await;
 
     // Should not crash on unknown country
-    assert!(signals.len() >= 0, "Should handle unknown country gracefully");
+    assert!(!result.suspicious, "Private IP should not be flagged");
 }
 
 #[tokio::test]
@@ -94,10 +97,10 @@ async fn test_localhost_exempt() {
     let detector = GeoDetector::new();
 
     let context = create_context("127.0.0.1");
-    let signals = detector.analyze(&context).await.unwrap();
+    let result = detector.analyze(&context).await;
 
     assert!(
-        signals.is_empty(),
+        !result.suspicious,
         "Localhost should be exempt from geo checks"
     );
 }
@@ -108,17 +111,18 @@ async fn test_multiple_high_risk_countries() {
 
     // Test multiple high-risk IPs
     let high_risk_ips = vec![
-        "1.2.3.4",     // China
-        "5.6.7.8",     // Russia (example)
-        "41.2.3.4",    // Nigeria (example)
+        "1.2.3.4",  // China
+        "5.6.7.8",  // Russia (example)
+        "41.2.3.4", // Nigeria (example)
     ];
 
     for ip in high_risk_ips {
         let context = create_context(ip);
-        let signals = detector.analyze(&context).await.unwrap();
+        let result = detector.analyze(&context).await;
 
         // At least some should be detected as high-risk
         // (depends on actual GeoIP database)
+        assert!(result.signals.len() >= 0);
     }
 }
 
@@ -127,7 +131,7 @@ async fn test_country_code_extraction() {
     let detector = GeoDetector::new();
 
     let context = create_context("8.8.8.8");
-    let _signals = detector.analyze(&context).await.unwrap();
+    let _result = detector.analyze(&context).await;
 
     // Detector should be able to extract country code
     // This is implicitly tested by other tests
@@ -140,10 +144,10 @@ async fn test_configurable_risk_countries() {
     let detector = GeoDetector::with_risk_countries(risk_countries);
 
     let context = create_context("1.2.3.4");
-    let signals = detector.analyze(&context).await.unwrap();
+    let result = detector.analyze(&context).await;
 
     // Should use custom risk country list
-    assert!(signals.len() >= 0);
+    assert!(result.signals.len() >= 0);
 }
 
 #[tokio::test]
@@ -151,9 +155,10 @@ async fn test_signal_weight_for_high_risk() {
     let detector = GeoDetector::new();
 
     let context = create_context("1.2.3.4");
-    let signals = detector.analyze(&context).await.unwrap();
+    let result = detector.analyze(&context).await;
 
-    if let Some(signal) = signals
+    if let Some(signal) = result
+        .signals
         .iter()
         .find(|s| matches!(s.variant, SignalVariant::HighRiskCountry))
     {
@@ -180,6 +185,7 @@ async fn test_concurrent_geo_lookups() {
 
     for handle in handles {
         let result = handle.await.unwrap();
-        assert!(result.is_ok(), "Concurrent lookups should succeed");
+        // DetectionResult doesn't have is_ok, just check it ran
+        assert!(result.signals.len() >= 0, "Concurrent lookups should succeed");
     }
 }

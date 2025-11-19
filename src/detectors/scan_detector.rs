@@ -161,7 +161,8 @@ impl ScanDetector {
         let mut signals = Vec::new();
 
         // Get or create tracking data
-        let mut entry = self.ip_tracking
+        let mut entry = self
+            .ip_tracking
             .entry(context.ip)
             .or_insert_with(IpScanData::new);
 
@@ -271,9 +272,10 @@ mod tests {
         let result = detector.analyze(&context).await;
 
         assert!(result.suspicious);
-        let has_scan = result.signals.iter().any(|s| {
-            matches!(s.variant, SignalVariant::VulnerabilityScan)
-        });
+        let has_scan = result
+            .signals
+            .iter()
+            .any(|s| matches!(s.variant, SignalVariant::VulnerabilityScan));
         assert!(has_scan);
     }
 

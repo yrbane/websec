@@ -120,7 +120,12 @@ pub fn recalculate_and_update(
     half_life_hours: f64,
     correlation_penalty_bonus: u8,
 ) {
-    let new_score = calculate_score(profile, base_score, half_life_hours, correlation_penalty_bonus);
+    let new_score = calculate_score(
+        profile,
+        base_score,
+        half_life_hours,
+        correlation_penalty_bonus,
+    );
     profile.current_score = new_score;
 }
 
@@ -174,7 +179,8 @@ mod tests {
 
         // Add many high-weight signals to exceed penalty
         for _ in 0..10 {
-            profile.add_signal(Signal::new(SignalVariant::SqlInjectionAttempt)); // weight 30 each
+            profile.add_signal(Signal::new(SignalVariant::SqlInjectionAttempt));
+            // weight 30 each
         }
 
         let score = calculate_score(&profile, 100, 24.0, 10);

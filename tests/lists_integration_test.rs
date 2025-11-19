@@ -7,13 +7,13 @@
 //! - Whitelist bypass scoring (always allow)
 //! - Priority: blacklist > whitelist > scoring
 
-use websec::detectors::{DetectorRegistry, HttpRequestContext};
-use websec::reputation::{DecisionEngine, DecisionEngineConfig, ProxyDecision};
-use websec::storage::InMemoryRepository;
-use websec::lists::{Blacklist, Whitelist};
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::Arc;
+use websec::detectors::{DetectorRegistry, HttpRequestContext};
+use websec::lists::{Blacklist, Whitelist};
+use websec::reputation::{DecisionEngine, DecisionEngineConfig, ProxyDecision};
+use websec::storage::InMemoryRepository;
 
 /// Helper to create test engine with lists
 fn create_test_engine_with_lists(
@@ -66,8 +66,11 @@ async fn test_blacklisted_ip_blocked_immediately() {
     let result = engine.process_request(&context).await.unwrap();
 
     // Should be blocked immediately
-    assert_eq!(result.decision, ProxyDecision::Block,
-        "Blacklisted IP should be blocked immediately");
+    assert_eq!(
+        result.decision,
+        ProxyDecision::Block,
+        "Blacklisted IP should be blocked immediately"
+    );
     assert_eq!(result.score, 0, "Blacklisted IP should have score 0");
 }
 
@@ -83,8 +86,11 @@ async fn test_blacklist_overrides_perfect_score() {
     let context = create_context("192.168.1.101", "/test");
     let result = engine.process_request(&context).await.unwrap();
 
-    assert_eq!(result.decision, ProxyDecision::Block,
-        "Blacklisted IP should be blocked even with clean history");
+    assert_eq!(
+        result.decision,
+        ProxyDecision::Block,
+        "Blacklisted IP should be blocked even with clean history"
+    );
 }
 
 #[tokio::test]
@@ -116,9 +122,15 @@ async fn test_whitelisted_ip_always_allowed() {
     let result = engine.process_request(&context).await.unwrap();
 
     // Should be allowed with perfect score
-    assert_eq!(result.decision, ProxyDecision::Allow,
-        "Whitelisted IP should always be allowed");
-    assert_eq!(result.score, 100, "Whitelisted IP should have perfect score");
+    assert_eq!(
+        result.decision,
+        ProxyDecision::Allow,
+        "Whitelisted IP should always be allowed"
+    );
+    assert_eq!(
+        result.score, 100,
+        "Whitelisted IP should have perfect score"
+    );
 }
 
 #[tokio::test]
@@ -135,10 +147,17 @@ async fn test_whitelist_bypasses_scoring() {
         let result = engine.process_request(&context).await.unwrap();
 
         // Should still be allowed
-        assert_eq!(result.decision, ProxyDecision::Allow,
-            "Whitelisted IP should remain allowed on request {}", i);
-        assert_eq!(result.score, 100,
-            "Whitelisted IP should maintain perfect score on request {}", i);
+        assert_eq!(
+            result.decision,
+            ProxyDecision::Allow,
+            "Whitelisted IP should remain allowed on request {}",
+            i
+        );
+        assert_eq!(
+            result.score, 100,
+            "Whitelisted IP should maintain perfect score on request {}",
+            i
+        );
     }
 }
 
@@ -162,8 +181,11 @@ async fn test_blacklist_has_priority_over_whitelist() {
     let result = engine.process_request(&context).await.unwrap();
 
     // Blacklist should take priority
-    assert_eq!(result.decision, ProxyDecision::Block,
-        "Blacklist should have priority over whitelist");
+    assert_eq!(
+        result.decision,
+        ProxyDecision::Block,
+        "Blacklist should have priority over whitelist"
+    );
     assert_eq!(result.score, 0);
 }
 
@@ -185,8 +207,12 @@ async fn test_multiple_blacklisted_ips() {
         let context = create_context(&ip, "/test");
         let result = engine.process_request(&context).await.unwrap();
 
-        assert_eq!(result.decision, ProxyDecision::Block,
-            "IP {} should be blocked", ip);
+        assert_eq!(
+            result.decision,
+            ProxyDecision::Block,
+            "IP {} should be blocked",
+            ip
+        );
     }
 }
 
@@ -204,8 +230,12 @@ async fn test_multiple_whitelisted_ips() {
         let context = create_context(&ip, "/test");
         let result = engine.process_request(&context).await.unwrap();
 
-        assert_eq!(result.decision, ProxyDecision::Allow,
-            "IP {} should be allowed", ip);
+        assert_eq!(
+            result.decision,
+            ProxyDecision::Allow,
+            "IP {} should be allowed",
+            ip
+        );
         assert_eq!(result.score, 100);
     }
 }

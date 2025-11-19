@@ -17,8 +17,8 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, Env
 /// websec::observability::init_logging("info", "json");
 /// ```
 pub fn init_logging(log_level: &str, format: &str) {
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(log_level));
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(log_level));
 
     let subscriber = tracing_subscriber::registry().with(env_filter);
 

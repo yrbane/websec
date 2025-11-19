@@ -5,10 +5,10 @@
 //! Testing:
 //! - T027: BotDetector contract compliance
 
-use websec::detectors::{Detector, HttpRequestContext};
-use websec::detectors::bot_detector::BotDetector;
 use std::net::IpAddr;
 use std::str::FromStr;
+use websec::detectors::bot_detector::BotDetector;
+use websec::detectors::{Detector, HttpRequestContext};
 
 /// Contract test: BotDetector must implement Detector trait
 #[tokio::test]
@@ -35,8 +35,14 @@ async fn test_bot_detector_implements_detector_trait() {
     let result = detector.analyze(&context).await;
 
     // Result must have required fields
-    assert!(result.signals.is_empty() || !result.signals.is_empty(), "signals field must exist");
-    assert!(!result.suspicious || result.suspicious, "suspicious field must exist");
+    assert!(
+        result.signals.is_empty() || !result.signals.is_empty(),
+        "signals field must exist"
+    );
+    assert!(
+        !result.suspicious || result.suspicious,
+        "suspicious field must exist"
+    );
 }
 
 /// Contract test: BotDetector can be used as Arc<dyn Detector>
@@ -64,14 +70,17 @@ async fn test_bot_detector_as_trait_object() {
     let result = detector.analyze(&context).await;
 
     // Should detect curl
-    assert!(result.suspicious, "Trait object analyze() must work correctly");
+    assert!(
+        result.suspicious,
+        "Trait object analyze() must work correctly"
+    );
 }
 
 /// Contract test: BotDetector works in DetectorRegistry
 #[tokio::test]
 async fn test_bot_detector_in_registry() {
-    use websec::detectors::DetectorRegistry;
     use std::sync::Arc;
+    use websec::detectors::DetectorRegistry;
 
     let mut registry = DetectorRegistry::new();
     registry.register(Arc::new(BotDetector::new()));
@@ -80,7 +89,10 @@ async fn test_bot_detector_in_registry() {
     assert_eq!(registry.enabled_count(), 1, "BotDetector should be enabled");
 
     let names = registry.detector_names();
-    assert!(names.contains(&"BotDetector".to_string()), "Registry should list BotDetector");
+    assert!(
+        names.contains(&"BotDetector".to_string()),
+        "Registry should list BotDetector"
+    );
 
     // Test analyze_all with BotDetector
     let context = HttpRequestContext {
@@ -97,8 +109,14 @@ async fn test_bot_detector_in_registry() {
 
     let result = registry.analyze_all(&context).await;
 
-    assert!(result.suspicious, "Registry analyze_all should detect sqlmap");
-    assert!(!result.signals.is_empty(), "Should have signals from BotDetector");
+    assert!(
+        result.suspicious,
+        "Registry analyze_all should detect sqlmap"
+    );
+    assert!(
+        !result.signals.is_empty(),
+        "Should have signals from BotDetector"
+    );
 }
 
 /// Contract test: BotDetector is Send + Sync
@@ -125,8 +143,8 @@ fn test_bot_detector_new_is_repeatable() {
 // BruteForceDetector Contract Tests (T045)
 // ============================================================================
 
-use websec::detectors::bruteforce_detector::BruteForceDetector;
 use std::sync::Arc;
+use websec::detectors::bruteforce_detector::BruteForceDetector;
 
 /// Contract test: BruteForceDetector must implement Detector trait
 #[tokio::test]

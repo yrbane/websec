@@ -7,11 +7,11 @@
 //! - 404/403 burst detection
 //! - Suspicious path enumeration
 
-use websec::detectors::{Detector, HttpRequestContext};
-use websec::detectors::scan_detector::ScanDetector;
-use websec::reputation::SignalVariant;
 use std::net::IpAddr;
 use std::str::FromStr;
+use websec::detectors::scan_detector::ScanDetector;
+use websec::detectors::{Detector, HttpRequestContext};
+use websec::reputation::SignalVariant;
 
 /// Helper to create request context
 fn create_context(ip: &str, path: &str) -> HttpRequestContext {
@@ -39,10 +39,14 @@ async fn test_detect_wordpress_admin_scan() {
 
     let result = detector.analyze(&context).await;
 
-    assert!(result.suspicious, "wp-admin access should be detected as scan");
-    let has_scan = result.signals.iter().any(|s| {
-        matches!(s.variant, SignalVariant::VulnerabilityScan)
-    });
+    assert!(
+        result.suspicious,
+        "wp-admin access should be detected as scan"
+    );
+    let has_scan = result
+        .signals
+        .iter()
+        .any(|s| matches!(s.variant, SignalVariant::VulnerabilityScan));
     assert!(has_scan, "Should generate VulnerabilityScan signal");
 }
 
@@ -54,9 +58,10 @@ async fn test_detect_phpmyadmin_scan() {
     let result = detector.analyze(&context).await;
 
     assert!(result.suspicious, "phpmyadmin access should be detected");
-    let has_scan = result.signals.iter().any(|s| {
-        matches!(s.variant, SignalVariant::VulnerabilityScan)
-    });
+    let has_scan = result
+        .signals
+        .iter()
+        .any(|s| matches!(s.variant, SignalVariant::VulnerabilityScan));
     assert!(has_scan);
 }
 
@@ -77,7 +82,11 @@ async fn test_detect_admin_panel_scan() {
         let context = create_context("192.168.1.100", path);
         let result = detector.analyze(&context).await;
 
-        assert!(result.suspicious, "Path {} should be detected as suspicious", path);
+        assert!(
+            result.suspicious,
+            "Path {} should be detected as suspicious",
+            path
+        );
     }
 }
 
@@ -97,7 +106,11 @@ async fn test_normal_path_not_flagged() {
         let context = create_context("192.168.1.100", path);
         let result = detector.analyze(&context).await;
 
-        assert!(!result.suspicious, "Normal path {} should not be flagged", path);
+        assert!(
+            !result.suspicious,
+            "Normal path {} should not be flagged",
+            path
+        );
     }
 }
 
@@ -137,7 +150,10 @@ async fn test_moderate_404s_not_flagged() {
     let context = create_context(ip, "/check");
     let result = detector.analyze(&context).await;
 
-    assert!(!result.suspicious, "Moderate 404s should not trigger detection");
+    assert!(
+        !result.suspicious,
+        "Moderate 404s should not trigger detection"
+    );
 }
 
 // ============================================================================
@@ -179,10 +195,7 @@ async fn test_detect_sqlmap_paths() {
     let detector = ScanDetector::new();
 
     // Common SQLMap test paths
-    let sqlmap_paths = vec![
-        "/index.php?id=1",
-        "/products.php?id=1'",
-    ];
+    let sqlmap_paths = vec!["/index.php?id=1", "/products.php?id=1'"];
 
     for path in sqlmap_paths {
         let context = create_context("192.168.1.100", path);
@@ -196,11 +209,7 @@ async fn test_detect_nikto_paths() {
     let detector = ScanDetector::new();
 
     // Common Nikto scanner paths
-    let nikto_paths = vec![
-        "/cgi-bin/",
-        "/scripts/",
-        "/CHANGELOG.txt",
-    ];
+    let nikto_paths = vec!["/cgi-bin/", "/scripts/", "/CHANGELOG.txt"];
 
     for path in nikto_paths {
         let context = create_context("192.168.1.100", path);
@@ -242,7 +251,10 @@ async fn test_different_ips_tracked_independently() {
     let context = create_context("192.168.1.101", "/normal");
     let result = detector.analyze(&context).await;
 
-    assert!(!result.suspicious, "Different IP should have independent tracking");
+    assert!(
+        !result.suspicious,
+        "Different IP should have independent tracking"
+    );
 }
 
 // ============================================================================
@@ -269,8 +281,11 @@ async fn test_detect_sensitive_file_access() {
 
         // Some files like robots.txt are legitimate
         if file != "/robots.txt" {
-            assert!(result.suspicious || result.signals.is_empty(),
-                "File {} detection behavior", file);
+            assert!(
+                result.suspicious || result.signals.is_empty(),
+                "File {} detection behavior",
+                file
+            );
         }
     }
 }

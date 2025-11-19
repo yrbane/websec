@@ -96,7 +96,10 @@ impl DetectorRegistry {
     /// Get detector names
     #[must_use]
     pub fn detector_names(&self) -> Vec<String> {
-        self.detectors.iter().map(|d| d.name().to_string()).collect()
+        self.detectors
+            .iter()
+            .map(|d| d.name().to_string())
+            .collect()
     }
 }
 

@@ -6,18 +6,24 @@
 //! - T043: Failed login attempt counting per IP
 //! - T044: Credential stuffing detection (same credentials, different IPs)
 
-use websec::detectors::{Detector, HttpRequestContext};
-use websec::detectors::bruteforce_detector::BruteForceDetector;
-use websec::reputation::SignalVariant;
 use std::net::IpAddr;
 use std::str::FromStr;
+use websec::detectors::bruteforce_detector::BruteForceDetector;
+use websec::detectors::{Detector, HttpRequestContext};
+use websec::reputation::SignalVariant;
 
 /// Helper to create login request context
-fn create_login_context(ip: &str, username: &str, password: &str, response_status: u16) -> HttpRequestContext {
+fn create_login_context(
+    ip: &str,
+    username: &str,
+    password: &str,
+    response_status: u16,
+) -> HttpRequestContext {
     let body = format!("username={}&password={}", username, password);
-    let headers = vec![
-        ("Content-Type".to_string(), "application/x-www-form-urlencoded".to_string()),
-    ];
+    let headers = vec![(
+        "Content-Type".to_string(),
+        "application/x-www-form-urlencoded".to_string(),
+    )];
 
     HttpRequestContext {
         ip: IpAddr::from_str(ip).unwrap(),
@@ -41,7 +47,7 @@ async fn test_single_failed_login_no_signal() {
         "192.168.1.100",
         "admin",
         "wrongpass",
-        401 // Unauthorized
+        401, // Unauthorized
     );
 
     // First failed attempt should not trigger signal yet
@@ -58,21 +64,20 @@ async fn test_multiple_failed_logins_generate_signal() {
 
     // Simulate 5 failed login attempts
     for i in 0..5 {
-        let context = create_login_context(
-            ip,
-            "admin",
-            &format!("wrongpass{}", i),
-            401
-        );
+        let context = create_login_context(ip, "admin", &format!("wrongpass{}", i), 401);
 
         let result = detector.analyze(&context).await;
 
         // After threshold (e.g., 3-5 attempts), should generate FailedLogin signal
         if i >= 4 {
-            assert!(result.suspicious, "After 5 failed logins, should be suspicious");
-            let has_failed_login = result.signals.iter().any(|s| {
-                matches!(s.variant, SignalVariant::FailedLogin)
-            });
+            assert!(
+                result.suspicious,
+                "After 5 failed logins, should be suspicious"
+            );
+            let has_failed_login = result
+                .signals
+                .iter()
+                .any(|s| matches!(s.variant, SignalVariant::FailedLogin));
             assert!(has_failed_login, "Should generate FailedLogin signal");
         }
     }
@@ -98,8 +103,10 @@ async fn test_successful_login_resets_counter() {
     let result = detector.analyze(&context).await;
 
     // Should be clean (counter was reset)
-    assert!(!result.suspicious || result.signals.is_empty(),
-        "Counter should reset after successful login");
+    assert!(
+        !result.suspicious || result.signals.is_empty(),
+        "Counter should reset after successful login"
+    );
 }
 
 #[tokio::test]
@@ -109,21 +116,20 @@ async fn test_login_attempt_pattern_detection() {
 
     // Rapid sequential login attempts (within short time window)
     for i in 0..10 {
-        let context = create_login_context(
-            ip,
-            "admin",
-            &format!("pass{}", i),
-            401
-        );
+        let context = create_login_context(ip, "admin", &format!("pass{}", i), 401);
 
         let result = detector.analyze(&context).await;
 
         // After threshold, should detect LoginAttemptPattern
         if i >= 7 {
-            let has_pattern = result.signals.iter().any(|s| {
-                matches!(s.variant, SignalVariant::LoginAttemptPattern)
-            });
-            assert!(has_pattern, "Should detect LoginAttemptPattern after many attempts");
+            let has_pattern = result
+                .signals
+                .iter()
+                .any(|s| matches!(s.variant, SignalVariant::LoginAttemptPattern));
+            assert!(
+                has_pattern,
+                "Should detect LoginAttemptPattern after many attempts"
+            );
         }
     }
 }
@@ -134,7 +140,13 @@ async fn test_credential_stuffing_same_creds_different_ips() {
     let detector = BruteForceDetector::new();
 
     // Same credentials attempted from multiple IPs (credential stuffing attack)
-    let ips = vec!["192.168.1.10", "192.168.1.11", "192.168.1.12", "192.168.1.13", "192.168.1.14"];
+    let ips = vec![
+        "192.168.1.10",
+        "192.168.1.11",
+        "192.168.1.12",
+        "192.168.1.13",
+        "192.168.1.14",
+    ];
     let username = "admin";
     let password = "password123";
 
@@ -144,10 +156,15 @@ async fn test_credential_stuffing_same_creds_different_ips() {
 
         // After seeing same credentials from multiple IPs, should detect credential stuffing
         if idx >= 3 {
-            let has_stuffing = result.signals.iter().any(|s| {
-                matches!(s.variant, SignalVariant::CredentialStuffing)
-            });
-            assert!(has_stuffing, "Should detect CredentialStuffing after {} IPs", idx + 1);
+            let has_stuffing = result
+                .signals
+                .iter()
+                .any(|s| matches!(s.variant, SignalVariant::CredentialStuffing));
+            assert!(
+                has_stuffing,
+                "Should detect CredentialStuffing after {} IPs",
+                idx + 1
+            );
         }
     }
 }
@@ -183,7 +200,10 @@ async fn test_non_auth_endpoint_not_tracked() {
     let result = detector.analyze(&context).await;
 
     // Should not track non-authentication endpoints
-    assert!(!result.suspicious, "Non-auth endpoints should not be tracked");
+    assert!(
+        !result.suspicious,
+        "Non-auth endpoints should not be tracked"
+    );
     assert!(result.signals.is_empty());
 }
 

@@ -180,7 +180,8 @@ impl FloodDetector {
         let burst_window = Duration::from_secs(BURST_WINDOW_SECS);
 
         // Get or create tracking data for this IP
-        let mut entry = self.ip_tracking
+        let mut entry = self
+            .ip_tracking
             .entry(context.ip)
             .or_insert_with(IpFloodData::new);
 
@@ -208,7 +209,10 @@ impl FloodDetector {
                 "Burst pattern detected"
             );
             // Burst is also a form of RequestFlood
-            if !signals.iter().any(|s| matches!(s.variant, SignalVariant::RequestFlood)) {
+            if !signals
+                .iter()
+                .any(|s| matches!(s.variant, SignalVariant::RequestFlood))
+            {
                 signals.push(Signal::new(SignalVariant::RequestFlood));
             }
         }
@@ -287,9 +291,10 @@ mod tests {
         let result = detector.analyze(&context).await;
 
         assert!(result.suspicious);
-        let has_flood = result.signals.iter().any(|s| {
-            matches!(s.variant, SignalVariant::RequestFlood)
-        });
+        let has_flood = result
+            .signals
+            .iter()
+            .any(|s| matches!(s.variant, SignalVariant::RequestFlood));
         assert!(has_flood);
     }
 }

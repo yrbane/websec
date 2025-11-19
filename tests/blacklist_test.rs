@@ -8,9 +8,9 @@
 //! - Blacklist add/remove operations
 //! - CIDR range support
 
-use websec::lists::Blacklist;
 use std::net::IpAddr;
 use std::str::FromStr;
+use websec::lists::Blacklist;
 
 // ============================================================================
 // T105: Blacklist Immediate Block Tests
@@ -34,18 +34,17 @@ fn test_non_blacklisted_ip_allowed() {
     let ip = IpAddr::from_str("192.168.1.100").unwrap();
 
     // IP not in blacklist
-    assert!(!blacklist.contains(&ip), "Non-blacklisted IP should be allowed");
+    assert!(
+        !blacklist.contains(&ip),
+        "Non-blacklisted IP should be allowed"
+    );
 }
 
 #[test]
 fn test_add_multiple_ips_to_blacklist() {
     let mut blacklist = Blacklist::new();
 
-    let ips = vec![
-        "192.168.1.100",
-        "10.0.0.50",
-        "172.16.0.1",
-    ];
+    let ips = vec!["192.168.1.100", "10.0.0.50", "172.16.0.1"];
 
     for ip_str in &ips {
         let ip = IpAddr::from_str(ip_str).unwrap();
@@ -69,7 +68,10 @@ fn test_remove_ip_from_blacklist() {
     assert!(blacklist.contains(&ip));
 
     blacklist.remove(&ip);
-    assert!(!blacklist.contains(&ip), "Removed IP should no longer be blacklisted");
+    assert!(
+        !blacklist.contains(&ip),
+        "Removed IP should no longer be blacklisted"
+    );
 }
 
 #[test]
@@ -77,7 +79,10 @@ fn test_empty_blacklist() {
     let blacklist = Blacklist::new();
     let ip = IpAddr::from_str("192.168.1.100").unwrap();
 
-    assert!(!blacklist.contains(&ip), "Empty blacklist should not block any IP");
+    assert!(
+        !blacklist.contains(&ip),
+        "Empty blacklist should not block any IP"
+    );
 }
 
 // ============================================================================
@@ -93,7 +98,10 @@ fn test_blacklist_clone() {
 
     // Clone should have same IPs
     let cloned = blacklist.clone();
-    assert!(cloned.contains(&ip), "Cloned blacklist should contain same IPs");
+    assert!(
+        cloned.contains(&ip),
+        "Cloned blacklist should contain same IPs"
+    );
 }
 
 // ============================================================================
