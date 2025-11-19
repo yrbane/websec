@@ -111,9 +111,7 @@ impl BruteForceDetector {
     }
 
     /// Extract username and password from request body
-    fn extract_credentials(
-        context: &HttpRequestContext,
-    ) -> (Option<String>, Option<String>) {
+    fn extract_credentials(context: &HttpRequestContext) -> (Option<String>, Option<String>) {
         let body = match &context.body {
             Some(b) => String::from_utf8_lossy(b).to_string(),
             None => return (None, None),
@@ -153,10 +151,7 @@ impl BruteForceDetector {
                 password_hash,
             };
 
-            self.credential_tracking
-                .entry(key)
-                .or_default()
-                .push(*ip);
+            self.credential_tracking.entry(key).or_default().push(*ip);
         }
     }
 

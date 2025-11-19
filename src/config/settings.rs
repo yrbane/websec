@@ -29,7 +29,7 @@ pub struct Settings {
 pub struct ServerConfig {
     /// Listen address (e.g., "0.0.0.0:8080")
     pub listen: String,
-    /// Backend web server URL (e.g., "http://127.0.0.1:3000")
+    /// Backend web server URL (e.g., `http://127.0.0.1:3000`)
     pub backend: String,
     /// Number of worker threads (defaults to CPU cores)
     #[serde(default = "default_workers")]

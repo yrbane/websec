@@ -106,7 +106,7 @@ pub struct GeoDetector {
 }
 
 impl GeoDetector {
-    /// Create a new GeoDetector with default risk countries
+    /// Create a new `GeoDetector` with default risk countries
     #[must_use]
     pub fn new() -> Self {
         // Default high-risk countries based on common attack sources
@@ -125,7 +125,7 @@ impl GeoDetector {
         }
     }
 
-    /// Create GeoDetector with custom risk countries
+    /// Create `GeoDetector` with custom risk countries
     #[must_use]
     pub fn with_risk_countries(countries: Vec<String>) -> Self {
         Self {
@@ -140,20 +140,20 @@ impl GeoDetector {
     /// Returns None for:
     /// - Private IPs (RFC1918)
     /// - Localhost
-    /// - IPs not in GeoIP database
+    /// - IPs not in `GeoIP` database
     fn get_country_code(&self, ip: &IpAddr) -> Option<String> {
         // Exempt localhost and private IPs
-        if self.is_exempt_ip(ip) {
+        if Self::is_exempt_ip(ip) {
             return None;
         }
 
         // Simulate GeoIP lookup for testing
         // In production, this would use maxminddb::Reader
-        self.mock_geo_lookup(ip)
+        Self::mock_geo_lookup(ip)
     }
 
     /// Check if IP should be exempt from geo checks
-    fn is_exempt_ip(&self, ip: &IpAddr) -> bool {
+    fn is_exempt_ip(ip: &IpAddr) -> bool {
         match ip {
             IpAddr::V4(ipv4) => {
                 // Localhost
@@ -174,10 +174,10 @@ impl GeoDetector {
         }
     }
 
-    /// Mock GeoIP lookup for testing
+    /// Mock `GeoIP` lookup for testing
     ///
-    /// In production, replace with actual maxminddb::Reader lookup
-    fn mock_geo_lookup(&self, ip: &IpAddr) -> Option<String> {
+    /// In production, replace with actual `maxminddb::Reader` lookup
+    fn mock_geo_lookup(ip: &IpAddr) -> Option<String> {
         // Simple mock based on IP ranges
         match ip {
             IpAddr::V4(ipv4) => {
@@ -313,24 +313,20 @@ mod tests {
 
     #[test]
     fn test_exempt_ips() {
-        let detector = GeoDetector::new();
-
-        assert!(detector.is_exempt_ip(&IpAddr::from([127, 0, 0, 1])));
-        assert!(detector.is_exempt_ip(&IpAddr::from([192, 168, 1, 1])));
-        assert!(detector.is_exempt_ip(&IpAddr::from([10, 0, 0, 1])));
-        assert!(!detector.is_exempt_ip(&IpAddr::from([8, 8, 8, 8])));
+        assert!(GeoDetector::is_exempt_ip(&IpAddr::from([127, 0, 0, 1])));
+        assert!(GeoDetector::is_exempt_ip(&IpAddr::from([192, 168, 1, 1])));
+        assert!(GeoDetector::is_exempt_ip(&IpAddr::from([10, 0, 0, 1])));
+        assert!(!GeoDetector::is_exempt_ip(&IpAddr::from([8, 8, 8, 8])));
     }
 
     #[test]
     fn test_mock_geo_lookup() {
-        let detector = GeoDetector::new();
-
         assert_eq!(
-            detector.mock_geo_lookup(&IpAddr::from([1, 2, 3, 4])),
+            GeoDetector::mock_geo_lookup(&IpAddr::from([1, 2, 3, 4])),
             Some("CN".to_string())
         );
         assert_eq!(
-            detector.mock_geo_lookup(&IpAddr::from([8, 8, 8, 8])),
+            GeoDetector::mock_geo_lookup(&IpAddr::from([8, 8, 8, 8])),
             Some("US".to_string())
         );
     }
