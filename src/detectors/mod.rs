@@ -21,6 +21,7 @@ pub mod flood_detector;
 pub mod geo_detector;
 pub mod header_detector;
 pub mod injection_detector;
+pub mod protocol_detector;
 pub mod registry;
 pub mod scan_detector;
 
@@ -31,5 +32,6 @@ pub use flood_detector::FloodDetector;
 pub use geo_detector::GeoDetector;
 pub use header_detector::HeaderDetector;
 pub use injection_detector::InjectionDetector;
+pub use protocol_detector::ProtocolDetector;
 pub use registry::DetectorRegistry;
 pub use scan_detector::ScanDetector;

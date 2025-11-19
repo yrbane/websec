@@ -58,9 +58,10 @@ async fn test_valid_http_methods() {
     let detector = ProtocolDetector::new();
 
     let valid_methods = ["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS", "PATCH"];
+    let headers = vec![("Host".to_string(), "example.com".to_string())];
 
     for method in &valid_methods {
-        let context = create_context("192.168.1.1", method, "/", vec![]);
+        let context = create_context("192.168.1.1", method, "/", headers.clone());
         let result = detector.analyze(&context).await;
 
         assert!(!result.suspicious, "Valid method {} should not be flagged", method);
