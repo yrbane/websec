@@ -92,7 +92,7 @@ impl RetryPolicy {
     ///
     /// let result = policy.retry("fetch_data", || async {
     ///     // Your async operation here
-    ///     Ok("data".to_string())
+    ///     Ok::<String, Box<dyn std::error::Error>>("data".to_string())
     /// }).await?;
     /// # Ok(result)
     /// # }
