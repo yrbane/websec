@@ -30,7 +30,7 @@ correlation_penalty_bonus = 10
 # Signal weights (optional - defaults in code if not specified)
 # Bot detection signals
 [reputation.signal_weights]
-VulnerabilityScan = 25       # High severity: sqlmap, nikto, nmap, acunetix
+VulnerabilityScan = 25       # Tool signatures + path scans (wp-admin, .env, 404 bursts)
 SuspiciousUserAgent = 10     # Medium: curl, wget, python-requests
 BotBehaviorPattern = 15      # Missing UA or non-human profile
 AbusiveClient = 15           # Excessive requests without assets

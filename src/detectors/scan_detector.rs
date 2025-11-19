@@ -1,16 +1,57 @@
 //! Vulnerability scan detection (reconnaissance, path enumeration)
 //!
-//! Detects reconnaissance activity and vulnerability scanning through:
-//! - Suspicious path patterns (admin panels, config files, backups)
-//! - 404 error bursts (path enumeration)
-//! - Access to sensitive files (.env, .git, etc.)
+//! Detects reconnaissance activity and vulnerability scanning through pattern matching
+//! on suspicious paths and 404 error bursts indicating automated enumeration.
 //!
-//! Common patterns detected:
-//! - WordPress: /wp-admin/, /wp-content/, /xmlrpc.php
-//! - Database: /phpmyadmin/, /mysql/, /adminer.php
-//! - Admin panels: /admin/, /administrator/, /manager/html
-//! - Config files: /.env, /.git/config, /web.config
-//! - Backups: /backup.sql, /database.sql.gz
+//! # Detection Techniques
+//!
+//! 1. **Suspicious Path Patterns**: Regex matching on known vulnerability targets
+//! 2. **404 Burst Detection**: Threshold-based detection of path enumeration (20+ errors)
+//! 3. **Per-IP Tracking**: Independent counters for each source IP
+//!
+//! # Common Patterns Detected
+//!
+//! - **WordPress**: /wp-admin/, /wp-content/, /xmlrpc.php
+//! - **Database**: /phpmyadmin/, /mysql/, /adminer.php
+//! - **Admin panels**: /admin/, /administrator/, /manager/html
+//! - **Config files**: /.env, /.git/config, /web.config, composer.json
+//! - **Backups**: /backup.sql, /database.sql.gz, /site.tar.gz
+//! - **Sensitive**: phpinfo.php, config.php, .htaccess
+//!
+//! # Example
+//!
+//! ```rust
+//! use websec::detectors::{ScanDetector, Detector, HttpRequestContext};
+//! use std::net::IpAddr;
+//!
+//! # async fn example() {
+//! let detector = ScanDetector::new();
+//! let context = HttpRequestContext {
+//!     ip: "192.168.1.100".parse().unwrap(),
+//!     method: "GET".to_string(),
+//!     path: "/wp-admin/".to_string(), // Suspicious path
+//!     query: None,
+//!     headers: vec![],
+//!     body: None,
+//!     user_agent: Some("Nikto/2.1".to_string()),
+//!     referer: None,
+//!     content_type: None,
+//! };
+//!
+//! let result = detector.analyze(&context).await;
+//! assert!(result.suspicious); // Scan detected
+//! # }
+//! ```
+//!
+//! # Signal Weight
+//!
+//! - `VulnerabilityScan`: 25 (high severity)
+//!
+//! # Performance
+//!
+//! - **Regex**: Compiled once via `Lazy` (amortized O(1) init)
+//! - **Lookup**: O(n) where n = pattern count (~20 patterns)
+//! - **Tracking**: O(1) DashMap get/insert per IP
 
 use super::detector::{DetectionResult, Detector, HttpRequestContext};
 use crate::reputation::{Signal, SignalVariant};
@@ -61,6 +102,23 @@ impl IpScanData {
 }
 
 /// Vulnerability scan detector
+///
+/// Tracks per-IP scan activity including suspicious path access and 404 bursts.
+///
+/// # Fields
+///
+/// - `ip_tracking`: Concurrent map tracking scan metrics per IP
+/// - `enabled`: Detector activation flag (always true by default)
+///
+/// # Thread Safety
+///
+/// Fully thread-safe via `DashMap`. Multiple threads can analyze requests
+/// concurrently without blocking.
+///
+/// # Memory Management
+///
+/// Memory grows with number of active scanner IPs. In production, consider
+/// periodic cleanup of old entries or LRU eviction.
 pub struct ScanDetector {
     /// Per-IP tracking data
     ip_tracking: Arc<DashMap<IpAddr, IpScanData>>,
@@ -69,7 +127,9 @@ pub struct ScanDetector {
 }
 
 impl ScanDetector {
-    /// Create a new ScanDetector
+    /// Create a new ScanDetector with default thresholds
+    ///
+    /// Initializes empty tracking map. Memory is allocated lazily as IPs are seen.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -78,12 +138,25 @@ impl ScanDetector {
         }
     }
 
-    /// Check if path is suspicious
+    /// Check if path matches suspicious patterns
+    ///
+    /// Uses compiled regex with 20+ vulnerability patterns including:
+    /// admin panels, config files, backups, and framework-specific paths.
     fn is_suspicious_path(path: &str) -> bool {
         SUSPICIOUS_PATH_PATTERN.is_match(path)
     }
 
-    /// Analyze request for scan patterns
+    /// Analyze request for scan patterns and generate signals
+    ///
+    /// # Algorithm
+    ///
+    /// 1. Check if path matches suspicious patterns → generate signal immediately
+    /// 2. Check if path looks like enumeration (404 simulation)
+    /// 3. If 404 burst threshold reached → generate signal
+    ///
+    /// # Returns
+    ///
+    /// Vector of signals (empty if no scan detected)
     fn analyze_scan(&self, context: &HttpRequestContext) -> Vec<Signal> {
         let mut signals = Vec::new();
 
