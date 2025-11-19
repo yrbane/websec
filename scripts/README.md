@@ -198,6 +198,72 @@ docker-compose down -v     # + supprime les volumes
 
 ---
 
+## websec-lists.sh
+
+Gestionnaire de blacklist/whitelist pour WebSec.
+
+**Usage**:
+```bash
+./scripts/websec-lists.sh <command> [arguments]
+```
+
+**Commandes principales**:
+
+```bash
+# Blacklist
+./scripts/websec-lists.sh blacklist add 192.168.1.100
+./scripts/websec-lists.sh blacklist add 10.0.0.0/8
+./scripts/websec-lists.sh blacklist remove 192.168.1.100
+./scripts/websec-lists.sh blacklist list
+./scripts/websec-lists.sh blacklist clear
+
+# Whitelist
+./scripts/websec-lists.sh whitelist add 203.0.113.50
+./scripts/websec-lists.sh whitelist add 172.16.0.0/12
+./scripts/websec-lists.sh whitelist remove 203.0.113.50
+./scripts/websec-lists.sh whitelist list
+./scripts/websec-lists.sh whitelist clear
+
+# Utilitaires
+./scripts/websec-lists.sh check 192.168.1.100      # Vérifier une IP
+./scripts/websec-lists.sh stats                     # Statistiques
+./scripts/websec-lists.sh export json > lists.json  # Exporter (JSON/CSV)
+./scripts/websec-lists.sh import lists.json         # Importer
+```
+
+**Fonctionnalités**:
+- Support IP individuelles et réseaux CIDR
+- Validation automatique des formats IP
+- Export/import en JSON et CSV
+- Vérification de doublon
+- Statistiques en temps réel
+- Code couleur pour meilleure lisibilité
+
+**Variables d'environnement**:
+```bash
+export WEBSEC_LISTS_DIR=/etc/websec/lists
+./scripts/websec-lists.sh stats
+```
+
+**Formats d'export**:
+
+*JSON*:
+```json
+{
+  "blacklist": ["192.168.1.100", "10.0.0.0/8"],
+  "whitelist": ["203.0.113.50"]
+}
+```
+
+*CSV*:
+```csv
+type,ip
+blacklist,192.168.1.100
+whitelist,203.0.113.50
+```
+
+---
+
 ## Installation d'Apache Bench (optionnel)
 
 ### Ubuntu/Debian
