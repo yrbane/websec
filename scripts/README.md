@@ -101,6 +101,103 @@ Script complet de test end-to-end.
 
 ---
 
+## docker-build.sh
+
+Script de build Docker optimisé avec BuildKit.
+
+**Usage**:
+```bash
+./scripts/docker-build.sh
+```
+
+**Fonctionnalités**:
+- Build multi-stage pour image optimisée
+- Cache BuildKit pour builds rapides
+- Tags avec `latest` et commit SHA
+- Affiche la taille de l'image finale
+
+**Exemple**:
+```bash
+./scripts/docker-build.sh
+# 🐳 Building WebSec Docker image
+# 📦 Building multi-stage image...
+# ✅ Docker image built successfully!
+```
+
+---
+
+## docker-test.sh
+
+Script de test complet du stack Docker (docker-compose).
+
+**Usage**:
+```bash
+./scripts/docker-test.sh
+```
+
+**Fonctionnalités**:
+1. Démarre le stack complet (backend + Redis + WebSec + Prometheus)
+2. Vérifie la santé de tous les services
+3. Exécute 5 tests fonctionnels
+4. Affiche les statistiques des conteneurs
+5. Affiche les métriques WebSec
+6. Laisse le stack running pour exploration
+
+**Tests exécutés**:
+- ✅ GET / via proxy - Forwarding basique
+- ✅ GET /metrics - Métriques Prometheus
+- ✅ Headers WebSec - Vérification X-WebSec-Decision
+- ✅ GET /api/users - API JSON via proxy
+- ✅ POST /api/echo - POST avec body
+
+**Services démarrés**:
+- `websec-backend` - Backend de test Python (port 3000)
+- `websec-redis` - Redis pour storage (port 6379)
+- `websec-proxy` - WebSec reverse proxy (port 8080)
+- `websec-prometheus` - Prometheus monitoring (port 9091)
+
+**Exemple de sortie**:
+```
+🐳 Testing WebSec Docker stack
+
+🚀 Starting Docker Compose stack...
+⏳ Waiting for services to be healthy...
+  Checking backend... ✓
+  Checking WebSec proxy... ✓
+  Checking Redis... ✓
+
+🧪 Running functional tests
+
+  Test 1: GET / via proxy... ✓
+  Test 2: GET /metrics... ✓
+  Test 3: WebSec headers... ✓
+  Test 4: GET /api/users... ✓
+  Test 5: POST /api/echo... ✓
+
+📊 Container statistics
+📈 WebSec metrics
+  Total requests: 5
+
+✅ All Docker tests passed!
+
+💡 Stack is running:
+   - Backend:    http://localhost:3000
+   - WebSec:     http://localhost:8080
+   - Metrics:    http://localhost:8080/metrics
+   - Prometheus: http://localhost:9091
+
+🛑 To stop the stack:
+   docker-compose down
+```
+
+**Arrêt du stack**:
+```bash
+docker-compose down        # Arrête et supprime les conteneurs
+docker-compose down -v     # + supprime les volumes
+```
+
+---
+
 ## Installation d'Apache Bench (optionnel)
 
 ### Ubuntu/Debian

@@ -112,16 +112,44 @@ cargo install websec
 
 ### Docker
 
-```bash
-# Construire l'image
-docker build -t websec:latest .
+#### Build rapide
 
-# Lancer le conteneur
+```bash
+# Construire l'image avec le script optimisé
+./scripts/docker-build.sh
+
+# Lancer le conteneur standalone
 docker run -d \
   -p 8080:8080 \
-  -v $(pwd)/config:/etc/websec \
+  -p 9090:9090 \
+  -v $(pwd)/config:/app/config:ro \
   websec:latest
 ```
+
+#### Stack complet avec docker-compose
+
+```bash
+# Démarre WebSec + Backend de test + Redis + Prometheus
+docker-compose up -d
+
+# Tester le stack complet
+./scripts/docker-test.sh
+
+# Accès aux services
+# - WebSec:     http://localhost:8080
+# - Metrics:    http://localhost:8080/metrics
+# - Backend:    http://localhost:3000
+# - Prometheus: http://localhost:9091
+
+# Arrêter le stack
+docker-compose down
+```
+
+Le stack docker-compose inclut :
+- **websec-proxy** : Le reverse proxy WebSec (ports 8080, 9090)
+- **websec-backend** : Backend HTTP de test Python
+- **websec-redis** : Redis pour storage distribué
+- **websec-prometheus** : Monitoring Prometheus préconfiguration
 
 ## 📖 Configuration
 
