@@ -215,7 +215,22 @@ impl ProxyServer {
     /// # }
     /// ```
     pub async fn run(self) -> Result<()> {
-        let listener = TcpListener::bind(self.listen_addr).await?;
+        let listener = TcpListener::bind(self.listen_addr).await.map_err(|e| {
+            // Amélioration du message d'erreur pour les conflits de port
+            if e.kind() == std::io::ErrorKind::AddrInUse {
+                let port = self.listen_addr.port();
+                let detailed_msg = crate::utils::port_checker::format_port_conflict_error(
+                    port,
+                    &self.listen_addr.to_string(),
+                );
+                Error::Io(std::io::Error::new(
+                    std::io::ErrorKind::AddrInUse,
+                    detailed_msg,
+                ))
+            } else {
+                Error::Io(e)
+            }
+        })?;
 
         tracing::info!("🚀 WebSec proxy server listening on {}", self.listen_addr);
         tracing::info!(

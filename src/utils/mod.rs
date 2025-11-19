@@ -4,8 +4,10 @@
 //! - Regex pattern compilation (`lazy_static`)
 //! - Time utilities (decay calculations)
 //! - HTTP header parsing helpers
+//! - Port conflict detection
 
 pub mod parser;
+pub mod port_checker;
 
 pub use parser::{
     contains_command_injection, contains_path_traversal, contains_sql_injection, contains_xss,
