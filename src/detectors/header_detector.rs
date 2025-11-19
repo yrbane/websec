@@ -1,10 +1,88 @@
 //! HTTP header manipulation detection
 //!
-//! Detects attacks targeting HTTP headers:
-//! - Header injection (CRLF)
-//! - Host header attacks
-//! - Referer spoofing
-//! - Invalid header formats
+//! Detects attacks targeting HTTP headers and HTTP smuggling attempts.
+//!
+//! # Threat Families Detected
+//!
+//! - **Header Injection**: CRLF injection (\r\n) to split responses or inject headers
+//! - **Host Header Attacks**: Multiple Host headers, cache poisoning attempts
+//! - **Referer Spoofing**: Suspicious referrer domains
+//! - **X-Forwarded-For Manipulation**: IP spoofing via proxy headers
+//! - **Oversized Headers**: Buffer overflow attempts
+//!
+//! # Implementation Strategy
+//!
+//! This detector analyzes HTTP headers for manipulation patterns:
+//!
+//! 1. **CRLF Detection**: Scans for `\r`, `\n`, `\r\n` in header names and values
+//! 2. **Host Header Validation**: Ensures single Host header (HTTP/1.1 requirement)
+//! 3. **Size Limits**: Enforces 8KB max per header value
+//! 4. **Null Byte Detection**: Prevents string termination attacks
+//! 5. **Proxy Header Analysis**: Validates X-Forwarded-For chains
+//!
+//! # Signals Generated
+//!
+//! - `HeaderInjection` (weight 20): CRLF, null bytes, oversized headers, XFF manipulation
+//! - `HostHeaderAttack` (weight 20): Multiple Host headers detected
+//! - `RefererSpoofing` (weight 10): Suspicious TLD in Referer header
+//!
+//! # Attack Examples Detected
+//!
+//! ```text
+//! # CRLF Injection
+//! Host: evil.com\r\n
+//! X-Injected: malicious
+//!
+//! # Multiple Host Headers (cache poisoning)
+//! Host: legitimate.com
+//! Host: evil.com
+//!
+//! # X-Forwarded-For Spoofing
+//! X-Forwarded-For: 127.0.0.1, 127.0.0.1, 127.0.0.1
+//! ```
+//!
+//! # Example Usage
+//!
+//! ```rust
+//! use websec::detectors::{HeaderDetector, Detector, HttpRequestContext};
+//! use std::net::IpAddr;
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! let detector = HeaderDetector::new();
+//!
+//! let context = HttpRequestContext {
+//!     ip: "192.168.1.100".parse()?,
+//!     method: "GET".to_string(),
+//!     path: "/".to_string(),
+//!     query: None,
+//!     headers: vec![
+//!         ("Host".to_string(), "evil.com\r\nX-Injected: true".to_string()),
+//!     ],
+//!     body: None,
+//!     user_agent: Some("Mozilla/5.0".to_string()),
+//!     referer: None,
+//!     content_type: None,
+//! };
+//!
+//! let result = detector.analyze(&context).await;
+//! if result.suspicious {
+//!     println!("Header manipulation: {:?}", result.signals);
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Security Notes
+//!
+//! - **CRLF Injection**: Can lead to HTTP response splitting, cache poisoning
+//! - **Host Header Attacks**: Used in cache poisoning, password reset poisoning
+//! - **Oversized Headers**: May cause buffer overflows in poorly written parsers
+//! - **XFF Manipulation**: Can bypass IP-based access controls
+//!
+//! # References
+//!
+//! - [OWASP: HTTP Response Splitting](https://owasp.org/www-community/attacks/HTTP_Response_Splitting)
+//! - [PortSwigger: Host Header Attacks](https://portswigger.net/web-security/host-header)
 
 use crate::detectors::{Detector, DetectionResult, HttpRequestContext};
 use crate::reputation::{Signal, SignalVariant};

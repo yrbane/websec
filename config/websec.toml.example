@@ -55,6 +55,11 @@ RceAttempt = 50                 # Command injection: ;cat, backticks, $()
 HighRiskCountry = 15            # Request from high-risk country (CN, RU, KP, IR, SY)
 ImpossibleTravel = 20           # Country changed within 1 hour for same IP
 
+# Header manipulation signals (Header Detection)
+HeaderInjection = 20            # CRLF injection, null bytes, oversized headers
+HostHeaderAttack = 20           # Multiple Host headers (cache poisoning)
+RefererSpoofing = 10            # Suspicious referer TLD (.ru, .cn, .tk, .ml)
+
 [lists]
 # Blacklist: IPs to block immediately (score = 0, decision = BLOCK)
 # Takes highest priority - overrides whitelist and scoring
