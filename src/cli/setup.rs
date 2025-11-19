@@ -17,6 +17,7 @@ use crate::{Error, Result};
 use chrono::Utc;
 use regex::Regex;
 use std::collections::HashMap;
+use std::env;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -25,6 +26,18 @@ const APACHE_SITES_ENABLED: &str = "/etc/apache2/sites-enabled";
 const APACHE_PORTS_CONF: &str = "/etc/apache2/ports.conf";
 const DEFAULT_INTERNAL_HTTP_PORT: u16 = 8081;
 const DEFAULT_INTERNAL_HTTPS_PORT: u16 = 8443;
+
+fn apache_sites_enabled_path() -> PathBuf {
+    env::var("WEBSEC_APACHE_SITES_ENABLED")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(APACHE_SITES_ENABLED))
+}
+
+fn apache_ports_conf_path() -> PathBuf {
+    env::var("WEBSEC_APACHE_PORTS_CONF")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(APACHE_PORTS_CONF))
+}
 
 /// Run the interactive setup for Apache.
 pub fn run_setup(config_path: &Path) -> Result<()> {
@@ -207,8 +220,8 @@ struct ApacheEnvironment {
 
 impl ApacheEnvironment {
     fn detect() -> Result<Self> {
-        let sites_enabled = PathBuf::from(APACHE_SITES_ENABLED);
-        let ports_conf = PathBuf::from(APACHE_PORTS_CONF);
+        let sites_enabled = apache_sites_enabled_path();
+        let ports_conf = apache_ports_conf_path();
         if !sites_enabled.exists() {
             return Err(Error::Config(format!(
                 "Répertoire {APACHE_SITES_ENABLED} introuvable"
@@ -570,4 +583,147 @@ fn update_websec_config(config_path: &Path, backend_port: Option<u16>) -> Result
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use tempfile::tempdir;
+
+    fn sample_config() -> String {
+        r#"[server]
+listen = "0.0.0.0:8080"
+backend = "http://127.0.0.1:3000"
+workers = 4
+
+[reputation]
+base_score = 100
+threshold_allow = 70
+threshold_ratelimit = 40
+threshold_challenge = 20
+threshold_block = 0
+decay_half_life_hours = 24.0
+correlation_penalty_bonus = 10
+
+[storage]
+type = "memory"
+redis_url = null
+cache_size = 10000
+
+[geolocation]
+enabled = false
+database = null
+penalties = {}
+
+[ratelimit]
+normal_rpm = 1000
+normal_burst = 100
+suspicious_rpm = 200
+suspicious_burst = 20
+aggressive_rpm = 50
+aggressive_burst = 5
+window_duration_secs = 60
+
+[logging]
+level = "info"
+format = "json"
+
+[metrics]
+enabled = true
+port = 9090
+"#
+        .to_string()
+    }
+
+    fn list_backups(dir: &Path, needle: &str) -> Vec<PathBuf> {
+        fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_name()
+                    .map(|n| n.to_string_lossy().contains(needle))
+                    .unwrap_or(false)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_parse_ports_from_virtualhost_with_multiple_bindings() {
+        let ports = parse_ports_from_virtualhost("<VirtualHost 127.0.0.1:80 [::1]:443>");
+        assert!(ports.contains(&80));
+        assert!(ports.contains(&443));
+        assert_eq!(ports.len(), 2);
+    }
+
+    #[test]
+    fn test_update_ports_conf_updates_multiple_ports() {
+        let dir = tempdir().unwrap();
+        let ports_path = dir.path().join("ports.conf");
+        fs::write(
+            &ports_path,
+            "Listen 80
+Listen 443
+Listen 8080
+",
+        )
+        .unwrap();
+
+        let sites_dir = dir.path().join("sites-enabled");
+        fs::create_dir(&sites_dir).unwrap();
+        fs::write(
+            sites_dir.join("000-default.conf"),
+            "<VirtualHost *:80>
+</VirtualHost>",
+        )
+        .unwrap();
+
+        let env = ApacheEnvironment {
+            sites_enabled: sites_dir,
+            ports_conf: ports_path.clone(),
+        };
+
+        let updated = env
+            .update_ports_conf(&[(80, 8081), (443, 8443)])
+            .expect("update should succeed");
+        assert!(updated);
+
+        let content = fs::read_to_string(&ports_path).unwrap();
+        assert!(content.contains("Listen 8081"));
+        assert!(content.contains("Listen 8443"));
+        assert!(content.contains("Listen 8080"));
+
+        let backups = list_backups(ports_path.parent().unwrap(), "ports.conf.websec.bak");
+        assert_eq!(backups.len(), 1);
+    }
+
+    #[test]
+    fn test_update_websec_config_overrides_backend_and_listen() {
+        let dir = tempdir().unwrap();
+        let cfg_path = dir.path().join("websec.toml");
+        fs::write(&cfg_path, sample_config()).unwrap();
+
+        update_websec_config(&cfg_path, Some(8081)).expect("update should succeed");
+
+        let new_settings = load_from_file(&cfg_path).expect("updated config should be valid");
+        assert_eq!(new_settings.server.listen, "0.0.0.0:80");
+        assert_eq!(new_settings.server.backend, "http://127.0.0.1:8081");
+
+        let backups = list_backups(cfg_path.parent().unwrap(), "websec.toml.websec.bak");
+        assert_eq!(backups.len(), 1);
+    }
+
+    #[test]
+    fn test_update_websec_config_no_http_migration_keeps_config() {
+        let dir = tempdir().unwrap();
+        let cfg_path = dir.path().join("websec.toml");
+        fs::write(&cfg_path, sample_config()).unwrap();
+
+        update_websec_config(&cfg_path, None).expect("should skip changes");
+        let settings = load_from_file(&cfg_path).unwrap();
+        assert_eq!(settings.server.listen, "0.0.0.0:8080");
+        assert_eq!(settings.server.backend, "http://127.0.0.1:3000");
+    }
 }

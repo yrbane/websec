@@ -72,6 +72,7 @@ clap = { version = "4.5.52", features = ["derive"] }
 criterion = { version = "0.5", features = ["async_tokio"] }
 mockall = "0.12"
 tokio-test = "0.4"
+tempfile = "3.10"
 
 [features]
 default = []
