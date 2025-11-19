@@ -53,7 +53,7 @@
 //! - **Memory**: O(n) where n = number of active IPs × requests in window
 //! - **Time complexity**: O(m) where m = requests in window (typically < 200)
 //! - **Pruning**: Automatic on each request (amortized O(1))
-//! - **Concurrency**: Lock-free reads/writes via DashMap
+//! - **Concurrency**: Lock-free reads/writes via `DashMap`
 //!
 //! # Configuration
 //!
@@ -101,7 +101,7 @@ impl IpFloodData {
     /// Add a request timestamp and prune old entries
     fn add_request(&mut self, now: Instant, window_duration: Duration) {
         // Remove entries older than window
-        let cutoff = now - window_duration;
+        let cutoff = now.checked_sub(window_duration).unwrap_or(now);
         self.request_times.retain(|&t| t > cutoff);
 
         // Add current request
@@ -110,13 +110,13 @@ impl IpFloodData {
 
     /// Get request count in window
     fn request_count(&self, now: Instant, window_duration: Duration) -> usize {
-        let cutoff = now - window_duration;
+        let cutoff = now.checked_sub(window_duration).unwrap_or(now);
         self.request_times.iter().filter(|&&t| t > cutoff).count()
     }
 
     /// Check if burst pattern detected
     fn is_burst(&self, now: Instant, threshold: usize, burst_window: Duration) -> bool {
-        let cutoff = now - burst_window;
+        let cutoff = now.checked_sub(burst_window).unwrap_or(now);
         let burst_count = self.request_times.iter().filter(|&&t| t > cutoff).count();
         burst_count >= threshold
     }
@@ -149,7 +149,7 @@ pub struct FloodDetector {
 }
 
 impl FloodDetector {
-    /// Create a new FloodDetector with default thresholds
+    /// Create a new `FloodDetector` with default thresholds
     ///
     /// Initializes empty tracking map. Memory is allocated lazily as IPs are seen.
     #[must_use]

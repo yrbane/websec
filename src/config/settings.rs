@@ -45,7 +45,7 @@ pub struct ReputationConfig {
     /// ALLOW threshold (>= this score)
     #[serde(default = "default_threshold_allow")]
     pub threshold_allow: u8,
-    /// RATE_LIMIT threshold (>= this score, < allow)
+    /// `RATE_LIMIT` threshold (>= this score, < allow)
     #[serde(default = "default_threshold_ratelimit")]
     pub threshold_ratelimit: u8,
     /// CHALLENGE threshold (>= this score, < ratelimit)
@@ -81,7 +81,7 @@ pub struct GeolocationConfig {
     /// Enable geolocation lookups
     #[serde(default = "default_true")]
     pub enabled: bool,
-    /// Path to GeoIP2 database
+    /// Path to `GeoIP2` database
     pub database: Option<String>,
     /// Country code penalties (ISO 3166-1 alpha-2 -> penalty points)
     #[serde(default)]

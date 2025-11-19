@@ -22,7 +22,7 @@
 //!
 //! # Production Integration
 //!
-//! **Note**: Current implementation uses mock GeoIP lookup for testing.
+//! **Note**: Current implementation uses mock `GeoIP` lookup for testing.
 //! For production, replace `mock_geo_lookup()` with `maxminddb::Reader`:
 //!
 //! ```ignore
@@ -94,7 +94,7 @@ struct GeoLocation {
     timestamp: u64,
 }
 
-/// GeoDetector analyzes IP geolocation for threat patterns
+/// `GeoDetector` analyzes IP geolocation for threat patterns
 #[derive(Clone)]
 pub struct GeoDetector {
     /// High-risk country codes (ISO 3166-1 alpha-2)

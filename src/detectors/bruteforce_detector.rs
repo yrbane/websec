@@ -95,7 +95,7 @@ pub struct BruteForceDetector {
 }
 
 impl BruteForceDetector {
-    /// Create a new BruteForceDetector
+    /// Create a new `BruteForceDetector`
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -106,13 +106,12 @@ impl BruteForceDetector {
     }
 
     /// Check if path is an authentication endpoint
-    fn is_auth_endpoint(&self, path: &str) -> bool {
+    fn is_auth_endpoint(path: &str) -> bool {
         AUTH_ENDPOINT_PATTERNS.is_match(path)
     }
 
     /// Extract username and password from request body
     fn extract_credentials(
-        &self,
         context: &HttpRequestContext,
     ) -> (Option<String>, Option<String>) {
         let body = match &context.body {
@@ -156,7 +155,7 @@ impl BruteForceDetector {
 
             self.credential_tracking
                 .entry(key)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(*ip);
         }
     }
@@ -165,7 +164,7 @@ impl BruteForceDetector {
     fn analyze_auth_attempt(&self, context: &HttpRequestContext) -> Vec<Signal> {
         let mut signals = Vec::new();
 
-        let (username, password) = self.extract_credentials(context);
+        let (username, password) = Self::extract_credentials(context);
 
         // Track this attempt
         self.track_attempt(&context.ip, username.clone(), password.clone());
@@ -237,7 +236,7 @@ impl Detector for BruteForceDetector {
 
     async fn analyze(&self, context: &HttpRequestContext) -> DetectionResult {
         // Only analyze POST requests to auth endpoints
-        if context.method != "POST" || !self.is_auth_endpoint(&context.path) {
+        if context.method != "POST" || !Self::is_auth_endpoint(&context.path) {
             return DetectionResult::clean();
         }
 
@@ -278,22 +277,19 @@ mod tests {
 
     #[test]
     fn test_is_auth_endpoint() {
-        let detector = BruteForceDetector::new();
-
-        assert!(detector.is_auth_endpoint("/login"));
-        assert!(detector.is_auth_endpoint("/signin"));
-        assert!(detector.is_auth_endpoint("/admin/login"));
-        assert!(detector.is_auth_endpoint("/api/auth"));
-        assert!(!detector.is_auth_endpoint("/api/users"));
-        assert!(!detector.is_auth_endpoint("/dashboard"));
+        assert!(BruteForceDetector::is_auth_endpoint("/login"));
+        assert!(BruteForceDetector::is_auth_endpoint("/signin"));
+        assert!(BruteForceDetector::is_auth_endpoint("/admin/login"));
+        assert!(BruteForceDetector::is_auth_endpoint("/api/auth"));
+        assert!(!BruteForceDetector::is_auth_endpoint("/api/users"));
+        assert!(!BruteForceDetector::is_auth_endpoint("/dashboard"));
     }
 
     #[test]
     fn test_extract_credentials() {
-        let detector = BruteForceDetector::new();
         let context = create_context("192.168.1.1", "/login", "admin", "password123");
 
-        let (username, password) = detector.extract_credentials(&context);
+        let (username, password) = BruteForceDetector::extract_credentials(&context);
 
         assert_eq!(username, Some("admin".to_string()));
         assert_eq!(password, Some("password123".to_string()));

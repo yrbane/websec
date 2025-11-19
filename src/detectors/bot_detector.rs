@@ -33,25 +33,25 @@ pub struct BotDetector {
 }
 
 impl BotDetector {
-    /// Create a new BotDetector
+    /// Create a new `BotDetector`
     #[must_use]
     pub fn new() -> Self {
         Self { enabled: true }
     }
 
     /// Check if User-Agent matches vulnerability scanner patterns
-    fn is_scanner(&self, user_agent: &str) -> bool {
+    fn is_scanner(user_agent: &str) -> bool {
         SCANNER_PATTERNS.is_match(user_agent)
     }
 
     /// Check if User-Agent matches generic bot/tool patterns
-    fn is_generic_bot(&self, user_agent: &str) -> bool {
+    fn is_generic_bot(user_agent: &str) -> bool {
         BOT_PATTERNS.is_match(user_agent)
     }
 
     /// Check if User-Agent is missing or empty
-    fn is_missing_user_agent(&self, user_agent: Option<&str>) -> bool {
-        user_agent.map_or(true, |ua| ua.trim().is_empty())
+    fn is_missing_user_agent(user_agent: Option<&str>) -> bool {
+        user_agent.is_none() || user_agent.is_some_and(|ua| ua.trim().is_empty())
     }
 
     /// Analyze User-Agent header
@@ -59,7 +59,7 @@ impl BotDetector {
         let mut signals = Vec::new();
 
         // Check for missing/empty User-Agent
-        if self.is_missing_user_agent(context.user_agent.as_deref()) {
+        if Self::is_missing_user_agent(context.user_agent.as_deref()) {
             tracing::debug!(
                 ip = %context.ip,
                 path = %context.path,
@@ -72,7 +72,7 @@ impl BotDetector {
         let user_agent = context.user_agent.as_ref().unwrap();
 
         // Check for vulnerability scanners (high severity)
-        if self.is_scanner(user_agent) {
+        if Self::is_scanner(user_agent) {
             tracing::warn!(
                 ip = %context.ip,
                 path = %context.path,
@@ -84,7 +84,7 @@ impl BotDetector {
         }
 
         // Check for generic bots/tools (medium severity)
-        if self.is_generic_bot(user_agent) {
+        if Self::is_generic_bot(user_agent) {
             tracing::info!(
                 ip = %context.ip,
                 path = %context.path,
@@ -154,33 +154,27 @@ mod tests {
 
     #[test]
     fn test_is_scanner() {
-        let detector = BotDetector::new();
-
-        assert!(detector.is_scanner("sqlmap/1.0"));
-        assert!(detector.is_scanner("Mozilla/5.00 (Nikto/2.1.6)"));
-        assert!(detector.is_scanner("Acunetix-Security-Scanner"));
-        assert!(detector.is_scanner("nmap scripting engine"));
-        assert!(!detector.is_scanner("Mozilla/5.0 Chrome/91.0"));
+        assert!(BotDetector::is_scanner("sqlmap/1.0"));
+        assert!(BotDetector::is_scanner("Mozilla/5.00 (Nikto/2.1.6)"));
+        assert!(BotDetector::is_scanner("Acunetix-Security-Scanner"));
+        assert!(BotDetector::is_scanner("nmap scripting engine"));
+        assert!(!BotDetector::is_scanner("Mozilla/5.0 Chrome/91.0"));
     }
 
     #[test]
     fn test_is_generic_bot() {
-        let detector = BotDetector::new();
-
-        assert!(detector.is_generic_bot("curl/7.68.0"));
-        assert!(detector.is_generic_bot("python-requests/2.25.1"));
-        assert!(detector.is_generic_bot("Go-http-client/1.1"));
-        assert!(!detector.is_generic_bot("Mozilla/5.0 Firefox/89.0"));
+        assert!(BotDetector::is_generic_bot("curl/7.68.0"));
+        assert!(BotDetector::is_generic_bot("python-requests/2.25.1"));
+        assert!(BotDetector::is_generic_bot("Go-http-client/1.1"));
+        assert!(!BotDetector::is_generic_bot("Mozilla/5.0 Firefox/89.0"));
     }
 
     #[test]
     fn test_is_missing_user_agent() {
-        let detector = BotDetector::new();
-
-        assert!(detector.is_missing_user_agent(None));
-        assert!(detector.is_missing_user_agent(Some("")));
-        assert!(detector.is_missing_user_agent(Some("   ")));
-        assert!(!detector.is_missing_user_agent(Some("Mozilla/5.0")));
+        assert!(BotDetector::is_missing_user_agent(None));
+        assert!(BotDetector::is_missing_user_agent(Some("")));
+        assert!(BotDetector::is_missing_user_agent(Some("   ")));
+        assert!(!BotDetector::is_missing_user_agent(Some("Mozilla/5.0")));
     }
 
     #[tokio::test]
