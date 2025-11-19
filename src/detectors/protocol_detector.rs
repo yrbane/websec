@@ -132,7 +132,7 @@ impl ProtocolDetector {
             let signal = Signal::with_context(
                 SignalVariant::InvalidHttpMethod,
                 15, // Weight from signal.rs
-                format!("Invalid HTTP method: {}", method),
+                format!("Invalid HTTP method: {method}"),
             );
             signals.push(signal);
         }
@@ -142,7 +142,7 @@ impl ProtocolDetector {
             let signal = Signal::with_context(
                 SignalVariant::ProtocolViolation,
                 15,
-                format!("HTTP method contains space: '{}'", method),
+                format!("HTTP method contains space: '{method}'"),
             );
             signals.push(signal);
         }
@@ -222,7 +222,7 @@ impl ProtocolDetector {
             let signal = Signal::with_context(
                 SignalVariant::MalformedRequest,
                 10,
-                format!("Path does not start with '/': {}", path),
+                format!("Path does not start with '/': {path}"),
             );
             signals.push(signal);
         }
@@ -286,7 +286,7 @@ impl Default for ProtocolDetector {
 
 #[async_trait]
 impl Detector for ProtocolDetector {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "ProtocolDetector"
     }
 
@@ -331,8 +331,7 @@ mod tests {
             let signals = ProtocolDetector::validate_method(method);
             assert!(
                 signals.is_empty(),
-                "Valid method {} should not generate signals",
-                method
+                "Valid method {method} should not generate signals"
             );
         }
     }

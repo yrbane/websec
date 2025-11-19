@@ -248,7 +248,7 @@ impl Default for GeoDetector {
 
 #[async_trait]
 impl Detector for GeoDetector {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "GeoDetector"
     }
 
@@ -273,7 +273,7 @@ impl Detector for GeoDetector {
             let signal = Signal::with_context(
                 SignalVariant::HighRiskCountry,
                 15, // Weight from signal.rs
-                format!("Request from high-risk country: {}", country_code),
+                format!("Request from high-risk country: {country_code}"),
             );
             signals.push(signal);
         }
@@ -284,8 +284,7 @@ impl Detector for GeoDetector {
                 SignalVariant::ImpossibleTravel,
                 20, // Weight from signal.rs
                 format!(
-                    "Impossible travel detected for IP {} to country {}",
-                    ip, country_code
+                    "Impossible travel detected for IP {ip} to country {country_code}"
                 ),
             );
             signals.push(signal);

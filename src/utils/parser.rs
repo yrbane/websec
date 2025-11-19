@@ -2,7 +2,6 @@
 //!
 //! Provides helpers for parsing URLs, User-Agent strings, and other HTTP fields.
 
-use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashMap;
 
@@ -14,7 +13,7 @@ use std::collections::HashMap;
 ///
 /// # Returns
 ///
-/// HashMap of parameter name to value
+/// `HashMap` of parameter name to value
 ///
 /// # Example
 ///
@@ -24,7 +23,7 @@ use std::collections::HashMap;
 /// let params = parse_query_string("user=admin&pass=123");
 /// assert_eq!(params.get("user"), Some(&"admin".to_string()));
 /// ```
-pub fn parse_query_string(query: &str) -> HashMap<String, String> {
+#[must_use] pub fn parse_query_string(query: &str) -> HashMap<String, String> {
     let mut params = HashMap::new();
 
     for pair in query.split('&') {
@@ -49,7 +48,7 @@ pub fn parse_query_string(query: &str) -> HashMap<String, String> {
 ///
 /// `true` if the UA matches known bot/scanner patterns
 pub fn is_bot_user_agent(user_agent: &str) -> bool {
-    static BOT_PATTERNS: Lazy<Regex> = Lazy::new(|| {
+    static BOT_PATTERNS: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
         Regex::new(
             r"(?i)(bot|crawler|spider|scraper|curl|wget|python|java|go-http|nikto|sqlmap|nmap|masscan|acunetix|burp|metasploit|nessus|openvas)",
         )
@@ -60,14 +59,14 @@ pub fn is_bot_user_agent(user_agent: &str) -> bool {
 }
 
 /// Check if User-Agent is empty or missing
-pub fn is_empty_user_agent(user_agent: Option<&str>) -> bool {
-    user_agent.map_or(true, |ua| ua.trim().is_empty())
+#[must_use] pub fn is_empty_user_agent(user_agent: Option<&str>) -> bool {
+    user_agent.is_none_or(|ua| ua.trim().is_empty())
 }
 
 /// Extract User-Agent browser family
 ///
 /// Returns basic browser classification: Chrome, Firefox, Safari, Edge, etc.
-pub fn extract_browser_family(user_agent: &str) -> Option<String> {
+#[must_use] pub fn extract_browser_family(user_agent: &str) -> Option<String> {
     if user_agent.contains("Chrome") && !user_agent.contains("Edge") {
         Some("Chrome".to_string())
     } else if user_agent.contains("Firefox") {
@@ -91,8 +90,8 @@ pub fn extract_browser_family(user_agent: &str) -> Option<String> {
 ///
 /// `true` if path contains ../, ..\ or encoded variants
 pub fn contains_path_traversal(path: &str) -> bool {
-    static TRAVERSAL_PATTERNS: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"(\.\./|\.\.\\|%2e%2e%2f|%2e%2e/|\.\.%2f)").unwrap());
+    static TRAVERSAL_PATTERNS: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"(\.\./|\.\.\\|%2e%2e%2f|%2e%2e/|\.\.%2f)").unwrap());
 
     TRAVERSAL_PATTERNS.is_match(&path.to_lowercase())
 }
@@ -107,7 +106,7 @@ pub fn contains_path_traversal(path: &str) -> bool {
 ///
 /// `true` if SQL injection patterns detected
 pub fn contains_sql_injection(input: &str) -> bool {
-    static SQL_PATTERNS: Lazy<Regex> = Lazy::new(|| {
+    static SQL_PATTERNS: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
         Regex::new(
             r"(?i)(\bunion\b.*\bselect\b|\bselect\b.*\bfrom\b|;\s*drop\b|;\s*delete\b|'.*or.*'.*=.*'|--|\#|/\*|\*/|xp_cmdshell|exec\s*\(|\bsleep\s*\(|\bwaitfor\b|\bbenchmark\s*\()",
         )
@@ -127,7 +126,7 @@ pub fn contains_sql_injection(input: &str) -> bool {
 ///
 /// `true` if XSS patterns detected
 pub fn contains_xss(input: &str) -> bool {
-    static XSS_PATTERNS: Lazy<Regex> = Lazy::new(|| {
+    static XSS_PATTERNS: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
         Regex::new(
             r"(?i)(<script|javascript:|onerror=|onload=|<iframe|<object|<embed|eval\(|alert\()",
         )
@@ -147,7 +146,7 @@ pub fn contains_xss(input: &str) -> bool {
 ///
 /// `true` if command injection patterns detected
 pub fn contains_command_injection(input: &str) -> bool {
-    static CMD_PATTERNS: Lazy<Regex> = Lazy::new(|| {
+    static CMD_PATTERNS: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
         Regex::new(
             r"(?i)(;\s*(cat|ls|whoami|id|pwd|wget|curl|nc|bash|sh|chmod|chown)|`[^`]+`|\$\([^)]+\)|\|\s*(cat|ls|whoami))",
         )
@@ -158,7 +157,7 @@ pub fn contains_command_injection(input: &str) -> bool {
 }
 
 /// Normalize HTTP method to uppercase
-pub fn normalize_method(method: &str) -> String {
+#[must_use] pub fn normalize_method(method: &str) -> String {
     method.to_uppercase()
 }
 
@@ -171,7 +170,7 @@ pub fn normalize_method(method: &str) -> String {
 /// # Returns
 ///
 /// First IP address in the chain, or None if invalid
-pub fn extract_xff_ip(xff_header: &str) -> Option<String> {
+#[must_use] pub fn extract_xff_ip(xff_header: &str) -> Option<String> {
     xff_header
         .split(',')
         .next()
@@ -188,7 +187,7 @@ mod tests {
         let params = parse_query_string("user=admin&pass=123&empty=");
         assert_eq!(params.get("user"), Some(&"admin".to_string()));
         assert_eq!(params.get("pass"), Some(&"123".to_string()));
-        assert_eq!(params.get("empty"), Some(&"".to_string()));
+        assert_eq!(params.get("empty"), Some(&String::new()));
     }
 
     #[test]

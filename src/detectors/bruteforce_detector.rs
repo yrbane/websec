@@ -11,13 +11,12 @@ use crate::reputation::{Signal, SignalVariant};
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use dashmap::DashMap;
-use once_cell::sync::Lazy;
 use regex::Regex;
 use std::net::IpAddr;
 use std::sync::Arc;
 
 /// Auth endpoint patterns (login, admin, auth paths)
-static AUTH_ENDPOINT_PATTERNS: Lazy<Regex> = Lazy::new(|| {
+static AUTH_ENDPOINT_PATTERNS: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"(?i)/(login|signin|auth|admin/login|api/auth|session|authenticate)").unwrap()
 });
 
@@ -225,7 +224,7 @@ impl Default for BruteForceDetector {
 
 #[async_trait]
 impl Detector for BruteForceDetector {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "BruteForceDetector"
     }
 
@@ -255,7 +254,7 @@ mod tests {
     use std::str::FromStr;
 
     fn create_context(ip: &str, path: &str, username: &str, password: &str) -> HttpRequestContext {
-        let body = format!("username={}&password={}", username, password);
+        let body = format!("username={username}&password={password}");
 
         HttpRequestContext {
             ip: IpAddr::from_str(ip).unwrap(),
@@ -309,7 +308,7 @@ mod tests {
 
         // Make 5 failed attempts
         for i in 0..5 {
-            let context = create_context(ip, "/login", "admin", &format!("pass{}", i));
+            let context = create_context(ip, "/login", "admin", &format!("pass{i}"));
             let result = detector.analyze(&context).await;
 
             if i >= 4 {

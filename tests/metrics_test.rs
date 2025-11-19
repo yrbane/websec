@@ -9,13 +9,8 @@
 //! - Jauges pour score de réputation
 //! - Export au format Prometheus
 
-use std::net::IpAddr;
-use std::str::FromStr;
 use std::sync::Arc;
-use websec::detectors::{BotDetector, DetectorRegistry, HttpRequestContext};
 use websec::observability::metrics::{init_metrics, MetricsRegistry};
-use websec::reputation::{DecisionEngine, DecisionEngineConfig};
-use websec::storage::InMemoryRepository;
 
 #[test]
 fn test_metrics_initialization() {

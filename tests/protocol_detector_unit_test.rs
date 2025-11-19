@@ -206,7 +206,7 @@ async fn test_multiple_violations() {
 
     assert!(result.suspicious);
     assert!(
-        result.signals.len() >= 1,
+        !result.signals.is_empty(),
         "Should generate multiple signals"
     );
 }

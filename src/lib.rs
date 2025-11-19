@@ -44,10 +44,10 @@ pub mod reputation;
 pub mod storage;
 pub mod utils;
 
-/// Common error type for WebSec operations
+/// Common error type for `WebSec` operations
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// WebSec error types
+/// `WebSec` error types
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Configuration error

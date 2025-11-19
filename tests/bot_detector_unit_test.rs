@@ -217,7 +217,7 @@ async fn test_detect_non_human_profile_missing_accept() {
     let detector = BotDetector::new();
 
     // Context with User-Agent but missing other standard browser headers
-    let mut context = create_context("192.168.1.100", "GET", "/page.html", Some("Mozilla/5.0"));
+    let context = create_context("192.168.1.100", "GET", "/page.html", Some("Mozilla/5.0"));
 
     // Real browsers send Accept, Accept-Language, Accept-Encoding headers
     // This request only has User-Agent

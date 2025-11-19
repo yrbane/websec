@@ -83,7 +83,7 @@ pub struct InjectionDetector {
 }
 
 impl InjectionDetector {
-    /// Create a new InjectionDetector with default settings
+    /// Create a new `InjectionDetector` with default settings
     ///
     /// The detector is enabled by default and uses predefined patterns
     /// for SQL, XSS, path traversal, and command injection detection.
@@ -213,7 +213,7 @@ impl Default for InjectionDetector {
 
 #[async_trait]
 impl Detector for InjectionDetector {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "InjectionDetector"
     }
 

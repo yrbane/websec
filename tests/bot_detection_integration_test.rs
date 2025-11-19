@@ -9,7 +9,6 @@
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::Arc;
-use websec::config::Settings;
 use websec::detectors::bot_detector::BotDetector;
 use websec::detectors::{DetectorRegistry, HttpRequestContext};
 use websec::reputation::{DecisionEngine, DecisionEngineConfig, ProxyDecision, SignalVariant};

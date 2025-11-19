@@ -4,7 +4,7 @@
 //! 1. Detect threats using detectors
 //! 2. Update reputation profile with signals
 //! 3. Recalculate score
-//! 4. Determine proxy decision (ALLOW/RATE_LIMIT/CHALLENGE/BLOCK)
+//! 4. Determine proxy decision (`ALLOW/RATE_LIMIT/CHALLENGE/BLOCK`)
 
 use super::profile::ReputationProfile;
 use super::score::{determine_decision, recalculate_and_update, ProxyDecision, ScoringThresholds};
@@ -253,7 +253,7 @@ mod tests {
 
     #[async_trait]
     impl Detector for AlwaysCleanDetector {
-        fn name(&self) -> &str {
+        fn name(&self) -> &'static str {
             "AlwaysClean"
         }
 
@@ -266,7 +266,7 @@ mod tests {
 
     #[async_trait]
     impl Detector for AlwaysSuspiciousDetector {
-        fn name(&self) -> &str {
+        fn name(&self) -> &'static str {
             "AlwaysSuspicious"
         }
 

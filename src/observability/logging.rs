@@ -120,13 +120,13 @@ pub fn init_logging(format: LogFormat, log_level: &str) -> Result<(), String> {
             subscriber
                 .with(fmt::layer().json().with_target(true).with_level(true))
                 .try_init()
-                .map_err(|e| format!("Erreur d'initialisation du logging : {}", e))?;
+                .map_err(|e| format!("Erreur d'initialisation du logging : {e}"))?;
         }
         LogFormat::Pretty => {
             subscriber
                 .with(fmt::layer().pretty().with_target(true).with_level(true))
                 .try_init()
-                .map_err(|e| format!("Erreur d'initialisation du logging : {}", e))?;
+                .map_err(|e| format!("Erreur d'initialisation du logging : {e}"))?;
         }
     }
 
@@ -140,7 +140,7 @@ mod tests {
     use std::sync::Mutex;
 
     // Ensure logging is only initialized once during tests
-    static INIT: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+    static INIT: std::sync::LazyLock<Mutex<bool>> = std::sync::LazyLock::new(|| Mutex::new(false));
 
     fn init_once() {
         let mut initialized = INIT.lock().unwrap();

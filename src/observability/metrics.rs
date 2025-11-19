@@ -81,7 +81,7 @@ use std::sync::{Arc, Mutex};
 ///
 /// # Performance
 ///
-/// - Recherche de métrique : O(1) via HashMap
+/// - Recherche de métrique : O(1) via `HashMap`
 /// - Incrémentation : O(1) opération atomique Prometheus
 /// - Export : O(n) où n = nombre de métriques
 pub struct MetricsRegistry {

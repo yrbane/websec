@@ -61,18 +61,18 @@ impl ProxyState {
 /// Handler principal du middleware proxy
 ///
 /// Analyse chaque requête avec les détecteurs, calcule le score de réputation,
-/// prend une décision (ALLOW/BLOCK/CHALLENGE/RATE_LIMIT), et agit en conséquence.
+/// prend une décision (`ALLOW/BLOCK/CHALLENGE/RATE_LIMIT`), et agit en conséquence.
 ///
 /// # Flux de traitement
 ///
 /// 1. Extraire l'IP du client (X-Forwarded-For ou socket)
 /// 2. Construire le contexte de requête HTTP
-/// 3. Passer par le DecisionEngine (détecteurs + scoring)
+/// 3. Passer par le `DecisionEngine` (détecteurs + scoring)
 /// 4. Selon la décision :
 ///    - ALLOW: Forward au backend
 ///    - BLOCK: Retourner 403
 ///    - CHALLENGE: Afficher page CAPTCHA
-///    - RATE_LIMIT: Retourner 429
+///    - `RATE_LIMIT`: Retourner 429
 /// 5. Enregistrer métriques et logs
 pub async fn proxy_handler(
     State(state): State<Arc<ProxyState>>,
@@ -210,7 +210,7 @@ pub async fn proxy_handler(
 /// Priorité :
 /// 1. X-Forwarded-For (premier IP)
 /// 2. X-Real-IP
-/// 3. SocketAddr de la connexion
+/// 3. `SocketAddr` de la connexion
 fn extract_client_ip(req: &Request<Body>) -> IpAddr {
     // Essayer X-Forwarded-For
     if let Some(forwarded) = req.headers().get("X-Forwarded-For") {
@@ -282,10 +282,10 @@ fn build_http_context(
         .map(String::from);
 
     // Convertir le body en Option<Vec<u8>>
-    let body_vec = if !body.is_empty() {
-        Some(body.to_vec())
-    } else {
+    let body_vec = if body.is_empty() {
         None
+    } else {
+        Some(body.to_vec())
     };
 
     HttpRequestContext {
@@ -342,7 +342,7 @@ async fn forward_to_backend(
             tracing::error!(error = %e, "Backend forwarding failed");
             Response::builder()
                 .status(StatusCode::BAD_GATEWAY)
-                .body(Body::from(format!("Backend Error: {}", e)))
+                .body(Body::from(format!("Backend Error: {e}")))
                 .unwrap()
         }
     }

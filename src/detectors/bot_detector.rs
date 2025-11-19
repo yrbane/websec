@@ -8,11 +8,10 @@
 use super::detector::{DetectionResult, Detector, HttpRequestContext};
 use crate::reputation::{Signal, SignalVariant};
 use async_trait::async_trait;
-use once_cell::sync::Lazy;
 use regex::Regex;
 
 /// Known vulnerability scanner patterns
-static SCANNER_PATTERNS: Lazy<Regex> = Lazy::new(|| {
+static SCANNER_PATTERNS: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(
         r"(?i)(sqlmap|nikto|nmap|masscan|acunetix|burp|metasploit|nessus|openvas|w3af|skipfish|arachni|vega|webscarab|paros)"
     )
@@ -20,7 +19,7 @@ static SCANNER_PATTERNS: Lazy<Regex> = Lazy::new(|| {
 });
 
 /// Generic bot/tool patterns (less severe than scanners)
-static BOT_PATTERNS: Lazy<Regex> = Lazy::new(|| {
+static BOT_PATTERNS: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"(?i)(curl|wget|python-requests|go-http-client|java/|apache-httpclient|okhttp)")
         .unwrap()
 });
@@ -107,7 +106,7 @@ impl Default for BotDetector {
 
 #[async_trait]
 impl Detector for BotDetector {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "BotDetector"
     }
 

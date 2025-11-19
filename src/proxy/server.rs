@@ -47,10 +47,10 @@ use tokio::net::TcpListener;
 /// Serveur proxy HTTP
 ///
 /// Encapsule le serveur axum avec tous les composants nécessaires :
-/// - DecisionEngine (détecteurs + scoring)
-/// - BackendClient (forwarding)
-/// - ChallengeManager (CAPTCHA)
-/// - MetricsRegistry (Prometheus)
+/// - `DecisionEngine` (détecteurs + scoring)
+/// - `BackendClient` (forwarding)
+/// - `ChallengeManager` (CAPTCHA)
+/// - `MetricsRegistry` (Prometheus)
 pub struct ProxyServer {
     /// Adresse d'écoute
     listen_addr: SocketAddr,
@@ -63,11 +63,11 @@ impl ProxyServer {
     ///
     /// Initialise tous les composants :
     /// - Logging structuré
-    /// - Storage (InMemoryRepository)
+    /// - Storage (`InMemoryRepository`)
     /// - Détecteurs (registry avec tous les détecteurs)
-    /// - DecisionEngine
-    /// - BackendClient
-    /// - ChallengeManager
+    /// - `DecisionEngine`
+    /// - `BackendClient`
+    /// - `ChallengeManager`
     /// - Métriques Prometheus
     ///
     /// # Arguments
@@ -102,7 +102,7 @@ impl ProxyServer {
         };
 
         if let Err(e) = init_logging(log_format, &settings.logging.level) {
-            eprintln!("Warning: Logging already initialized: {}", e);
+            eprintln!("Warning: Logging already initialized: {e}");
         }
 
         tracing::info!("Initializing WebSec proxy server");
@@ -179,7 +179,7 @@ impl ProxyServer {
 
         // 11. Parser l'adresse d'écoute
         let listen_addr = SocketAddr::from_str(&settings.server.listen)
-            .map_err(|e| Error::Config(format!("Invalid listen address: {}", e)))?;
+            .map_err(|e| Error::Config(format!("Invalid listen address: {e}")))?;
 
         tracing::info!("Proxy server configured on {}", listen_addr);
 
@@ -226,7 +226,7 @@ impl ProxyServer {
             self.app.into_make_service_with_connect_info::<SocketAddr>(),
         )
         .await
-        .map_err(|e| Error::Http(format!("Server error: {}", e)))?;
+        .map_err(|e| Error::Http(format!("Server error: {e}")))?;
 
         Ok(())
     }

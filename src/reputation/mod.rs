@@ -2,13 +2,13 @@
 //!
 //! Calculates dynamic reputation scores (0-100) using:
 //! - Base score: 100 (trust by default)
-//! - Signal accumulation: Score = max(0, min(100, base - Σ(signal_weight)))
+//! - Signal accumulation: Score = max(0, min(100, base - `Σ(signal_weight)`))
 //! - Exponential decay: weight(t) = weight₀ × 2^(-t/half_life)
 //! - Correlation bonus: +10 penalty for multiple distinct signal families
 //!
 //! Decision thresholds:
 //! - ≥70: ALLOW
-//! - 40-69: RATE_LIMIT
+//! - 40-69: `RATE_LIMIT`
 //! - 20-39: CHALLENGE
 //! - <20: BLOCK
 

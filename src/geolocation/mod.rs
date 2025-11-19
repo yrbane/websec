@@ -1,4 +1,4 @@
-//! Geolocation lookup using MaxMind GeoIP2
+//! Geolocation lookup using `MaxMind` `GeoIP2`
 //!
 //! Provides IP-to-location resolution for geographic threat analysis
 //! and country-based penalty scoring.

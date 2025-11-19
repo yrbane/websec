@@ -11,7 +11,7 @@ use std::net::IpAddr;
 /// Repository trait for IP reputation profiles
 ///
 /// Abstracts the storage layer using the Repository pattern.
-/// Implementations can use Redis, in-memory HashMap, or file-based storage.
+/// Implementations can use Redis, in-memory `HashMap`, or file-based storage.
 ///
 /// # Design Pattern: Repository
 ///

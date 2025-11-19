@@ -91,7 +91,7 @@ use async_trait::async_trait;
 /// Maximum allowed header value length
 const MAX_HEADER_VALUE_LENGTH: usize = 8192;
 
-/// HeaderDetector analyzes HTTP headers for manipulation attempts
+/// `HeaderDetector` analyzes HTTP headers for manipulation attempts
 #[derive(Clone)]
 pub struct HeaderDetector {
     /// Whether detector is enabled
@@ -99,7 +99,7 @@ pub struct HeaderDetector {
 }
 
 impl HeaderDetector {
-    /// Create a new HeaderDetector
+    /// Create a new `HeaderDetector`
     #[must_use]
     pub fn new() -> Self {
         Self { enabled: true }
@@ -117,7 +117,7 @@ impl HeaderDetector {
                 let signal = Signal::with_context(
                     SignalVariant::HeaderInjection,
                     20, // Weight from signal.rs
-                    format!("CRLF injection detected in header '{}': {}", name, value),
+                    format!("CRLF injection detected in header '{name}': {value}"),
                 );
                 signals.push(signal);
             }
@@ -127,7 +127,7 @@ impl HeaderDetector {
                 let signal = Signal::with_context(
                     SignalVariant::HeaderInjection,
                     20,
-                    format!("CRLF injection detected in header name: {}", name),
+                    format!("CRLF injection detected in header name: {name}"),
                 );
                 signals.push(signal);
             }
@@ -137,7 +137,7 @@ impl HeaderDetector {
                 let signal = Signal::with_context(
                     SignalVariant::HeaderInjection,
                     20,
-                    format!("Null byte injection detected in header '{}'", name),
+                    format!("Null byte injection detected in header '{name}'"),
                 );
                 signals.push(signal);
             }
@@ -159,7 +159,7 @@ impl HeaderDetector {
             let signal = Signal::with_context(
                 SignalVariant::HostHeaderAttack,
                 20, // Weight from signal.rs
-                format!("Multiple Host headers detected: {} instances", host_count),
+                format!("Multiple Host headers detected: {host_count} instances"),
             );
             signals.push(signal);
         }
@@ -206,7 +206,7 @@ impl HeaderDetector {
                     let signal = Signal::with_context(
                         SignalVariant::RefererSpoofing,
                         10, // Weight from signal.rs
-                        format!("Suspicious referer TLD: {}", ref_url),
+                        format!("Suspicious referer TLD: {ref_url}"),
                     );
                     signals.push(signal);
                     break;
@@ -230,8 +230,7 @@ impl HeaderDetector {
                         SignalVariant::HeaderInjection,
                         15,
                         format!(
-                            "Suspicious X-Forwarded-For with {} localhost entries",
-                            localhost_count
+                            "Suspicious X-Forwarded-For with {localhost_count} localhost entries"
                         ),
                     );
                     signals.push(signal);
@@ -251,7 +250,7 @@ impl Default for HeaderDetector {
 
 #[async_trait]
 impl Detector for HeaderDetector {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "HeaderDetector"
     }
 

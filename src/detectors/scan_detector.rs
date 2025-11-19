@@ -11,7 +11,7 @@
 //!
 //! # Common Patterns Detected
 //!
-//! - **WordPress**: /wp-admin/, /wp-content/, /xmlrpc.php
+//! - **`WordPress`**: /wp-admin/, /wp-content/, /xmlrpc.php
 //! - **Database**: /phpmyadmin/, /mysql/, /adminer.php
 //! - **Admin panels**: /admin/, /administrator/, /manager/html
 //! - **Config files**: /.env, /.git/config, /web.config, composer.json
@@ -51,19 +51,18 @@
 //!
 //! - **Regex**: Compiled once via `Lazy` (amortized O(1) init)
 //! - **Lookup**: O(n) where n = pattern count (~20 patterns)
-//! - **Tracking**: O(1) DashMap get/insert per IP
+//! - **Tracking**: O(1) `DashMap` get/insert per IP
 
 use super::detector::{DetectionResult, Detector, HttpRequestContext};
 use crate::reputation::{Signal, SignalVariant};
 use async_trait::async_trait;
 use dashmap::DashMap;
-use once_cell::sync::Lazy;
 use regex::Regex;
 use std::net::IpAddr;
 use std::sync::Arc;
 
 /// Suspicious path patterns (compiled once)
-static SUSPICIOUS_PATH_PATTERN: Lazy<Regex> = Lazy::new(|| {
+static SUSPICIOUS_PATH_PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(
         r"(?i)(/admin/|/admin$|wp-admin|phpmyadmin|administrator|manager/html|\.env|\.git|web\.config|backup\.sql|\.tar\.gz|config\.php|phpinfo\.php|adminer\.php|\.htaccess|composer\.json|package\.json|/config/)"
     )
@@ -127,7 +126,7 @@ pub struct ScanDetector {
 }
 
 impl ScanDetector {
-    /// Create a new ScanDetector with default thresholds
+    /// Create a new `ScanDetector` with default thresholds
     ///
     /// Initializes empty tracking map. Memory is allocated lazily as IPs are seen.
     #[must_use]
@@ -215,7 +214,7 @@ impl Default for ScanDetector {
 
 #[async_trait]
 impl Detector for ScanDetector {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "ScanDetector"
     }
 

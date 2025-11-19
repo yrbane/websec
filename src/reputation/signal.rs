@@ -218,7 +218,7 @@ pub enum SignalFamily {
     BotDetection,
     /// Brute force and credential attacks
     BruteForce,
-    /// Flood and DoS attacks
+    /// Flood and `DoS` attacks
     Flood,
     /// SQL injection attempts
     SqlInjection,

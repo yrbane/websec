@@ -229,7 +229,7 @@ impl Default for FloodDetector {
 
 #[async_trait]
 impl Detector for FloodDetector {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "FloodDetector"
     }
 

@@ -9,13 +9,13 @@ use serde::{Deserialize, Serialize};
 /// Proxy decision based on reputation score
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProxyDecision {
-    /// Allow request through (score >= threshold_allow)
+    /// Allow request through (score >= `threshold_allow`)
     Allow,
-    /// Apply rate limiting (threshold_ratelimit <= score < threshold_allow)
+    /// Apply rate limiting (`threshold_ratelimit` <= score < `threshold_allow`)
     RateLimit,
-    /// Send challenge (CAPTCHA, etc.) (threshold_challenge <= score < threshold_ratelimit)
+    /// Send challenge (CAPTCHA, etc.) (`threshold_challenge` <= score < `threshold_ratelimit`)
     Challenge,
-    /// Block request entirely (score < threshold_challenge)
+    /// Block request entirely (score < `threshold_challenge`)
     Block,
 }
 
@@ -24,7 +24,7 @@ pub enum ProxyDecision {
 pub struct ScoringThresholds {
     /// Minimum score for ALLOW (default: 70)
     pub allow: u8,
-    /// Minimum score for RATE_LIMIT (default: 40)
+    /// Minimum score for `RATE_LIMIT` (default: 40)
     pub ratelimit: u8,
     /// Minimum score for CHALLENGE (default: 20)
     pub challenge: u8,
@@ -155,7 +155,7 @@ mod tests {
 
         let score = calculate_score(&profile, 100, 24.0, 10);
         // Score should be ~80 (100 - 20, no correlation bonus)
-        assert!(score >= 79 && score <= 81, "Score was {}", score);
+        assert!((79..=81).contains(&score), "Score was {score}");
     }
 
     #[test]
@@ -169,7 +169,7 @@ mod tests {
 
         let score = calculate_score(&profile, 100, 24.0, 10);
         // Score should be ~40 (100 - 20 - 30 - 10 correlation bonus)
-        assert!(score >= 39 && score <= 41, "Score was {}", score);
+        assert!((39..=41).contains(&score), "Score was {score}");
     }
 
     #[test]

@@ -188,7 +188,7 @@ mod tests {
 
         // With no decay (signals just created), total should be ~50
         let penalty = profile.calculate_total_penalty(24.0);
-        assert!(penalty >= 49.0 && penalty <= 51.0, "Penalty should be ~50");
+        assert!((49.0..=51.0).contains(&penalty), "Penalty should be ~50");
     }
 
     #[test]

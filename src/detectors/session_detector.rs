@@ -69,8 +69,8 @@
 //!
 //! # Performance
 //!
-//! - **Session lookup**: O(1) DashMap get/insert per token
-//! - **IP tracking**: O(1) DashMap get/insert per IP
+//! - **Session lookup**: O(1) `DashMap` get/insert per token
+//! - **IP tracking**: O(1) `DashMap` get/insert per IP
 //! - **Cookie parsing**: O(n) where n = cookie string length
 //! - **Memory**: Grows with unique sessions and IPs (consider TTL/cleanup in production)
 //!
@@ -330,7 +330,7 @@ impl SessionDetector {
     ///
     /// - Updates `session_tracking` with new/changed session data
     /// - Updates `ip_tracking` with unique session counts
-    /// - Increments change counters (ip_changes, ua_changes)
+    /// - Increments change counters (`ip_changes`, `ua_changes`)
     ///
     /// # Signal Generation
     ///
@@ -429,7 +429,7 @@ impl Default for SessionDetector {
 
 #[async_trait]
 impl Detector for SessionDetector {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "SessionDetector"
     }
 

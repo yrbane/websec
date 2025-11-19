@@ -47,7 +47,7 @@ impl BackendClient {
     ///
     /// # Arguments
     ///
-    /// * `backend_url` - URL du serveur backend (ex: "http://localhost:3000")
+    /// * `backend_url` - URL du serveur backend (ex: "<http://localhost:3000>")
     ///
     /// # Examples
     ///
@@ -112,12 +112,11 @@ impl BackendClient {
         let path_and_query = request
             .uri()
             .path_and_query()
-            .map(|pq| pq.as_str())
-            .unwrap_or("/");
+            .map_or("/", http::uri::PathAndQuery::as_str);
 
         let target_uri = format!("{}{}", self.backend_url, path_and_query);
         let uri = Uri::from_str(&target_uri)
-            .map_err(|e| Error::Http(format!("Invalid URI: {}", e)))?;
+            .map_err(|e| Error::Http(format!("Invalid URI: {e}")))?;
 
         // Mettre à jour l'URI de la requête
         *request.uri_mut() = uri;
@@ -127,7 +126,7 @@ impl BackendClient {
             .client
             .request(request)
             .await
-            .map_err(|e| Error::Http(format!("Backend request failed: {}", e)))?;
+            .map_err(|e| Error::Http(format!("Backend request failed: {e}")))?;
 
         Ok(response)
     }

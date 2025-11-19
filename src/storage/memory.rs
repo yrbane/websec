@@ -22,7 +22,7 @@ use std::sync::Arc;
 /// allowing concurrent reads/writes without external synchronization.
 #[derive(Clone)]
 pub struct InMemoryRepository {
-    /// Concurrent HashMap of IP -> ReputationProfile
+    /// Concurrent `HashMap` of IP -> `ReputationProfile`
     storage: Arc<DashMap<IpAddr, ReputationProfile>>,
 }
 
@@ -216,7 +216,7 @@ mod tests {
 
         let handle1 = task::spawn(async move {
             for i in 0..100 {
-                let ip = IpAddr::from_str(&format!("192.168.1.{}", i)).unwrap();
+                let ip = IpAddr::from_str(&format!("192.168.1.{i}")).unwrap();
                 let profile = ReputationProfile::new(ip, 100);
                 repo_clone1.save(&profile).await.unwrap();
             }
