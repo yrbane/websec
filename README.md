@@ -7,8 +7,16 @@
 
 **WebSec** est un proxy/reverse proxy de sécurité haute performance écrit en Rust, conçu pour protéger proactivement vos serveurs web contre les menaces HTTP(S). Placé en amont de votre serveur web, WebSec analyse chaque requête, calcule un score de réputation dynamique pour chaque IP source, et prend des décisions automatiques pour bloquer, ralentir ou autoriser le trafic.
 
-> **📋 État du Projet** : Phase de **Planification Complète** ✅
-> Documentation technique, architecture et plan d'implémentation finalisés. Prêt pour Phase 3 (implémentation TDD).
+> **📋 État du Projet** : Phase d'**Implémentation Active** 🚀
+>
+> **3 sur 4 User Stories terminées** (75% du MVP) :
+> - ✅ **US9** : Détection de détournement de session (RED-GREEN-REFACTOR)
+> - ✅ **US10** : Détection de violations de protocole HTTP (RED-GREEN-REFACTOR)
+> - ✅ **US12** : Logging structuré & métriques Prometheus (RED-GREEN-REFACTOR)
+> - ⏳ **US11** : Système de Challenge CAPTCHA (à faire)
+>
+> **360+ tests** passent | **10 détecteurs** implémentés | **TDD strict** | **Documentation 100% française**
+>
 > Voir [`specs/001-websec-proxy/`](specs/001-websec-proxy/) pour les spécifications détaillées.
 
 ## 🎯 Objectif
