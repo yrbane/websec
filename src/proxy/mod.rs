@@ -5,11 +5,17 @@
 //! - Connection pooling to backend servers
 //! - Header preservation (X-Forwarded-For, X-Real-IP)
 //! - Request/response streaming for large payloads
+//! - Retry logic with exponential backoff
+//! - Circuit breaker pattern for backend protection
 
 pub mod backend;
+pub mod circuit_breaker;
 pub mod middleware;
+pub mod retry;
 pub mod server;
 
 pub use backend::BackendClient;
+pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitState};
 pub use middleware::{metrics_handler, proxy_handler, ProxyState};
+pub use retry::RetryPolicy;
 pub use server::ProxyServer;
