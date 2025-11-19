@@ -4,14 +4,13 @@
 # Deny all warnings in CI
 warn-on-all-wildcard-imports = true
 
-# Pedantic lints
-pedantic-lints = "warn"
-
-# Complexity
+# Complexity thresholds
 cognitive-complexity-threshold = 15
 type-complexity-threshold = 150
 
-# Performance
-single-char-lifetime-names = false
+# Performance and code quality
 too-many-arguments-threshold = 5
 too-many-lines-threshold = 150
+
+# Note: To enable pedantic lints, use: cargo clippy -- -W clippy::pedantic
+# Note: single-char-lifetime-names is controlled via lint attributes in code
