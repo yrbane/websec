@@ -28,7 +28,7 @@
 //! ```
 
 use crate::challenge::ChallengeManager;
-use crate::config::settings::{ListenerConfig, ListenerTlsConfig, ServerConfig};
+use crate::config::settings::{ListenerTlsConfig, ServerConfig};
 use crate::config::Settings;
 use crate::detectors::DetectorRegistry;
 use crate::observability::logging::{init_logging, LogFormat};
@@ -42,6 +42,7 @@ use axum::{routing::get, Router};
 #[cfg(feature = "tls")]
 use axum_server::tls_rustls::RustlsConfig;
 use futures::future::try_join_all;
+use std::io;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -63,8 +64,11 @@ pub struct ProxyServer {
 /// Informations publiques sur un listener (utilisé pour l'affichage CLI)
 #[derive(Clone, Debug)]
 pub struct ListenerInfo {
+    /// Adresse d'écoute (IP:port)
     pub addr: SocketAddr,
+    /// Indique si ce listener est configuré avec TLS (HTTPS)
     pub tls: bool,
+    /// URL du backend vers lequel les requêtes sont relayées
     pub backend: String,
 }
 
