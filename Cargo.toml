@@ -21,7 +21,7 @@ hyper = { version = "1.0", features = ["full", "server", "client", "http1", "htt
 tokio = { version = "1.35", features = ["full"] }
 
 # Storage & Caching
-redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+redis = { version = "0.27.6", features = ["tokio-comp", "connection-manager"] }
 lru = "0.12"
 
 # Rate Limiting
