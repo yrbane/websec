@@ -64,7 +64,11 @@ async fn test_valid_http_methods() {
         let context = create_context("192.168.1.1", method, "/", headers.clone());
         let result = detector.analyze(&context).await;
 
-        assert!(!result.suspicious, "Valid method {} should not be flagged", method);
+        assert!(
+            !result.suspicious,
+            "Valid method {} should not be flagged",
+            method
+        );
     }
 }
 
@@ -94,7 +98,10 @@ async fn test_path_with_control_characters() {
     let context = create_context("192.168.1.1", "GET", "/path\r\nmalicious", vec![]);
     let result = detector.analyze(&context).await;
 
-    assert!(result.suspicious, "Should detect control characters in path");
+    assert!(
+        result.suspicious,
+        "Should detect control characters in path"
+    );
 }
 
 #[tokio::test]
@@ -118,7 +125,10 @@ async fn test_missing_host_header_http11() {
     let result = detector.analyze(&context).await;
 
     // Should flag missing Host header
-    assert!(result.suspicious, "HTTP/1.1 without Host header should be flagged");
+    assert!(
+        result.suspicious,
+        "HTTP/1.1 without Host header should be flagged"
+    );
 }
 
 #[tokio::test]
@@ -180,7 +190,10 @@ async fn test_path_without_leading_slash() {
     let context = create_context("192.168.1.1", "GET", "no-slash", vec![]);
     let result = detector.analyze(&context).await;
 
-    assert!(result.suspicious, "Path without leading / should be flagged");
+    assert!(
+        result.suspicious,
+        "Path without leading / should be flagged"
+    );
 }
 
 #[tokio::test]
@@ -192,7 +205,10 @@ async fn test_multiple_violations() {
     let result = detector.analyze(&context).await;
 
     assert!(result.suspicious);
-    assert!(result.signals.len() >= 1, "Should generate multiple signals");
+    assert!(
+        result.signals.len() >= 1,
+        "Should generate multiple signals"
+    );
 }
 
 #[tokio::test]

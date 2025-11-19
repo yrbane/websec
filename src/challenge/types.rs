@@ -49,6 +49,11 @@ impl Challenge {
     /// println!("Question: {}", challenge.question);
     /// // Question: Combien font 7 + 12 ?
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panique si l'horloge système est réglée avant l'époque UNIX (1970-01-01).
+    /// Cela ne devrait jamais se produire dans des conditions normales d'utilisation.
     #[must_use]
     pub fn new_simple_math() -> Self {
         let mut rng = rand::rng();
@@ -74,7 +79,7 @@ impl Challenge {
             _ => unreachable!(),
         };
 
-        let question = format!("Combien font {} {} {} ?", num1, operation, num2);
+        let question = format!("Combien font {num1} {operation} {num2} ?");
         let token = Uuid::new_v4().to_string();
         let created_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -245,6 +250,11 @@ impl Challenge {
     /// # Returns
     ///
     /// `true` si le challenge est expiré, `false` sinon
+    ///
+    /// # Panics
+    ///
+    /// Panique si l'horloge système est réglée avant l'époque UNIX (1970-01-01).
+    #[must_use]
     pub fn is_expired(&self, timeout_millis: u128) -> bool {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)

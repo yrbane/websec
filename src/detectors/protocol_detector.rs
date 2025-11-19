@@ -56,7 +56,7 @@
 //! - **Header check**: O(h) where h = header count
 //! - No regex, no allocations in hot path
 
-use crate::detectors::{Detector, DetectionResult, HttpRequestContext};
+use crate::detectors::{DetectionResult, Detector, HttpRequestContext};
 use crate::reputation::{Signal, SignalVariant};
 use async_trait::async_trait;
 
@@ -188,7 +188,11 @@ impl ProtocolDetector {
             let signal = Signal::with_context(
                 SignalVariant::MalformedRequest,
                 15,
-                format!("Oversized path: {} bytes (max {})", path.len(), MAX_PATH_LENGTH),
+                format!(
+                    "Oversized path: {} bytes (max {})",
+                    path.len(),
+                    MAX_PATH_LENGTH
+                ),
             );
             signals.push(signal);
         }
@@ -257,7 +261,9 @@ impl ProtocolDetector {
         let mut signals = Vec::new();
 
         // Check for Host header (required in HTTP/1.1)
-        let has_host = headers.iter().any(|(name, _)| name.eq_ignore_ascii_case("host"));
+        let has_host = headers
+            .iter()
+            .any(|(name, _)| name.eq_ignore_ascii_case("host"));
 
         if !has_host {
             let signal = Signal::with_context(
@@ -323,7 +329,11 @@ mod tests {
     fn test_valid_methods() {
         for method in VALID_HTTP_METHODS {
             let signals = ProtocolDetector::validate_method(method);
-            assert!(signals.is_empty(), "Valid method {} should not generate signals", method);
+            assert!(
+                signals.is_empty(),
+                "Valid method {} should not generate signals",
+                method
+            );
         }
     }
 
@@ -331,7 +341,9 @@ mod tests {
     fn test_invalid_method() {
         let signals = ProtocolDetector::validate_method("HACK");
         assert!(!signals.is_empty());
-        assert!(signals.iter().any(|s| matches!(s.variant, SignalVariant::InvalidHttpMethod)));
+        assert!(signals
+            .iter()
+            .any(|s| matches!(s.variant, SignalVariant::InvalidHttpMethod)));
     }
 
     #[test]

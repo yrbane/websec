@@ -20,7 +20,10 @@ use websec::storage::InMemoryRepository;
 #[test]
 fn test_metrics_initialization() {
     let registry = init_metrics();
-    assert!(registry.is_ok(), "L'initialisation des métriques doit réussir");
+    assert!(
+        registry.is_ok(),
+        "L'initialisation des métriques doit réussir"
+    );
 }
 
 #[test]
@@ -43,7 +46,10 @@ async fn test_detection_metrics() {
 
     // Vérifier que les métriques ont été incrémentées
     let requests_total = metrics.get_counter_value("requests_total");
-    assert!(requests_total > 0.0, "Le compteur de requêtes doit être incrémenté");
+    assert!(
+        requests_total > 0.0,
+        "Le compteur de requêtes doit être incrémenté"
+    );
 
     let detections_total = metrics.get_counter_value("detections_total");
     assert!(
@@ -66,7 +72,10 @@ fn test_metrics_by_detector_type() {
     assert_eq!(bot_count, 2, "BotDetector doit avoir 2 détections");
 
     let injection_count = metrics.get_detector_count("InjectionDetector");
-    assert_eq!(injection_count, 1, "InjectionDetector doit avoir 1 détection");
+    assert_eq!(
+        injection_count, 1,
+        "InjectionDetector doit avoir 1 détection"
+    );
 }
 
 #[test]
@@ -168,5 +177,8 @@ async fn test_concurrent_metrics() {
 
     // Vérifier que toutes les incrémentations ont été enregistrées
     let total = metrics.get_counter_value("requests_total");
-    assert!(total >= 10.0, "Doit avoir au moins 10 requêtes enregistrées");
+    assert!(
+        total >= 10.0,
+        "Doit avoir au moins 10 requêtes enregistrées"
+    );
 }

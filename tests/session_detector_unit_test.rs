@@ -39,7 +39,10 @@ async fn test_normal_session_no_flags() {
     let detector = SessionDetector::new();
 
     // Normal session: same IP, same User-Agent
-    let headers = vec![("Cookie".to_string(), "session=valid_token_12345".to_string())];
+    let headers = vec![(
+        "Cookie".to_string(),
+        "session=valid_token_12345".to_string(),
+    )];
     let ua = Some("Mozilla/5.0".to_string());
 
     let context1 = create_context("192.168.1.1", "/dashboard", headers.clone(), ua.clone());
@@ -49,7 +52,10 @@ async fn test_normal_session_no_flags() {
     // Same session, same IP, same UA
     let context2 = create_context("192.168.1.1", "/profile", headers.clone(), ua.clone());
     let result2 = detector.analyze(&context2).await;
-    assert!(!result2.suspicious, "Consistent session should not be flagged");
+    assert!(
+        !result2.suspicious,
+        "Consistent session should not be flagged"
+    );
 }
 
 #[tokio::test]
@@ -112,7 +118,12 @@ async fn test_session_fixation_attempt() {
     // Attacker tries to force a specific session ID
     let headers = vec![("Cookie".to_string(), "session=AAAAAAAA".to_string())];
 
-    let context = create_context("192.168.1.20", "/login", headers, Some("curl/7.0".to_string()));
+    let context = create_context(
+        "192.168.1.20",
+        "/login",
+        headers,
+        Some("curl/7.0".to_string()),
+    );
     let result = detector.analyze(&context).await;
 
     // Should detect suspicious session pattern
@@ -133,7 +144,10 @@ async fn test_missing_session_on_protected_path() {
     let result = detector.analyze(&context).await;
 
     // Should flag missing session on protected path
-    assert!(result.suspicious, "Missing session on /admin should be flagged");
+    assert!(
+        result.suspicious,
+        "Missing session on /admin should be flagged"
+    );
 }
 
 #[tokio::test]
@@ -201,7 +215,10 @@ async fn test_signal_weight() {
         .iter()
         .find(|s| matches!(s.variant, SignalVariant::SessionTokenAnomaly))
     {
-        assert_eq!(signal.weight, 15, "SessionTokenAnomaly should have weight 15");
+        assert_eq!(
+            signal.weight, 15,
+            "SessionTokenAnomaly should have weight 15"
+        );
     }
 }
 

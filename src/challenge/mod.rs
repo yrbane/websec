@@ -1,7 +1,7 @@
 //! Système de challenge CAPTCHA
 //!
 //! Implémente un mécanisme de challenge pour les IPs avec score de réputation
-//! intermédiaire (ProxyDecision::Challenge).
+//! intermédiaire (`ProxyDecision::Challenge`).
 //!
 //! # Fonctionnalités
 //!

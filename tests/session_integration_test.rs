@@ -126,7 +126,12 @@ async fn test_user_agent_switch_detection() {
     let ip = "192.168.1.20";
 
     // First request with Chrome
-    let context1 = create_context(ip, "/home", session.clone(), Some("Chrome/90.0".to_string()));
+    let context1 = create_context(
+        ip,
+        "/home",
+        session.clone(),
+        Some("Chrome/90.0".to_string()),
+    );
     let _result1 = engine.process_request(&context1).await.unwrap();
 
     // Same session, same IP, but different UA

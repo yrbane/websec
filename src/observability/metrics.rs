@@ -188,8 +188,7 @@ impl MetricsRegistry {
             .insert("detections_by_detector".to_string(), detections_by_detector);
 
         // Compteur par type de décision
-        let decision_opts =
-            Opts::new("decisions_by_type", "Nombre de décisions par type");
+        let decision_opts = Opts::new("decisions_by_type", "Nombre de décisions par type");
         let decisions_by_type = IntCounterVec::new(decision_opts, &["decision"])
             .expect("Création métrique decisions_by_type");
         self.registry
@@ -201,12 +200,9 @@ impl MetricsRegistry {
             .insert("decisions_by_type".to_string(), decisions_by_type);
 
         // Jauge par IP pour score de réputation
-        let reputation_opts = Opts::new(
-            "reputation_by_ip",
-            "Score de réputation par adresse IP",
-        );
-        let reputation_by_ip = IntGaugeVec::new(reputation_opts, &["ip"])
-            .expect("Création métrique reputation_by_ip");
+        let reputation_opts = Opts::new("reputation_by_ip", "Score de réputation par adresse IP");
+        let reputation_by_ip =
+            IntGaugeVec::new(reputation_opts, &["ip"]).expect("Création métrique reputation_by_ip");
         self.registry
             .register(Box::new(reputation_by_ip.clone()))
             .expect("Enregistrement reputation_by_ip");

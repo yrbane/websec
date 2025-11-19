@@ -9,7 +9,7 @@ use std::time::Duration;
 /// Gestionnaire de challenges thread-safe
 ///
 /// Gère la création, validation et expiration des challenges CAPTCHA.
-/// Utilise un HashMap thread-safe pour stocker les challenges actifs par IP.
+/// Utilise un `HashMap` thread-safe pour stocker les challenges actifs par IP.
 ///
 /// # Thread Safety
 ///
@@ -99,6 +99,7 @@ impl ChallengeManager {
     /// let challenge = manager.create_challenge(ip, ChallengeType::SimpleMath);
     /// assert!(challenge.is_some());
     /// ```
+    #[must_use]
     pub fn create_challenge(&self, ip: IpAddr, challenge_type: ChallengeType) -> Option<Challenge> {
         let challenge = match challenge_type {
             ChallengeType::SimpleMath => Challenge::new_simple_math(),
@@ -148,16 +149,15 @@ impl ChallengeManager {
     /// let is_valid = manager.validate(ip, &challenge.token, &challenge.answer);
     /// assert!(is_valid);
     /// ```
+    #[must_use]
     pub fn validate(&self, ip: IpAddr, token: &str, answer: &str) -> bool {
-        let mut challenges = match self.challenges.lock() {
-            Ok(guard) => guard,
-            Err(_) => return false,
+        let Ok(mut challenges) = self.challenges.lock() else {
+            return false;
         };
 
         // Récupérer le challenge pour cette IP
-        let challenge = match challenges.get_mut(&ip) {
-            Some(c) => c,
-            None => return false,
+        let Some(challenge) = challenges.get_mut(&ip) else {
+            return false;
         };
 
         // Vérifier le token
@@ -215,10 +215,10 @@ impl ChallengeManager {
     /// let cleaned = manager.cleanup_expired();
     /// println!("{} challenges expirés nettoyés", cleaned);
     /// ```
+    #[must_use]
     pub fn cleanup_expired(&self) -> usize {
-        let mut challenges = match self.challenges.lock() {
-            Ok(guard) => guard,
-            Err(_) => return 0,
+        let Ok(mut challenges) = self.challenges.lock() else {
+            return 0;
         };
 
         let timeout_millis = self.timeout.as_millis();

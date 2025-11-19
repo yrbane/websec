@@ -36,7 +36,10 @@ fn test_simple_math_challenge_generation() {
     let challenge = Challenge::new_simple_math();
 
     assert_eq!(challenge.challenge_type, ChallengeType::SimpleMath);
-    assert!(!challenge.question.is_empty(), "La question doit être générée");
+    assert!(
+        !challenge.question.is_empty(),
+        "La question doit être générée"
+    );
     assert!(!challenge.token.is_empty(), "Le token doit être généré");
 
     // Vérifier que la question est du type "Combien font X + Y ?"
@@ -53,7 +56,9 @@ fn test_validate_correct_answer() {
     let manager = ChallengeManager::new(Duration::from_secs(300));
     let ip = IpAddr::from_str("192.168.1.100").unwrap();
 
-    let challenge = manager.create_challenge(ip, ChallengeType::SimpleMath).unwrap();
+    let challenge = manager
+        .create_challenge(ip, ChallengeType::SimpleMath)
+        .unwrap();
 
     // Extraire la réponse attendue (pour le test, on doit pouvoir la calculer)
     // Dans un vrai système, l'answer est stockée de manière sécurisée
@@ -69,11 +74,16 @@ fn test_validate_incorrect_answer() {
     let manager = ChallengeManager::new(Duration::from_secs(300));
     let ip = IpAddr::from_str("192.168.1.100").unwrap();
 
-    let challenge = manager.create_challenge(ip, ChallengeType::SimpleMath).unwrap();
+    let challenge = manager
+        .create_challenge(ip, ChallengeType::SimpleMath)
+        .unwrap();
     let token = challenge.token.clone();
 
     let is_valid = manager.validate(ip, &token, "mauvaise_réponse");
-    assert!(!is_valid, "La validation avec une mauvaise réponse doit échouer");
+    assert!(
+        !is_valid,
+        "La validation avec une mauvaise réponse doit échouer"
+    );
 }
 
 #[test]
@@ -82,7 +92,9 @@ fn test_challenge_expiration() {
     let manager = ChallengeManager::new(Duration::from_millis(50));
     let ip = IpAddr::from_str("192.168.1.100").unwrap();
 
-    let challenge = manager.create_challenge(ip, ChallengeType::SimpleMath).unwrap();
+    let challenge = manager
+        .create_challenge(ip, ChallengeType::SimpleMath)
+        .unwrap();
     let token = challenge.token.clone();
     let answer = challenge.answer.clone();
 
@@ -103,8 +115,12 @@ fn test_challenge_token_uniqueness() {
     let ip1 = IpAddr::from_str("192.168.1.100").unwrap();
     let ip2 = IpAddr::from_str("192.168.1.101").unwrap();
 
-    let challenge1 = manager.create_challenge(ip1, ChallengeType::SimpleMath).unwrap();
-    let challenge2 = manager.create_challenge(ip2, ChallengeType::SimpleMath).unwrap();
+    let challenge1 = manager
+        .create_challenge(ip1, ChallengeType::SimpleMath)
+        .unwrap();
+    let challenge2 = manager
+        .create_challenge(ip2, ChallengeType::SimpleMath)
+        .unwrap();
 
     assert_ne!(
         challenge1.token, challenge2.token,
@@ -117,15 +133,15 @@ fn test_challenge_html_generation() {
     let challenge = Challenge::new_simple_math();
     let html = challenge.to_html();
 
-    assert!(html.contains("<!DOCTYPE html>"), "Doit générer du HTML valide");
+    assert!(
+        html.contains("<!DOCTYPE html>"),
+        "Doit générer du HTML valide"
+    );
     assert!(
         html.contains(&challenge.question),
         "Le HTML doit contenir la question"
     );
-    assert!(
-        html.contains("form"),
-        "Le HTML doit contenir un formulaire"
-    );
+    assert!(html.contains("form"), "Le HTML doit contenir un formulaire");
     assert!(
         html.contains(&challenge.token),
         "Le HTML doit contenir le token caché"
@@ -138,14 +154,21 @@ fn test_multiple_challenges_per_ip() {
     let ip = IpAddr::from_str("192.168.1.100").unwrap();
 
     // Créer un premier challenge
-    let challenge1 = manager.create_challenge(ip, ChallengeType::SimpleMath).unwrap();
+    let challenge1 = manager
+        .create_challenge(ip, ChallengeType::SimpleMath)
+        .unwrap();
     let token1 = challenge1.token.clone();
 
     // Créer un second challenge pour la même IP (remplace le premier)
-    let challenge2 = manager.create_challenge(ip, ChallengeType::SimpleMath).unwrap();
+    let challenge2 = manager
+        .create_challenge(ip, ChallengeType::SimpleMath)
+        .unwrap();
     let token2 = challenge2.token.clone();
 
-    assert_ne!(token1, token2, "Le nouveau challenge doit avoir un token différent");
+    assert_ne!(
+        token1, token2,
+        "Le nouveau challenge doit avoir un token différent"
+    );
 
     // Le premier challenge ne doit plus être valide
     let is_valid = manager.validate(ip, &token1, &challenge1.answer);
@@ -186,7 +209,9 @@ fn test_challenge_max_attempts() {
     let manager = ChallengeManager::new(Duration::from_secs(300));
     let ip = IpAddr::from_str("192.168.1.100").unwrap();
 
-    let challenge = manager.create_challenge(ip, ChallengeType::SimpleMath).unwrap();
+    let challenge = manager
+        .create_challenge(ip, ChallengeType::SimpleMath)
+        .unwrap();
     let token = challenge.token.clone();
 
     // Faire 3 tentatives incorrectes
@@ -218,7 +243,10 @@ fn test_cleanup_expired_challenges() {
 
     // Nettoyer les challenges expirés
     let cleaned = manager.cleanup_expired();
-    assert!(cleaned >= 10, "Au moins 10 challenges doivent être nettoyés");
+    assert!(
+        cleaned >= 10,
+        "Au moins 10 challenges doivent être nettoyés"
+    );
 }
 
 #[test]

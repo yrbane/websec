@@ -254,7 +254,9 @@ impl SessionDetector {
     /// assert!(!SessionDetector::is_protected_path("/public/images/logo.png"));
     /// ```
     fn is_protected_path(path: &str) -> bool {
-        PROTECTED_PATHS.iter().any(|prefix| path.starts_with(prefix))
+        PROTECTED_PATHS
+            .iter()
+            .any(|prefix| path.starts_with(prefix))
     }
 
     /// Check if session token looks suspicious (fixation attempt)
@@ -295,7 +297,10 @@ impl SessionDetector {
         }
 
         // Suspicious patterns
-        if SUSPICIOUS_SESSION_PATTERNS.iter().any(|pattern| token.contains(pattern)) {
+        if SUSPICIOUS_SESSION_PATTERNS
+            .iter()
+            .any(|pattern| token.contains(pattern))
+        {
             return true;
         }
 
@@ -486,7 +491,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_extract_session_token() {
-        let headers = vec![("Cookie".to_string(), "session=abc123; other=value".to_string())];
+        let headers = vec![(
+            "Cookie".to_string(),
+            "session=abc123; other=value".to_string(),
+        )];
         let token = SessionDetector::extract_session_token(&headers);
         assert_eq!(token, Some("abc123".to_string()));
     }
@@ -502,6 +510,8 @@ mod tests {
     async fn test_suspicious_token() {
         assert!(SessionDetector::is_suspicious_session_token("AAAAAAAA"));
         assert!(SessionDetector::is_suspicious_session_token("short"));
-        assert!(!SessionDetector::is_suspicious_session_token("valid_token_12345"));
+        assert!(!SessionDetector::is_suspicious_session_token(
+            "valid_token_12345"
+        ));
     }
 }
