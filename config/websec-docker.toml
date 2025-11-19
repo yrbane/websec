@@ -70,17 +70,22 @@ blacklist = [
 
 # Whitelist: Trusted IPs (score = 100, decision = ALLOW)
 # Bypasses all detectors and scoring logic
+# Note: Docker host IP whitelisted for E2E testing
 whitelist = [
+    "172.17.0.1",      # Docker bridge default gateway
+    "172.18.0.1",      # Docker compose network gateway
+    "192.168.65.1",    # Docker Desktop (Mac)
+    "192.168.65.254",  # Docker Desktop (Mac alternative)
     # "127.0.0.1",
     # "::1",
 ]
 
 [storage]
 # Storage type: "redis" or "memory" (for testing)
-type = "redis"
+type = "memory"
 
 # Redis connection URL (using Docker service name)
-redis_url = "redis://redis:6379"
+# redis_url = "redis://redis:6379"
 
 # L1 cache size (number of IPs)
 cache_size = 10000
