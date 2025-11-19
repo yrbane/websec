@@ -1,79 +1,240 @@
-//! HTTP proxy server using hyper
+//! Serveur proxy HTTP utilisant axum
 //!
-//! Basic HTTP reverse proxy server with request interception.
+//! Serveur reverse proxy HTTP avec interception des requêtes pour analyse de sécurité.
+//!
+//! # Architecture
+//!
+//! ```text
+//! Client HTTP → ProxyServer (axum) → Middleware → DecisionEngine
+//!                                        ↓
+//!                        [ALLOW] → BackendClient → Backend Server
+//!                        [BLOCK/CHALLENGE/RATE_LIMIT] → Error Response
+//! ```
+//!
+//! # Utilisation
+//!
+//! ```no_run
+//! use websec::proxy::server::ProxyServer;
+//! use websec::config::load_from_file;
+//!
+//! # async fn example() -> websec::Result<()> {
+//! let settings = load_from_file("config/websec.toml")?;
+//! let server = ProxyServer::new(&settings)?;
+//!
+//! // Démarre le serveur (bloque jusqu'à interruption)
+//! server.run().await?;
+//! # Ok(())
+//! # }
+//! ```
 
+use crate::challenge::ChallengeManager;
 use crate::config::Settings;
+use crate::detectors::DetectorRegistry;
+use crate::observability::logging::{init_logging, LogFormat};
+use crate::observability::metrics::MetricsRegistry;
+use crate::proxy::backend::BackendClient;
+use crate::proxy::middleware::{proxy_handler, ProxyState};
+use crate::reputation::decision::{DecisionEngine, DecisionEngineConfig};
+use crate::storage::InMemoryRepository;
 use crate::{Error, Result};
+use axum::Router;
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::TcpListener;
 
-/// HTTP proxy server
+/// Serveur proxy HTTP
+///
+/// Encapsule le serveur axum avec tous les composants nécessaires :
+/// - DecisionEngine (détecteurs + scoring)
+/// - BackendClient (forwarding)
+/// - ChallengeManager (CAPTCHA)
+/// - MetricsRegistry (Prometheus)
 pub struct ProxyServer {
-    /// Listen address
+    /// Adresse d'écoute
     listen_addr: SocketAddr,
-    /// Backend server URL
-    backend_url: String,
+    /// Application axum configurée
+    app: Router,
 }
 
 impl ProxyServer {
-    /// Create a new proxy server from configuration
+    /// Crée un nouveau serveur proxy depuis la configuration
+    ///
+    /// Initialise tous les composants :
+    /// - Logging structuré
+    /// - Storage (InMemoryRepository)
+    /// - Détecteurs (registry avec tous les détecteurs)
+    /// - DecisionEngine
+    /// - BackendClient
+    /// - ChallengeManager
+    /// - Métriques Prometheus
     ///
     /// # Arguments
     ///
-    /// * `settings` - Configuration settings
+    /// * `settings` - Configuration complète du serveur
     ///
     /// # Errors
     ///
-    /// Returns error if listen address is invalid
+    /// Retourne une erreur si :
+    /// - L'adresse d'écoute est invalide
+    /// - L'initialisation du logging échoue
+    /// - Un composant ne peut être créé
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use websec::proxy::server::ProxyServer;
+    /// use websec::config::load_from_file;
+    ///
+    /// # fn example() -> websec::Result<()> {
+    /// let settings = load_from_file("config/websec.toml")?;
+    /// let server = ProxyServer::new(&settings)?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn new(settings: &Settings) -> Result<Self> {
+        // 1. Initialiser le logging
+        let log_format = match settings.logging.format.as_str() {
+            "json" => LogFormat::Json,
+            "pretty" => LogFormat::Pretty,
+            _ => LogFormat::Pretty,
+        };
+
+        if let Err(e) = init_logging(log_format, &settings.logging.level) {
+            eprintln!("Warning: Logging already initialized: {}", e);
+        }
+
+        tracing::info!("Initializing WebSec proxy server");
+
+        // 2. Créer le storage (InMemoryRepository pour MVP)
+        let repository = Arc::new(InMemoryRepository::new());
+        tracing::info!("Repository initialized: InMemoryRepository");
+
+        // 3. Créer le registry de détecteurs avec tous les détecteurs
+        let mut detector_registry = DetectorRegistry::new();
+
+        // Ajouter tous les détecteurs disponibles
+        detector_registry.register(Arc::new(crate::detectors::BotDetector::new()));
+        detector_registry.register(Arc::new(crate::detectors::BruteForceDetector::new()));
+        detector_registry.register(Arc::new(crate::detectors::FloodDetector::new()));
+        detector_registry.register(Arc::new(crate::detectors::InjectionDetector::new()));
+        detector_registry.register(Arc::new(crate::detectors::ScanDetector::new()));
+        detector_registry.register(Arc::new(crate::detectors::HeaderDetector::new()));
+        detector_registry.register(Arc::new(crate::detectors::GeoDetector::new()));
+        detector_registry.register(Arc::new(crate::detectors::ProtocolDetector::new()));
+        detector_registry.register(Arc::new(crate::detectors::SessionDetector::new()));
+
+        let detectors = Arc::new(detector_registry);
+        tracing::info!("Detectors registered: {}", detectors.count());
+
+        // 4. Créer la configuration du DecisionEngine
+        let decision_config = DecisionEngineConfig {
+            base_score: settings.reputation.base_score,
+            decay_half_life_hours: settings.reputation.decay_half_life_hours,
+            correlation_penalty_bonus: settings.reputation.correlation_penalty_bonus,
+            thresholds: crate::reputation::score::ScoringThresholds {
+                allow: settings.reputation.threshold_allow,
+                ratelimit: settings.reputation.threshold_ratelimit,
+                challenge: settings.reputation.threshold_challenge,
+                block: settings.reputation.threshold_block,
+            },
+            blacklist: None,
+            whitelist: None,
+        };
+
+        // 5. Créer le DecisionEngine
+        let decision_engine = Arc::new(DecisionEngine::new(
+            decision_config,
+            repository.clone(),
+            detectors.clone(),
+        ));
+
+        tracing::info!("DecisionEngine initialized");
+
+        // 6. Créer le BackendClient
+        let backend_client = Arc::new(BackendClient::new(&settings.server.backend));
+        tracing::info!("BackendClient initialized: {}", settings.server.backend);
+
+        // 7. Créer le ChallengeManager (timeout 5 minutes)
+        let challenge_manager = Arc::new(ChallengeManager::new(Duration::from_secs(300)));
+        tracing::info!("ChallengeManager initialized");
+
+        // 8. Créer le registry de métriques
+        let metrics = Arc::new(MetricsRegistry::new());
+        tracing::info!("MetricsRegistry initialized");
+
+        // 9. Créer l'état partagé du proxy
+        let proxy_state = Arc::new(ProxyState::new(
+            decision_engine,
+            backend_client,
+            challenge_manager,
+            metrics,
+        ));
+
+        // 10. Construire l'application axum avec le middleware
+        let app = Router::new()
+            .fallback(proxy_handler)
+            .with_state(proxy_state);
+
+        // 11. Parser l'adresse d'écoute
         let listen_addr = SocketAddr::from_str(&settings.server.listen)
             .map_err(|e| Error::Config(format!("Invalid listen address: {}", e)))?;
 
-        Ok(Self {
-            listen_addr,
-            backend_url: settings.server.backend.clone(),
-        })
+        tracing::info!("Proxy server configured on {}", listen_addr);
+
+        Ok(Self { listen_addr, app })
     }
 
-    /// Start the proxy server
+    /// Démarre le serveur proxy
     ///
-    /// Runs until interrupted. Listens for HTTP connections and
-    /// forwards them to the backend server.
+    /// Cette méthode bloque jusqu'à ce que le serveur soit arrêté (Ctrl+C).
+    /// Le serveur écoute sur l'adresse configurée et traite toutes les requêtes
+    /// HTTP entrantes via le middleware de détection.
     ///
     /// # Errors
     ///
-    /// Returns error if server fails to bind or encounters I/O errors
-    pub async fn run(&self) -> Result<()> {
+    /// Retourne une erreur si :
+    /// - Le bind sur l'adresse échoue (port déjà utilisé, permissions)
+    /// - Une erreur I/O se produit pendant le fonctionnement
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use websec::proxy::server::ProxyServer;
+    /// use websec::config::load_from_file;
+    ///
+    /// # async fn example() -> websec::Result<()> {
+    /// let settings = load_from_file("config/websec.toml")?;
+    /// let server = ProxyServer::new(&settings)?;
+    ///
+    /// // Démarre le serveur (bloque jusqu'à Ctrl+C)
+    /// server.run().await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn run(self) -> Result<()> {
         let listener = TcpListener::bind(self.listen_addr).await?;
-        tracing::info!("Proxy server listening on {}", self.listen_addr);
-        tracing::info!("Forwarding to backend: {}", self.backend_url);
 
-        // Placeholder: Phase 3+ will implement actual request handling
-        // For now, just accept connections and log
-        loop {
-            match listener.accept().await {
-                Ok((stream, addr)) => {
-                    tracing::debug!("Accepted connection from {}", addr);
-                    drop(stream); // Placeholder: close immediately
-                }
-                Err(e) => {
-                    tracing::error!("Failed to accept connection: {}", e);
-                }
-            }
-        }
+        tracing::info!("🚀 WebSec proxy server listening on {}", self.listen_addr);
+        tracing::info!("📊 Prometheus metrics available (call MetricsRegistry::export_prometheus())");
+        tracing::info!("✅ Server ready to accept connections");
+
+        // Démarrer le serveur axum
+        axum::serve(
+            listener,
+            self.app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .map_err(|e| Error::Http(format!("Server error: {}", e)))?;
+
+        Ok(())
     }
 
-    /// Get the listen address
+    /// Récupère l'adresse d'écoute
     #[must_use]
     pub fn listen_addr(&self) -> SocketAddr {
         self.listen_addr
-    }
-
-    /// Get the backend URL
-    #[must_use]
-    pub fn backend_url(&self) -> &str {
-        &self.backend_url
     }
 }
 
@@ -88,8 +249,8 @@ mod tests {
     fn create_test_settings() -> Settings {
         Settings {
             server: ServerConfig {
-                listen: "127.0.0.1:8080".to_string(),
-                backend: "http://127.0.0.1:3000".to_string(),
+                listen: "127.0.0.1:18080".to_string(), // Port de test différent
+                backend: "http://127.0.0.1:13000".to_string(),
                 workers: 4,
             },
             reputation: ReputationConfig {
@@ -136,8 +297,7 @@ mod tests {
         let settings = create_test_settings();
         let server = ProxyServer::new(&settings).unwrap();
 
-        assert_eq!(server.listen_addr().to_string(), "127.0.0.1:8080");
-        assert_eq!(server.backend_url(), "http://127.0.0.1:3000");
+        assert_eq!(server.listen_addr().to_string(), "127.0.0.1:18080");
     }
 
     #[test]
@@ -148,4 +308,7 @@ mod tests {
         let result = ProxyServer::new(&settings);
         assert!(result.is_err());
     }
+
+    // Note: Les tests end-to-end avec vraies requêtes HTTP seront dans
+    // tests/proxy_e2e_test.rs pour tester le serveur complet en action
 }
