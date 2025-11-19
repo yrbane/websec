@@ -1,6 +1,60 @@
-//! HTTP protocol violation detection
+//! HTTP protocol violation detection (RFC 7230/7231 compliance)
 //!
-//! Detects requests that violate HTTP/1.1 RFC specifications.
+//! Detects requests that violate HTTP/1.1 specifications including invalid methods,
+//! malformed paths, and missing required headers. Critical for preventing protocol-level
+//! attacks like HTTP request smuggling and CRLF injection.
+//!
+//! # Detection Techniques
+//!
+//! 1. **Method Validation**: RFC 7231 compliant method checking
+//! 2. **Path Validation**: Format, length, and character validation
+//! 3. **Header Validation**: Required headers per HTTP/1.1 spec
+//!
+//! # Common Violations Detected
+//!
+//! - **Invalid methods**: Non-standard HTTP methods (HACK, EXPLOIT, etc.)
+//! - **Smuggling attempts**: Spaces in HTTP method (request smuggling)
+//! - **Path attacks**: Null bytes, CRLF injection, oversized paths (>8KB)
+//! - **Missing headers**: Host header required by HTTP/1.1 RFC 7230 §5.4
+//! - **Format errors**: Paths without leading slash
+//!
+//! # Example
+//!
+//! ```rust
+//! use websec::detectors::{ProtocolDetector, Detector, HttpRequestContext};
+//! use std::net::IpAddr;
+//!
+//! # async fn example() {
+//! let detector = ProtocolDetector::new();
+//! let context = HttpRequestContext {
+//!     ip: "192.168.1.100".parse().unwrap(),
+//!     method: "HACK".to_string(), // Invalid method
+//!     path: "/admin".to_string(),
+//!     query: None,
+//!     headers: vec![], // Missing Host header
+//!     body: None,
+//!     user_agent: Some("curl/7.0".to_string()),
+//!     referer: None,
+//!     content_type: None,
+//! };
+//!
+//! let result = detector.analyze(&context).await;
+//! assert!(result.suspicious); // Protocol violations detected
+//! # }
+//! ```
+//!
+//! # Signal Weights
+//!
+//! - `InvalidHttpMethod`: 15 (non-standard HTTP method)
+//! - `ProtocolViolation`: 15 (RFC non-compliance like missing Host header)
+//! - `MalformedRequest`: 15 (path format errors, null bytes, CRLF)
+//!
+//! # Performance
+//!
+//! - **Method check**: O(1) array lookup (9 valid methods)
+//! - **Path validation**: O(n) where n = path length (max 8KB)
+//! - **Header check**: O(h) where h = header count
+//! - No regex, no allocations in hot path
 
 use crate::detectors::{Detector, DetectionResult, HttpRequestContext};
 use crate::reputation::{Signal, SignalVariant};
@@ -14,7 +68,25 @@ const VALID_HTTP_METHODS: &[&str] = &[
     "GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS", "PATCH", "TRACE", "CONNECT",
 ];
 
-/// ProtocolDetector analyzes HTTP requests for RFC violations
+/// Protocol violation detector
+///
+/// Validates HTTP/1.1 RFC compliance by checking request methods, paths, and headers.
+/// Essential for preventing protocol-level attacks and ensuring well-formed requests.
+///
+/// # Fields
+///
+/// - `enabled`: Detector activation flag (always true by default)
+///
+/// # Thread Safety
+///
+/// Stateless detector - all methods are pure functions. Fully thread-safe.
+/// Multiple threads can analyze requests concurrently without any synchronization.
+///
+/// # Validation Rules
+///
+/// **Methods**: Must be one of GET, POST, PUT, DELETE, HEAD, OPTIONS, PATCH, TRACE, CONNECT
+/// **Paths**: Max 8KB, must start with /, no null bytes, no CRLF characters
+/// **Headers**: HTTP/1.1 requires Host header (RFC 7230 §5.4)
 #[derive(Clone)]
 pub struct ProtocolDetector {
     /// Whether detector is enabled
@@ -28,7 +100,30 @@ impl ProtocolDetector {
         Self { enabled: true }
     }
 
-    /// Validate HTTP method
+    /// Validate HTTP method against RFC 7231 and detect smuggling attempts
+    ///
+    /// # Arguments
+    ///
+    /// * `method` - HTTP method string from request line
+    ///
+    /// # Returns
+    ///
+    /// Vector of signals (empty if valid):
+    /// - `InvalidHttpMethod`: Method not in RFC 7231 standard set
+    /// - `ProtocolViolation`: Space detected (HTTP request smuggling indicator)
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// let signals = ProtocolDetector::validate_method("GET");
+    /// assert!(signals.is_empty()); // Valid
+    ///
+    /// let signals = ProtocolDetector::validate_method("HACK");
+    /// assert!(!signals.is_empty()); // Invalid method
+    ///
+    /// let signals = ProtocolDetector::validate_method("GET ");
+    /// assert!(!signals.is_empty()); // Smuggling attempt
+    /// ```
     fn validate_method(method: &str) -> Vec<Signal> {
         let mut signals = Vec::new();
 
@@ -55,7 +150,36 @@ impl ProtocolDetector {
         signals
     }
 
-    /// Validate request path
+    /// Validate request path format and content
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - URI path component from request line
+    ///
+    /// # Returns
+    ///
+    /// Vector of signals (empty if valid):
+    /// - `MalformedRequest`: Oversized path (>8KB), null bytes, CRLF injection, missing leading slash
+    ///
+    /// # Validation Checks
+    ///
+    /// 1. **Length**: Rejects paths > 8KB (buffer overflow prevention)
+    /// 2. **Null bytes**: Detects `\0` (path truncation attacks)
+    /// 3. **CRLF**: Detects `\r` or `\n` (CRLF injection / response splitting)
+    /// 4. **Format**: Ensures path starts with `/` per RFC 7230 §5.3
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// let signals = ProtocolDetector::validate_path("/api/users");
+    /// assert!(signals.is_empty()); // Valid
+    ///
+    /// let signals = ProtocolDetector::validate_path("/path\0malicious");
+    /// assert!(!signals.is_empty()); // Null byte attack
+    ///
+    /// let signals = ProtocolDetector::validate_path("no-slash");
+    /// assert!(!signals.is_empty()); // Invalid format
+    /// ```
     fn validate_path(path: &str) -> Vec<Signal> {
         let mut signals = Vec::new();
 
@@ -102,7 +226,33 @@ impl ProtocolDetector {
         signals
     }
 
-    /// Validate HTTP headers (HTTP/1.1 requires Host header)
+    /// Validate HTTP headers for RFC 7230 compliance
+    ///
+    /// # Arguments
+    ///
+    /// * `headers` - Request header list as (name, value) tuples
+    ///
+    /// # Returns
+    ///
+    /// Vector of signals (empty if valid):
+    /// - `ProtocolViolation`: Missing Host header (required in HTTP/1.1 per RFC 7230 §5.4)
+    ///
+    /// # HTTP/1.1 Requirements
+    ///
+    /// Per RFC 7230 §5.4: "A client MUST send a Host header field in all HTTP/1.1 request messages."
+    /// This requirement enables virtual hosting and is mandatory even for direct IP connections.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// let headers = vec![("Host".to_string(), "example.com".to_string())];
+    /// let signals = ProtocolDetector::validate_headers(&headers);
+    /// assert!(signals.is_empty()); // Valid
+    ///
+    /// let headers = vec![];
+    /// let signals = ProtocolDetector::validate_headers(&headers);
+    /// assert!(!signals.is_empty()); // Missing Host header
+    /// ```
     fn validate_headers(headers: &[(String, String)]) -> Vec<Signal> {
         let mut signals = Vec::new();
 
