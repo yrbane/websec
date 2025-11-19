@@ -266,9 +266,45 @@ Score = max(0, min(100, base - Σ(poids_signal)))
 - **Cache L1 local** en mémoire pour réduire la latence (< 5ms p95)
 - **Mode dégradé** : En cas de panne Redis, détection locale sans historique avec logs d'urgence dans fichiers
 
-## 💻 Administration CLI
+## 💻 Administration & Outils
 
-WebSec fournit un CLI complet pour la gestion opérationnelle :
+### Gestionnaire de Listes (Blacklist/Whitelist)
+
+Script Bash pour gérer les listes d'IPs sans redémarrage :
+
+```bash
+# Blacklist
+./scripts/websec-lists.sh blacklist add 192.168.1.100
+./scripts/websec-lists.sh blacklist add 10.0.0.0/8      # Support CIDR
+./scripts/websec-lists.sh blacklist remove 192.168.1.100
+./scripts/websec-lists.sh blacklist list
+./scripts/websec-lists.sh blacklist clear
+
+# Whitelist
+./scripts/websec-lists.sh whitelist add 203.0.113.50
+./scripts/websec-lists.sh whitelist add 172.16.0.0/12   # Support CIDR
+./scripts/websec-lists.sh whitelist remove 203.0.113.50
+./scripts/websec-lists.sh whitelist list
+
+# Utilitaires
+./scripts/websec-lists.sh check 192.168.1.100           # Vérifier une IP
+./scripts/websec-lists.sh stats                          # Statistiques
+./scripts/websec-lists.sh export json > lists.json       # Export JSON/CSV
+./scripts/websec-lists.sh import lists.json              # Import
+```
+
+**Fonctionnalités** :
+- ✅ Validation automatique IP/CIDR
+- ✅ Détection de doublons
+- ✅ Export/Import (JSON, CSV)
+- ✅ Statistiques en temps réel
+- ✅ Code couleur pour lisibilité
+
+Voir [`scripts/README.md`](scripts/README.md) pour la documentation complète.
+
+### CLI d'Administration (Future)
+
+WebSec proposera un CLI complet pour la gestion opérationnelle :
 
 ```bash
 # Débloquer une IP légitime bloquée par erreur
@@ -282,11 +318,6 @@ websec-cli ip show 198.51.100.42
 websec-cli stats
 # Affiche : req/s, taux de blocage, top IPs malveillantes, top signaux
 
-# Ajouter/retirer des IPs dans les listes de contrôle
-websec-cli whitelist add 192.0.2.100
-websec-cli blacklist add 203.0.113.0/24
-websec-cli whitelist remove 192.0.2.100
-
 # Recharger la configuration à chaud (sans interruption)
 websec-cli config reload
 
@@ -294,32 +325,68 @@ websec-cli config reload
 websec-cli config dry-run --new-config /etc/websec/websec-test.toml
 ```
 
-**Performance CLI** :
-- Requêtes (show, stats) : < 500ms
-- Modifications (add, remove, unblock) : < 100ms
-- Déblocage d'urgence : < 2 minutes du signalement à la résolution
-
 ## 📈 Monitoring
+
+### Dashboard Web
+
+Dashboard HTML standalone pour monitoring en temps réel :
+
+```bash
+# Démarrer WebSec
+cargo run --release
+
+# Servir le dashboard (dans un autre terminal)
+cd web && python3 -m http.server 8000
+
+# Ouvrir http://localhost:8000/dashboard.html
+```
+
+**Fonctionnalités** :
+- 📊 **Métriques en temps réel** : Requêtes totales, autorisées, bloquées, rate-limitées
+- 🎯 **Taux de blocage** : Pourcentages par décision
+- 🌐 **IPs suivies** : Compteur d'IPs trackées
+- 🔔 **Top 5 signaux** : Signaux de menaces les plus détectés
+- 🔄 **Auto-refresh** : Actualisation automatique toutes les 10 secondes
+- 📱 **Responsive** : Compatible mobile et desktop
+- 🎨 **Design moderne** : Interface gradient avec cartes colorées
+
+Le dashboard consomme l'endpoint `/metrics` Prometheus et ne nécessite aucune dépendance externe (Vanilla JavaScript).
+
+**Installation alternative** : Nginx, Apache, ou tout serveur HTTP statique. Voir [`web/README.md`](web/README.md) pour plus d'options.
 
 ### Métriques Prometheus
 
-WebSec expose des métriques sur `/metrics` :
+WebSec expose des métriques sur `/metrics` au format Prometheus :
 
 ```
 # Requêtes totales par décision
-websec_requests_total{decision="allow"}
-websec_requests_total{decision="block"}
-websec_requests_total{decision="ratelimit"}
+requests_total{decision="allow"}
+requests_total{decision="block"}
+requests_total{decision="rate_limit"}
 
 # Latence de traitement
-websec_request_duration_seconds
+request_duration_seconds
 
 # Signaux détectés
-websec_signals_total{signal_type="SqlInjectionAttempt"}
+signals_total{signal_type="SqlInjectionAttempt"}
+signals_total{signal_type="SuspiciousUserAgent"}
 
 # IPs suivies
-websec_tracked_ips_total
+tracked_ips_total
 ```
+
+**Configuration Prometheus** :
+
+```yaml
+scrape_configs:
+  - job_name: 'websec'
+    static_configs:
+      - targets: ['localhost:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+```
+
+Un fichier de configuration Prometheus est fourni dans [`docker/prometheus.yml`](docker/prometheus.yml) pour le stack Docker.
 
 ### Logs Structurés
 
@@ -502,38 +569,51 @@ git push origin feature/ma-fonctionnalite
 
 ## 🎯 Roadmap
 
-### Version 0.1.0 (MVP) - ✅ Complété
+### Version 0.1.0 (MVP) - ✅ **100% Complété**
 - [x] Constitution et spécifications
 - [x] **10 Détecteurs implémentés** : Bots, Brute Force, Flood, Injections, Path Traversal, Scans, Header Manipulation, Geo Threats, Protocol Violations, Session Hijacking
 - [x] **Moteur de réputation** avec scoring additive pondéré, corrélation d'attaques et décroissance exponentielle
 - [x] **Rate limiting** Token Bucket avec fenêtre glissante
-- [x] **Listes noires/blanches** avec support CIDR
+- [x] **Listes noires/blanches** avec support CIDR + gestionnaire CLI
 - [x] **Storage** InMemoryRepository (Redis en v0.2)
-- [x] **CLI** d'administration de base
 - [x] **Observabilité** : Logging structuré (JSON/Pretty) + Métriques Prometheus
 - [x] **Système de Challenge CAPTCHA** avec questions mathématiques et validation sécurisée
+- [x] **Infrastructure Production** : Docker, CI/CD, Tests E2E
+- [x] **Dashboard Web** : Monitoring temps réel HTML/JS standalone
+- [x] **Documentation** : README complet, badges, guides d'installation
 
-### Version 0.2.0 - Prochaine
+### Version 0.2.0 - 🚧 En Cours
+- [x] **Endpoint `/metrics` Prometheus** : Métriques exportées pour scraping
+- [x] **Tests E2E** : Suite complète avec backend Python de test
+- [x] **Docker** : Multi-stage Dockerfile + docker-compose stack complet
+- [x] **CI/CD** : GitHub Actions (lint, test, build, release multi-plateforme)
+- [x] **Dashboard Web** : Interface monitoring temps réel
+- [x] **Gestionnaire de listes** : Script CLI pour blacklist/whitelist
 - [ ] Infrastructure proxy HTTP transparent complet avec middleware
 - [ ] Storage Redis + cache L1 local (migration depuis InMemory)
-- [ ] Dashboard monitoring temps réel
 - [ ] CLI avancé (dry-run, mode dégradé, statistiques live)
 - [ ] Détecteur TOR/Proxy
 - [ ] Détecteur Upload (webshells)
 - [ ] Détecteur SSRF
 
-### Version 0.3.0
+### Version 0.3.0 - 📋 Planifiée
 - [ ] TLS fingerprinting (JA3) avec TlsDetector
 - [ ] Mode apprentissage (tuning automatique des seuils)
 - [ ] Gestion signaux rédibitoires sans récupération automatique
 - [ ] Tests de charge et optimisation performance (10k+ req/s)
+- [ ] Dashboard avancé avec graphiques (Chart.js)
+- [ ] Historique métriques sur 24h
+- [ ] Notifications WebSocket
 
-### Version 1.0.0
-- [ ] Production-ready
-- [ ] Documentation complète
-- [ ] Tests de charge validés
-- [ ] Audit de sécurité
-- [ ] Packages distributions Linux
+### Version 1.0.0 - 🎯 Production-Ready
+- [ ] Infrastructure proxy production complète
+- [ ] Storage Redis distribué avec haute disponibilité
+- [ ] Documentation complète (admin, dev, ops)
+- [ ] Tests de charge validés (> 10k req/s)
+- [ ] Audit de sécurité externe
+- [ ] Packages distributions Linux (deb, rpm)
+- [ ] Helm charts Kubernetes
+- [ ] Monitoring avancé (Grafana dashboards)
 
 ## 🔐 Sécurité
 
