@@ -39,7 +39,7 @@ async fn test_normal_session_no_flags() {
     let detector = SessionDetector::new();
 
     // Normal session: same IP, same User-Agent
-    let headers = vec![("Cookie".to_string(), "session=abc123".to_string())];
+    let headers = vec![("Cookie".to_string(), "session=valid_token_12345".to_string())];
     let ua = Some("Mozilla/5.0".to_string());
 
     let context1 = create_context("192.168.1.1", "/dashboard", headers.clone(), ua.clone());

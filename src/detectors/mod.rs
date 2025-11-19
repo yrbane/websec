@@ -24,6 +24,7 @@ pub mod injection_detector;
 pub mod protocol_detector;
 pub mod registry;
 pub mod scan_detector;
+pub mod session_detector;
 
 pub use bot_detector::BotDetector;
 pub use bruteforce_detector::BruteForceDetector;
@@ -35,3 +36,4 @@ pub use injection_detector::InjectionDetector;
 pub use protocol_detector::ProtocolDetector;
 pub use registry::DetectorRegistry;
 pub use scan_detector::ScanDetector;
+pub use session_detector::SessionDetector;

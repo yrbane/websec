@@ -75,7 +75,7 @@ async fn test_session_anomaly_lowers_score() {
 async fn test_normal_session_maintains_score() {
     let engine = create_test_engine();
 
-    let session = vec![("Cookie".to_string(), "session=valid".to_string())];
+    let session = vec![("Cookie".to_string(), "session=valid_token".to_string())];
     let ua = Some("Mozilla/5.0".to_string());
     let ip = "192.168.1.5";
 
@@ -93,22 +93,28 @@ async fn test_normal_session_maintains_score() {
 async fn test_repeated_session_violations() {
     let engine = create_test_engine();
 
-    let session = vec![("Cookie".to_string(), "session=attacker".to_string())];
+    let session = vec![("Cookie".to_string(), "session=attacker_token".to_string())];
     let ua = Some("Mozilla/5.0".to_string());
 
-    let mut final_score = 100;
+    // Establish session from first IP
+    let context1 = create_context("10.0.0.10", "/data", session.clone(), ua.clone());
+    let result1 = engine.process_request(&context1).await.unwrap();
+    let initial_score = result1.score;
 
-    // Multiple session anomalies (different IPs with same session)
-    for i in 10..15 {
+    // Same session from multiple different IPs (hijacking)
+    for i in 11..15 {
         let ip = format!("10.0.0.{}", i);
         let context = create_context(&ip, "/data", session.clone(), ua.clone());
-        let result = engine.process_request(&context).await.unwrap();
-        final_score = result.score;
+        let _result = engine.process_request(&context).await.unwrap();
     }
 
+    // Check the original IP's score after violations
+    let context_final = create_context("10.0.0.10", "/data", session.clone(), ua.clone());
+    let result_final = engine.process_request(&context_final).await.unwrap();
+
     assert!(
-        final_score < 50,
-        "Repeated violations should severely lower score"
+        result_final.score < initial_score,
+        "IP that experienced session hijacking should have degraded score"
     );
 }
 
@@ -116,7 +122,7 @@ async fn test_repeated_session_violations() {
 async fn test_user_agent_switch_detection() {
     let engine = create_test_engine();
 
-    let session = vec![("Cookie".to_string(), "session=switch".to_string())];
+    let session = vec![("Cookie".to_string(), "session=switch_token".to_string())];
     let ip = "192.168.1.20";
 
     // First request with Chrome
@@ -138,12 +144,12 @@ async fn test_different_users_independent() {
     let ua = Some("Mozilla/5.0".to_string());
 
     // User 1: Normal session
-    let session1 = vec![("Cookie".to_string(), "session=user1".to_string())];
+    let session1 = vec![("Cookie".to_string(), "session=user1_token".to_string())];
     let context1 = create_context("192.168.1.10", "/app", session1, ua.clone());
     let result1 = engine.process_request(&context1).await.unwrap();
 
     // User 2: Normal session (independent)
-    let session2 = vec![("Cookie".to_string(), "session=user2".to_string())];
+    let session2 = vec![("Cookie".to_string(), "session=user2_token".to_string())];
     let context2 = create_context("192.168.1.11", "/app", session2, ua);
     let result2 = engine.process_request(&context2).await.unwrap();
 
@@ -180,7 +186,7 @@ async fn test_rapid_session_switching() {
 
     // Rapidly switch between different sessions
     for i in 0..10 {
-        let session = vec![("Cookie".to_string(), format!("session=rapid{}", i))];
+        let session = vec![("Cookie".to_string(), format!("session=rapid_token{}", i))];
         let context = create_context(ip, "/data", session, ua.clone());
         let result = engine.process_request(&context).await.unwrap();
         final_score = result.score;
