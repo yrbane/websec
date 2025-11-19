@@ -1,11 +1,11 @@
-//! Configuration structures for WebSec
+//! Configuration structures for `WebSec`
 //!
 //! Loads settings from TOML files with serde deserialization.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Complete WebSec configuration
+/// Complete `WebSec` configuration
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Settings {
     /// Server configuration

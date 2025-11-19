@@ -28,11 +28,7 @@ fn create_test_engine() -> DecisionEngine {
 }
 
 /// Helper to create context
-fn create_context(
-    ip: &str,
-    path: &str,
-    headers: Vec<(String, String)>,
-) -> HttpRequestContext {
+fn create_context(ip: &str, path: &str, headers: Vec<(String, String)>) -> HttpRequestContext {
     HttpRequestContext {
         ip: IpAddr::from_str(ip).unwrap(),
         method: "GET".to_string(),
@@ -50,7 +46,10 @@ fn create_context(
 async fn test_header_injection_lowers_score() {
     let engine = create_test_engine();
 
-    let headers = vec![("Host".to_string(), "evil.com\r\nX-Injected: true".to_string())];
+    let headers = vec![(
+        "Host".to_string(),
+        "evil.com\r\nX-Injected: true".to_string(),
+    )];
     let context = create_context("192.168.1.100", "/", headers);
     let result = engine.process_request(&context).await.unwrap();
 
@@ -68,7 +67,10 @@ async fn test_header_injection_lowers_score() {
         .signals
         .iter()
         .any(|s| matches!(s.variant, SignalVariant::HeaderInjection));
-    assert!(has_header_injection, "Should generate HeaderInjection signal");
+    assert!(
+        has_header_injection,
+        "Should generate HeaderInjection signal"
+    );
 }
 
 #[tokio::test]
@@ -140,10 +142,7 @@ async fn test_header_injection_eventually_blocks() {
 
     // Keep attacking until blocked
     for i in 0..10 {
-        let headers = vec![(
-            "X-Custom".to_string(),
-            format!("value\r\nX-Attack: {}", i),
-        )];
+        let headers = vec![("X-Custom".to_string(), format!("value\r\nX-Attack: {}", i))];
         let context = create_context(ip, "/", headers);
         let result = engine.process_request(&context).await.unwrap();
         final_decision = result.decision;

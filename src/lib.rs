@@ -1,6 +1,6 @@
-//! WebSec - High-performance security reverse proxy
+//! `WebSec` - High-performance security reverse proxy
 //!
-//! WebSec is a transparent HTTP(S) reverse proxy that provides real-time threat detection
+//! `WebSec` is a transparent HTTP(S) reverse proxy that provides real-time threat detection
 //! and mitigation through IP reputation scoring, behavioral analysis, and adaptive rate limiting.
 //!
 //! # Architecture

@@ -84,7 +84,7 @@
 //! - [OWASP: HTTP Response Splitting](https://owasp.org/www-community/attacks/HTTP_Response_Splitting)
 //! - [PortSwigger: Host Header Attacks](https://portswigger.net/web-security/host-header)
 
-use crate::detectors::{Detector, DetectionResult, HttpRequestContext};
+use crate::detectors::{DetectionResult, Detector, HttpRequestContext};
 use crate::reputation::{Signal, SignalVariant};
 use async_trait::async_trait;
 
@@ -291,7 +291,10 @@ mod tests {
     #[test]
     fn test_crlf_detection() {
         let detector = HeaderDetector::new();
-        let headers = vec![("Host".to_string(), "evil.com\r\nX-Injected: true".to_string())];
+        let headers = vec![(
+            "Host".to_string(),
+            "evil.com\r\nX-Injected: true".to_string(),
+        )];
 
         let signals = detector.detect_crlf_injection(&headers);
         assert!(!signals.is_empty());

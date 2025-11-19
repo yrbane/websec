@@ -81,11 +81,11 @@
 use crate::detectors::{Detector, HttpRequestContext};
 use crate::reputation::{Signal, SignalVariant};
 use async_trait::async_trait;
+use dashmap::DashMap;
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use dashmap::DashMap;
 
 /// Geographic location information
 #[derive(Debug, Clone)]
@@ -170,9 +170,7 @@ impl GeoDetector {
                 }
                 false
             }
-            IpAddr::V6(ipv6) => {
-                ipv6.is_loopback() || ipv6.is_unicast_link_local()
-            }
+            IpAddr::V6(ipv6) => ipv6.is_loopback() || ipv6.is_unicast_link_local(),
         }
     }
 
@@ -185,11 +183,11 @@ impl GeoDetector {
             IpAddr::V4(ipv4) => {
                 let octets = ipv4.octets();
                 match octets[0] {
-                    1..=2 => Some("CN".to_string()),   // China
-                    5..=6 => Some("RU".to_string()),   // Russia
-                    8 => Some("US".to_string()),       // US (Google DNS)
-                    41 => Some("NG".to_string()),      // Nigeria
-                    _ => Some("XX".to_string()),       // Unknown
+                    1..=2 => Some("CN".to_string()), // China
+                    5..=6 => Some("RU".to_string()), // Russia
+                    8 => Some("US".to_string()),     // US (Google DNS)
+                    41 => Some("NG".to_string()),    // Nigeria
+                    _ => Some("XX".to_string()),     // Unknown
                 }
             }
             IpAddr::V6(_) => Some("XX".to_string()),
@@ -200,11 +198,7 @@ impl GeoDetector {
     ///
     /// If IP location changes rapidly (e.g., US -> China in minutes),
     /// this may indicate account sharing or session hijacking
-    fn detect_impossible_travel(
-        &self,
-        ip: &IpAddr,
-        current_country: &str,
-    ) -> bool {
+    fn detect_impossible_travel(&self, ip: &IpAddr, current_country: &str) -> bool {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()

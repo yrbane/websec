@@ -39,7 +39,10 @@ async fn test_host_header_injection() {
     let detector = HeaderDetector::new();
 
     // Host header with injection attempt
-    let headers = vec![("Host".to_string(), "evil.com\r\nX-Injected: true".to_string())];
+    let headers = vec![(
+        "Host".to_string(),
+        "evil.com\r\nX-Injected: true".to_string(),
+    )];
     let context = create_context("192.168.1.100", headers, None);
     let result = detector.analyze(&context).await;
 
@@ -161,10 +164,7 @@ async fn test_oversized_header_values() {
     let context = create_context("192.168.1.100", headers, None);
     let result = detector.analyze(&context).await;
 
-    assert!(
-        result.suspicious,
-        "Should detect oversized header values"
-    );
+    assert!(result.suspicious, "Should detect oversized header values");
 }
 
 #[tokio::test]
@@ -228,10 +228,7 @@ async fn test_header_name_with_special_chars() {
     let context = create_context("192.168.1.100", headers, None);
     let result = detector.analyze(&context).await;
 
-    assert!(
-        result.suspicious,
-        "Should detect invalid header name"
-    );
+    assert!(result.suspicious, "Should detect invalid header name");
 }
 
 #[tokio::test]
@@ -251,7 +248,10 @@ async fn test_concurrent_header_analysis() {
 
     for handle in handles {
         let result = handle.await.unwrap();
-        assert!(result.signals.len() >= 0, "Should handle concurrent analysis");
+        assert!(
+            result.signals.len() >= 0,
+            "Should handle concurrent analysis"
+        );
     }
 }
 

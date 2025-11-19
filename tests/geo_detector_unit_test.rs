@@ -58,7 +58,11 @@ async fn test_safe_country_no_signal() {
     let result = detector.analyze(&context).await;
 
     assert!(
-        !result.suspicious || !result.signals.iter().any(|s| matches!(s.variant, SignalVariant::HighRiskCountry)),
+        !result.suspicious
+            || !result
+                .signals
+                .iter()
+                .any(|s| matches!(s.variant, SignalVariant::HighRiskCountry)),
         "Safe country should not generate HighRiskCountry signal"
     );
 }
@@ -77,7 +81,10 @@ async fn test_impossible_travel_detection() {
 
     // Note: This test requires the detector to track previous locations
     // For now, we'll just check that the detector can process both requests
-    assert!(result2.signals.len() >= 0, "Detector should process request");
+    assert!(
+        result2.signals.len() >= 0,
+        "Detector should process request"
+    );
 }
 
 #[tokio::test]
@@ -186,6 +193,9 @@ async fn test_concurrent_geo_lookups() {
     for handle in handles {
         let result = handle.await.unwrap();
         // DetectionResult doesn't have is_ok, just check it ran
-        assert!(result.signals.len() >= 0, "Concurrent lookups should succeed");
+        assert!(
+            result.signals.len() >= 0,
+            "Concurrent lookups should succeed"
+        );
     }
 }

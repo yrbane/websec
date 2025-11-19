@@ -19,9 +19,9 @@ use std::path::Path;
 /// - Values are out of valid ranges
 pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Settings> {
     let contents = std::fs::read_to_string(path.as_ref())
-        .map_err(|e| Error::Config(format!("Failed to read config file: {}", e)))?;
+        .map_err(|e| Error::Config(format!("Failed to read config file: {e}")))?;
 
-    toml::from_str(&contents).map_err(|e| Error::Config(format!("Failed to parse TOML: {}", e)))
+    toml::from_str(&contents).map_err(|e| Error::Config(format!("Failed to parse TOML: {e}")))
 }
 
 /// Load configuration with environment variable overrides
@@ -104,8 +104,7 @@ fn validate(settings: &Settings) -> Result<()> {
         "memory" => {}
         other => {
             return Err(Error::Config(format!(
-                "Invalid storage type '{}'. Must be 'redis' or 'memory'",
-                other
+                "Invalid storage type '{other}'. Must be 'redis' or 'memory'"
             )));
         }
     }
