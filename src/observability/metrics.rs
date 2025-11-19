@@ -1,6 +1,66 @@
 //! Métriques Prometheus pour monitoring
 //!
-//! Collecte et expose des métriques pour le monitoring avec Prometheus.
+//! Collecte et expose des métriques au format Prometheus pour le monitoring
+//! des performances et de la sécurité du proxy.
+//!
+//! # Utilisation
+//!
+//! ```rust
+//! use websec::observability::metrics::MetricsRegistry;
+//!
+//! let metrics = MetricsRegistry::new();
+//!
+//! // Incrémenter les compteurs
+//! metrics.increment_counter("requests_total");
+//! metrics.increment_detection("BotDetector");
+//!
+//! // Enregistrer la latence
+//! metrics.observe_latency(0.042); // 42ms
+//!
+//! // Mettre à jour le score de réputation
+//! metrics.set_reputation_score("192.168.1.1", 85.0);
+//!
+//! // Compter les décisions
+//! metrics.increment_decision("block");
+//!
+//! // Exporter au format Prometheus
+//! let export = metrics.export_prometheus();
+//! println!("{}", export);
+//! ```
+//!
+//! # Métriques disponibles
+//!
+//! ## Compteurs
+//!
+//! - `requests_total` : Nombre total de requêtes traitées
+//! - `detections_total` : Nombre total de menaces détectées
+//! - `detections_by_detector{detector}` : Détections par type de détecteur
+//! - `decisions_by_type{decision}` : Décisions par type (allow, block, etc.)
+//!
+//! ## Histogrammes
+//!
+//! - `request_duration_seconds` : Distribution de latence des requêtes
+//!   - Buckets : 1ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s
+//!
+//! ## Jauges
+//!
+//! - `reputation_score` : Score de réputation actuel
+//! - `reputation_by_ip{ip}` : Score de réputation par adresse IP
+//!
+//! # Exposition Prometheus
+//!
+//! Les métriques sont exposées au format texte Prometheus :
+//! ```text
+//! # HELP requests_total Total des requêtes traitées
+//! # TYPE requests_total counter
+//! requests_total 1234
+//!
+//! # HELP request_duration_seconds Durée de traitement des requêtes en secondes
+//! # TYPE request_duration_seconds histogram
+//! request_duration_seconds_bucket{le="0.005"} 100
+//! request_duration_seconds_bucket{le="0.01"} 250
+//! ...
+//! ```
 
 use prometheus::{
     Histogram, HistogramOpts, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Opts, Registry,
@@ -9,6 +69,21 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 /// Registry de métriques Prometheus
+///
+/// Gère l'ensemble des métriques du système avec support thread-safe.
+/// Toutes les métriques sont créées automatiquement à l'initialisation.
+///
+/// # Thread Safety
+///
+/// Complètement thread-safe grâce à `Arc<Mutex<HashMap>>` pour le stockage
+/// des métriques. Plusieurs threads peuvent mettre à jour les métriques
+/// simultanément sans verrouillage global.
+///
+/// # Performance
+///
+/// - Recherche de métrique : O(1) via HashMap
+/// - Incrémentation : O(1) opération atomique Prometheus
+/// - Export : O(n) où n = nombre de métriques
 pub struct MetricsRegistry {
     registry: Registry,
     counters: Arc<Mutex<HashMap<String, IntCounter>>>,
