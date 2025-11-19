@@ -170,7 +170,17 @@ impl GeoDetector {
                 }
                 false
             }
-            IpAddr::V6(ipv6) => ipv6.is_loopback() || ipv6.is_unicast_link_local(),
+            IpAddr::V6(ipv6) => {
+                if ipv6.is_loopback() {
+                    return true;
+                }
+                // Link-local addresses (fe80::/10)
+                let segments = ipv6.segments();
+                if (segments[0] & 0xffc0) == 0xfe80 {
+                    return true;
+                }
+                false
+            }
         }
     }
 
@@ -283,9 +293,7 @@ impl Detector for GeoDetector {
             let signal = Signal::with_context(
                 SignalVariant::ImpossibleTravel,
                 20, // Weight from signal.rs
-                format!(
-                    "Impossible travel detected for IP {ip} to country {country_code}"
-                ),
+                format!("Impossible travel detected for IP {ip} to country {country_code}"),
             );
             signals.push(signal);
         }

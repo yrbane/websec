@@ -3,20 +3,13 @@
 FROM rust:1.83-alpine AS builder
 
 # Install build dependencies
-RUN apk add --no-cache musl-dev
+RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static pkgconfig
 
 # Set working directory
 WORKDIR /usr/src/websec
 
 # Copy dependency manifests
 COPY Cargo.toml Cargo.lock ./
-
-# Create a dummy src to cache dependencies
-RUN mkdir src && \
-    echo "fn main() {}" > src/main.rs && \
-    echo "pub fn dummy() {}" > src/lib.rs && \
-    cargo build --release && \
-    rm -rf src
 
 # Copy actual source code
 COPY src ./src
@@ -29,7 +22,7 @@ RUN cargo build --release
 FROM alpine:3.21
 
 # Install runtime dependencies
-RUN apk add --no-cache ca-certificates wget
+RUN apk add --no-cache ca-certificates wget openssl libgcc
 
 # Create non-root user
 RUN addgroup -g 1000 websec && \
@@ -58,4 +51,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8080/metrics || exit 1
 
 # Run WebSec
-CMD ["/app/websec", "--config", "/app/config/websec.toml"]
+CMD ["/app/websec", "run", "--config", "/app/config/websec.toml"]

@@ -10,12 +10,14 @@ python3 scripts/test-backend.py [PORT]
 ```
 
 **Endpoints**:
-- `GET /` - Page d'accueil HTML
+- `GET /` et `HEAD /` - Page d'accueil HTML
 - `GET /api/health` - Health check JSON
 - `GET /api/users` - Liste d'utilisateurs (JSON)
 - `GET /slow` - Réponse lente (2s)
 - `POST /api/login` - Simule un login
 - `POST /api/echo` - Écho du body
+
+**Note**: Le backend supporte maintenant les requêtes HEAD pour tous les endpoints GET.
 
 **Exemple**:
 ```bash

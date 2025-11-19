@@ -9,6 +9,10 @@ import json
 import time
 
 class TestBackendHandler(BaseHTTPRequestHandler):
+    def do_HEAD(self):
+        # Handle HEAD requests like GET but without body
+        self.do_GET()
+
     def do_GET(self):
         if self.path == "/":
             self.send_response(200)

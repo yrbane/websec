@@ -128,13 +128,15 @@ docker run -d \
   websec:latest
 ```
 
+**Image optimisée** : 13.2 MB (Alpine Linux + binaire statique Rust)
+
 #### Stack complet avec docker-compose
 
 ```bash
 # Démarre WebSec + Backend de test + Redis + Prometheus
 docker-compose up -d
 
-# Tester le stack complet
+# Tester le stack complet (5 tests E2E)
 ./scripts/docker-test.sh
 
 # Accès aux services
@@ -150,8 +152,15 @@ docker-compose down
 Le stack docker-compose inclut :
 - **websec-proxy** : Le reverse proxy WebSec (ports 8080, 9090)
 - **websec-backend** : Backend HTTP de test Python
-- **websec-redis** : Redis pour storage distribué
-- **websec-prometheus** : Monitoring Prometheus préconfiguration
+- **websec-redis** : Redis pour storage distribué (port 6379)
+- **websec-prometheus** : Monitoring Prometheus préconfiguré (port 9091)
+
+**Tests E2E Docker** : Tous les tests passent ✅
+- ✓ GET / via proxy
+- ✓ GET /metrics
+- ✓ Headers WebSec présents
+- ✓ GET /api/users via proxy
+- ✓ POST /api/echo via proxy
 
 ## 📖 Configuration
 

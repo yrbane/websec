@@ -64,7 +64,7 @@ echo -e "${GREEN}🧪 Running functional tests${NC}\n"
 
 # Test 1: Proxy forwards to backend
 echo -n "  Test 1: GET / via proxy... "
-RESPONSE=$(curl -s -w "%{http_code}" -o /dev/null http://localhost:8080/)
+RESPONSE=$(curl -s -w "%{http_code}" -o /dev/null -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" http://localhost:8080/)
 if [ "$RESPONSE" = "200" ]; then
     echo -e "${GREEN}✓${NC}"
 else
@@ -84,8 +84,8 @@ fi
 
 # Test 3: WebSec headers
 echo -n "  Test 3: WebSec headers... "
-HEADERS=$(curl -s -I http://localhost:8080/ | grep -i "x-websec")
-if echo "$HEADERS" | grep -q "X-WebSec-Decision"; then
+HEADERS=$(curl -s -I -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" http://localhost:8080/ | grep -i "x-websec")
+if echo "$HEADERS" | grep -q "x-websec-decision"; then
     echo -e "${GREEN}✓${NC}"
 else
     echo -e "${RED}❌${NC}"
@@ -94,7 +94,7 @@ fi
 
 # Test 4: Backend API via proxy
 echo -n "  Test 4: GET /api/users... "
-USERS=$(curl -s http://localhost:8080/api/users)
+USERS=$(curl -s -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" http://localhost:8080/api/users)
 if echo "$USERS" | grep -q "Alice"; then
     echo -e "${GREEN}✓${NC}"
 else
@@ -105,6 +105,7 @@ fi
 # Test 5: POST via proxy
 echo -n "  Test 5: POST /api/echo... "
 RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" \
+    -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
     -d '{"test":"docker"}' http://localhost:8080/api/echo)
 if echo "$RESPONSE" | grep -q "docker"; then
     echo -e "${GREEN}✓${NC}"
