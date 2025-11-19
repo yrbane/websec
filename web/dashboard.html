@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSec Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 5px 15px;
+            background: #10b981;
+            color: white;
+            border-radius: 20px;
+            font-size: 0.9em;
+            margin-left: 15px;
+        }
+
+        .status.offline {
+            background: #ef4444;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+
+        .card h2 {
+            font-size: 1.3em;
+            color: #667eea;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+        }
+
+        .card h2::before {
+            content: "📊";
+            margin-right: 10px;
+            font-size: 1.2em;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .metric:last-child {
+            border-bottom: none;
+        }
+
+        .metric-label {
+            color: #666;
+            font-size: 0.95em;
+        }
+
+        .metric-value {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .metric-value.success {
+            color: #10b981;
+        }
+
+        .metric-value.warning {
+            color: #f59e0b;
+        }
+
+        .metric-value.danger {
+            color: #ef4444;
+        }
+
+        .chart-container {
+            height: 250px;
+            margin-top: 20px;
+        }
+
+        .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+
+        .refresh-btn:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: white;
+            font-size: 1.2em;
+        }
+
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+
+        .auto-refresh {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .auto-refresh input {
+            cursor: pointer;
+        }
+
+        footer {
+            text-align: center;
+            color: white;
+            margin-top: 30px;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🛡️ WebSec Dashboard <span class="status" id="status">●  Online</span></h1>
+            <p class="subtitle">Monitoring en temps réel de votre proxy de sécurité</p>
+            <button class="refresh-btn" onclick="loadMetrics()">🔄 Rafraîchir</button>
+            <div class="auto-refresh">
+                <input type="checkbox" id="auto-refresh" checked>
+                <label for="auto-refresh">Actualisation automatique (10s)</label>
+            </div>
+        </header>
+
+        <div id="loading" class="loading">Chargement des métriques...</div>
+        <div id="error" class="error" style="display: none;"></div>
+        <div id="dashboard" style="display: none;">
+            <div class="grid">
+                <div class="card">
+                    <h2>Requêtes Totales</h2>
+                    <div class="metric">
+                        <span class="metric-label">Total</span>
+                        <span class="metric-value" id="total-requests">0</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Autorisées</span>
+                        <span class="metric-value success" id="allowed-requests">0</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Bloquées</span>
+                        <span class="metric-value danger" id="blocked-requests">0</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Rate Limited</span>
+                        <span class="metric-value warning" id="ratelimited-requests">0</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>Taux de Blocage</h2>
+                    <div class="metric">
+                        <span class="metric-label">Blocage</span>
+                        <span class="metric-value danger" id="block-rate">0%</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Rate Limit</span>
+                        <span class="metric-value warning" id="ratelimit-rate">0%</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Autorisation</span>
+                        <span class="metric-value success" id="allow-rate">100%</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>IPs Suivies</h2>
+                    <div class="metric">
+                        <span class="metric-label">Total</span>
+                        <span class="metric-value" id="tracked-ips">0</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Dernière maj</span>
+                        <span class="metric-value" id="last-update" style="font-size: 1em;">--:--:--</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>Signaux Détectés</h2>
+                    <div id="signals-container">
+                        <div class="metric">
+                            <span class="metric-label">Aucun signal détecté</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Métriques Brutes</h2>
+                <pre id="raw-metrics" style="background: #f9fafb; padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 0.85em; line-height: 1.6; color: #374151;"></pre>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>WebSec Dashboard v1.0 | Propulsé par Rust 🦀</p>
+    </footer>
+
+    <script>
+        const API_URL = window.location.origin;
+        let autoRefreshInterval = null;
+
+        async function loadMetrics() {
+            try {
+                document.getElementById('status').textContent = '●  Online';
+                document.getElementById('status').classList.remove('offline');
+                document.getElementById('error').style.display = 'none';
+
+                const response = await fetch(`${API_URL}/metrics`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+                const text = await response.text();
+                processMetrics(text);
+
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('dashboard').style.display = 'block';
+            } catch (error) {
+                console.error('Error loading metrics:', error);
+                document.getElementById('status').textContent = '●  Offline';
+                document.getElementById('status').classList.add('offline');
+                document.getElementById('error').textContent = `Erreur: ${error.message}. Vérifiez que WebSec est démarré.`;
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        function processMetrics(text) {
+            const lines = text.split('\n');
+            let totalRequests = 0;
+            let allowedRequests = 0;
+            let blockedRequests = 0;
+            let ratelimitedRequests = 0;
+            let trackedIps = 0;
+            const signals = {};
+
+            for (const line of lines) {
+                if (line.startsWith('#') || line.trim() === '') continue;
+
+                if (line.includes('requests_total{decision="allow"}')) {
+                    allowedRequests = parseInt(line.split(' ').pop()) || 0;
+                } else if (line.includes('requests_total{decision="block"}')) {
+                    blockedRequests = parseInt(line.split(' ').pop()) || 0;
+                } else if (line.includes('requests_total{decision="rate_limit"}')) {
+                    ratelimitedRequests = parseInt(line.split(' ').pop()) || 0;
+                } else if (line.includes('tracked_ips_total')) {
+                    trackedIps = parseInt(line.split(' ').pop()) || 0;
+                } else if (line.includes('signals_total{signal_type=')) {
+                    const match = line.match(/signal_type="([^"]+)"/);
+                    if (match) {
+                        const signalName = match[1];
+                        const count = parseInt(line.split(' ').pop()) || 0;
+                        signals[signalName] = count;
+                    }
+                }
+            }
+
+            totalRequests = allowedRequests + blockedRequests + ratelimitedRequests;
+
+            // Update DOM
+            document.getElementById('total-requests').textContent = totalRequests;
+            document.getElementById('allowed-requests').textContent = allowedRequests;
+            document.getElementById('blocked-requests').textContent = blockedRequests;
+            document.getElementById('ratelimited-requests').textContent = ratelimitedRequests;
+            document.getElementById('tracked-ips').textContent = trackedIps;
+
+            // Calculate rates
+            if (totalRequests > 0) {
+                const blockRate = ((blockedRequests / totalRequests) * 100).toFixed(1);
+                const ratelimitRate = ((ratelimitedRequests / totalRequests) * 100).toFixed(1);
+                const allowRate = ((allowedRequests / totalRequests) * 100).toFixed(1);
+
+                document.getElementById('block-rate').textContent = `${blockRate}%`;
+                document.getElementById('ratelimit-rate').textContent = `${ratelimitRate}%`;
+                document.getElementById('allow-rate').textContent = `${allowRate}%`;
+            }
+
+            // Update signals
+            const signalsContainer = document.getElementById('signals-container');
+            if (Object.keys(signals).length > 0) {
+                signalsContainer.innerHTML = '';
+                for (const [signal, count] of Object.entries(signals).slice(0, 5)) {
+                    const div = document.createElement('div');
+                    div.className = 'metric';
+                    div.innerHTML = `
+                        <span class="metric-label">${signal}</span>
+                        <span class="metric-value warning" style="font-size: 1.2em;">${count}</span>
+                    `;
+                    signalsContainer.appendChild(div);
+                }
+            }
+
+            // Update timestamp
+            const now = new Date();
+            document.getElementById('last-update').textContent = now.toLocaleTimeString('fr-FR');
+
+            // Show raw metrics
+            document.getElementById('raw-metrics').textContent = text;
+        }
+
+        function setupAutoRefresh() {
+            const checkbox = document.getElementById('auto-refresh');
+
+            if (checkbox.checked) {
+                autoRefreshInterval = setInterval(loadMetrics, 10000);
+            } else {
+                if (autoRefreshInterval) {
+                    clearInterval(autoRefreshInterval);
+                    autoRefreshInterval = null;
+                }
+            }
+        }
+
+        document.getElementById('auto-refresh').addEventListener('change', setupAutoRefresh);
+
+        // Initial load
+        loadMetrics();
+        setupAutoRefresh();
+    </script>
+</body>
+</html>
