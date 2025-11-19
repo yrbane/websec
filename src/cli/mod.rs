@@ -7,5 +7,7 @@
 //! - Live statistics monitoring
 
 pub mod commands;
+pub mod setup;
 
 pub use commands::{check_storage, run_server, show_config, show_stats};
+pub use setup::run_setup;

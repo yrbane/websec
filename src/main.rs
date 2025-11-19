@@ -43,6 +43,9 @@ enum Commands {
     /// Check storage backend health
     CheckStorage,
 
+    /// Interactive setup assistant (Apache integration)
+    Setup,
+
     /// Display live statistics (requires running WebSec instance)
     Stats {
         /// Metrics endpoint URL
@@ -68,6 +71,9 @@ async fn main() -> websec::Result<()> {
         }
         Some(Commands::CheckStorage) => {
             cli::check_storage(&args.config).await?;
+        }
+        Some(Commands::Setup) => {
+            cli::run_setup(&args.config)?;
         }
         Some(Commands::Stats { url, interval }) => {
             cli::show_stats(&url, interval).await?;
