@@ -2,8 +2,10 @@
 
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-planning-yellow.svg)](https://github.com/SinceAndCo/websec)
-[![Branch](https://img.shields.io/badge/branch-001--websec--proxy-blue.svg)](https://github.com/SinceAndCo/websec/tree/001-websec-proxy)
+[![CI](https://img.shields.io/github/actions/workflow/status/SinceAndCo/websec/ci.yml?branch=main&label=CI)](https://github.com/SinceAndCo/websec/actions)
+[![Docker](https://img.shields.io/github/actions/workflow/status/SinceAndCo/websec/docker.yml?branch=main&label=Docker)](https://github.com/SinceAndCo/websec/actions)
+[![Tests](https://img.shields.io/badge/tests-372%20passing-success)](https://github.com/SinceAndCo/websec)
+[![Coverage](https://img.shields.io/badge/coverage-codecov-brightgreen)](https://codecov.io/gh/SinceAndCo/websec)
 
 **WebSec** est un proxy/reverse proxy de sécurité haute performance écrit en Rust, conçu pour protéger proactivement vos serveurs web contre les menaces HTTP(S). Placé en amont de votre serveur web, WebSec analyse chaque requête, calcule un score de réputation dynamique pour chaque IP source, et prend des décisions automatiques pour bloquer, ralentir ou autoriser le trafic.
 
@@ -347,7 +349,7 @@ Exemple de log de décision :
 
 ## 🧪 Tests
 
-WebSec suit une approche **TDD stricte** (Test-Driven Development) :
+WebSec suit une approche **TDD stricte** (Test-Driven Development) avec **372 tests** :
 
 ```bash
 # Lancer tous les tests
@@ -359,12 +361,51 @@ cargo test --lib
 # Tests d'intégration
 cargo test --test '*'
 
+# Tests E2E avec backend réel
+./scripts/e2e-test.sh
+
 # Tests avec couverture
 cargo tarpaulin --out Html
 
-# Benchmarks
+# Benchmarks de performance
 cargo bench
 ```
+
+### Suite de Tests E2E
+
+Script automatisé complet avec backend HTTP Python :
+
+```bash
+./scripts/e2e-test.sh
+```
+
+**Tests exécutés** :
+- ✅ Proxy forwarding basique
+- ✅ Endpoint `/metrics` Prometheus
+- ✅ Headers WebSec personnalisés
+- ✅ Requêtes GET et POST
+- ⚡ Test de charge optionnel (100 req, 10 concurrent)
+
+**Stack de test** :
+- Backend Python sur port 3000 (6 endpoints)
+- WebSec proxy sur port 8080
+- Logs dans `/tmp/websec.log` et `/tmp/backend.log`
+
+### CI/CD Automatisé
+
+GitHub Actions workflows pour qualité continue :
+
+```bash
+# Lint & Format (rustfmt, clippy)
+# Tests unitaires + doc tests
+# Build release + artifacts
+# Coverage avec Codecov
+```
+
+**Workflows disponibles** :
+- `ci.yml` : Tests et builds à chaque push/PR
+- `docker.yml` : Build et push images Docker
+- `release.yml` : Releases multi-plateformes automatiques
 
 ## 🛠️ Développement
 
