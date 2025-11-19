@@ -262,11 +262,42 @@ Score = max(0, min(100, base - Σ(poids_signal)))
 
 **Stockage et Scalabilité** :
 - Architecture **stateless** pour scaling horizontal
-- **Redis centralisé** pour partage d'état entre instances multiples
-- **Cache L1 local** en mémoire pour réduire la latence (< 5ms p95)
-- **Mode dégradé** : En cas de panne Redis, détection locale sans historique avec logs d'urgence dans fichiers
+- **Redis centralisé** (`RedisRepository`) : Partage d'état entre instances multiples avec ConnectionManager
+- **Cache L1 local** (`CachedRepository`) : LRU cache 10k IPs avec latence < 1ms
+- **InMemory fallback** : Détection locale sans Redis (testing, dev, single-instance)
+- **Repository pattern** : Abstraction trait pour swap backend (Redis/Memory/Custom)
+- **Circuit breaker** : Protection backend avec états Closed/Open/HalfOpen
+- **Retry logic** : Exponential backoff pour erreurs transitoires
 
 ## 💻 Administration & Outils
+
+### CLI Avancé
+
+WebSec fournit une interface CLI complète avec subcommands :
+
+```bash
+# Démarrer le serveur (mode normal)
+websec run
+
+# Valider la configuration sans démarrer (dry-run)
+websec run --dry-run
+
+# Afficher la configuration détaillée
+websec config
+
+# Vérifier la connectivité Redis/storage
+websec check-storage
+
+# Statistiques live (auto-refresh 5s)
+websec stats
+websec stats --url http://localhost:8080/metrics --interval 10
+```
+
+**Fonctionnalités CLI** :
+- ✅ **Mode dry-run** : Validation config sans démarrage serveur
+- ✅ **Health checks** : Test connectivité Redis/storage
+- ✅ **Stats live** : Monitoring temps réel avec auto-refresh
+- ✅ **Multi-commandes** : Interface intuitive avec subcommands
 
 ### Gestionnaire de Listes (Blacklist/Whitelist)
 
@@ -582,16 +613,16 @@ git push origin feature/ma-fonctionnalite
 - [x] **Dashboard Web** : Monitoring temps réel HTML/JS standalone
 - [x] **Documentation** : README complet, badges, guides d'installation
 
-### Version 0.2.0 - 🚧 En Cours
+### Version 0.2.0 - ✅ **100% Complété**
 - [x] **Endpoint `/metrics` Prometheus** : Métriques exportées pour scraping
 - [x] **Tests E2E** : Suite complète avec backend Python de test
 - [x] **Docker** : Multi-stage Dockerfile + docker-compose stack complet
 - [x] **CI/CD** : GitHub Actions (lint, test, build, release multi-plateforme)
 - [x] **Dashboard Web** : Interface monitoring temps réel
 - [x] **Gestionnaire de listes** : Script CLI pour blacklist/whitelist
-- [ ] Infrastructure proxy HTTP transparent complet avec middleware
-- [ ] Storage Redis + cache L1 local (migration depuis InMemory)
-- [ ] CLI avancé (dry-run, mode dégradé, statistiques live)
+- [x] **Infrastructure proxy** : Retry logic + Circuit breaker + Middleware complet
+- [x] **Storage Redis** : RedisRepository + Cache L1 LRU (10k IPs, <1ms latency)
+- [x] **CLI avancé** : Dry-run, health checks, statistiques live avec auto-refresh
 - [ ] Détecteur TOR/Proxy
 - [ ] Détecteur Upload (webshells)
 - [ ] Détecteur SSRF
