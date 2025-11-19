@@ -585,6 +585,13 @@ git push origin feature/ma-fonctionnalite
 
 ## 📚 Documentation Complète
 
+### Guides Utilisateur
+
+- [**Getting Started**](docs/getting-started.md) : Guide de démarrage rapide
+- [**Configuration**](docs/configuration.md) : Référence complète de configuration
+- [**Déploiement Production**](docs/deployment.md) : Guide complet pour déployer en production (Docker, systemd, monitoring)
+- [**Architecture**](docs/architecture.md) : Architecture technique détaillée
+
 ### Spécifications du Projet
 
 - [**Spécification Fonctionnelle**](specs/001-websec-proxy/spec.md) : 13 user stories, 43 exigences fonctionnelles, 24 critères de succès
