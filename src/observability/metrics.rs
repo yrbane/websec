@@ -213,12 +213,20 @@ impl MetricsRegistry {
     }
 
     /// Récupère un compteur par nom
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned
     #[must_use]
     pub fn get_counter(&self, name: &str) -> Option<IntCounter> {
         self.counters.lock().unwrap().get(name).cloned()
     }
 
     /// Récupère un histogramme par nom
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned
     #[must_use]
     pub fn get_histogram(&self, name: &str) -> Option<Histogram> {
         self.histograms.lock().unwrap().get(name).cloned()
@@ -227,6 +235,7 @@ impl MetricsRegistry {
     /// Récupère la valeur d'un compteur
     #[must_use]
     pub fn get_counter_value(&self, name: &str) -> f64 {
+        #[allow(clippy::cast_precision_loss)]
         self.get_counter(name).map_or(0.0, |c| c.get() as f64)
     }
 
@@ -238,6 +247,10 @@ impl MetricsRegistry {
     }
 
     /// Incrémente le compteur de détections par détecteur
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned
     pub fn increment_detection(&self, detector_name: &str) {
         self.increment_counter("detections_total");
 
@@ -252,6 +265,10 @@ impl MetricsRegistry {
     }
 
     /// Récupère le nombre de détections par détecteur
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned
     #[must_use]
     pub fn get_detector_count(&self, detector_name: &str) -> u64 {
         self.counter_vecs
@@ -269,15 +286,25 @@ impl MetricsRegistry {
     }
 
     /// Définit le score de réputation pour une IP
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned
     pub fn set_reputation_score(&self, ip: &str, score: f64) {
         if let Some(vec) = self.gauge_vecs.lock().unwrap().get("reputation_by_ip") {
+            #[allow(clippy::cast_possible_truncation)]
             vec.with_label_values(&[ip]).set(score as i64);
         }
     }
 
     /// Récupère le score de réputation pour une IP
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned
     #[must_use]
     pub fn get_reputation_score(&self, ip: &str) -> f64 {
+        #[allow(clippy::cast_precision_loss)]
         self.gauge_vecs
             .lock()
             .unwrap()
@@ -286,6 +313,10 @@ impl MetricsRegistry {
     }
 
     /// Incrémente le compteur de décisions par type
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned
     pub fn increment_decision(&self, decision_type: &str) {
         if let Some(vec) = self.counter_vecs.lock().unwrap().get("decisions_by_type") {
             vec.with_label_values(&[decision_type]).inc();
@@ -293,6 +324,10 @@ impl MetricsRegistry {
     }
 
     /// Récupère le nombre de décisions par type
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned
     #[must_use]
     pub fn get_decision_count(&self, decision_type: &str) -> u64 {
         self.counter_vecs
@@ -303,6 +338,10 @@ impl MetricsRegistry {
     }
 
     /// Exporte toutes les métriques au format Prometheus
+    ///
+    /// # Panics
+    ///
+    /// Panics if encoding fails or if the output is not valid UTF-8
     #[must_use]
     pub fn export_prometheus(&self) -> String {
         use prometheus::Encoder;
@@ -321,7 +360,10 @@ impl Default for MetricsRegistry {
 }
 
 /// Initialise le système de métriques
-#[must_use]
+///
+/// # Errors
+///
+/// Currently never returns an error, but returns Result for future extensibility
 pub fn init_metrics() -> Result<MetricsRegistry, String> {
     Ok(MetricsRegistry::new())
 }

@@ -3,7 +3,7 @@
 use crate::config::load_from_file;
 use crate::storage::{InMemoryRepository, RedisRepository, ReputationRepository};
 use crate::{Error, Result};
-use std::path::PathBuf;
+use std::path::Path;
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -13,9 +13,24 @@ use tokio::time::sleep;
 ///
 /// * `config_path` - Path to configuration TOML file
 /// * `dry_run` - If true, validate config without starting server
-pub async fn run_server(config_path: &PathBuf, dry_run: bool) -> Result<()> {
+///
+/// # Errors
+///
+/// Returns error if:
+/// - Configuration file cannot be read or parsed
+/// - Server initialization fails
+/// - Server encounters runtime error
+///
+/// # Panics
+///
+/// Panics if config path is not valid UTF-8 or Ctrl+C handler cannot be installed
+pub async fn run_server(config_path: &Path, dry_run: bool) -> Result<()> {
     // Load configuration
-    let settings = load_from_file(config_path.to_str().unwrap())?;
+    let settings = load_from_file(
+        config_path
+            .to_str()
+            .ok_or_else(|| Error::Config("Invalid UTF-8 in config path".to_string()))?,
+    )?;
 
     if dry_run {
         println!("🔍 DRY RUN MODE - Validation only");
@@ -27,7 +42,7 @@ pub async fn run_server(config_path: &PathBuf, dry_run: bool) -> Result<()> {
         println!("\nStorage:");
         println!("  Type: {}", settings.storage.storage_type);
         if let Some(redis_url) = &settings.storage.redis_url {
-            println!("  Redis URL: {}", redis_url);
+            println!("  Redis URL: {redis_url}");
         }
         println!("\n✅ Dry run completed successfully");
         return Ok(());
@@ -55,11 +70,11 @@ pub async fn run_server(config_path: &PathBuf, dry_run: bool) -> Result<()> {
     tokio::select! {
         result = server.run() => {
             if let Err(e) = result {
-                eprintln!("❌ Server error: {}", e);
+                eprintln!("❌ Server error: {e}");
                 std::process::exit(1);
             }
         }
-        _ = shutdown_signal => {
+        () = shutdown_signal => {
             println!("✅ Server stopped gracefully");
         }
     }
@@ -68,8 +83,16 @@ pub async fn run_server(config_path: &PathBuf, dry_run: bool) -> Result<()> {
 }
 
 /// Show configuration details
-pub fn show_config(config_path: &PathBuf) -> Result<()> {
-    let settings = load_from_file(config_path.to_str().unwrap())?;
+///
+/// # Errors
+///
+/// Returns error if configuration file cannot be read or parsed
+pub fn show_config(config_path: &Path) -> Result<()> {
+    let settings = load_from_file(
+        config_path
+            .to_str()
+            .ok_or_else(|| Error::Config("Invalid UTF-8 in config path".to_string()))?,
+    )?;
 
     println!("Configuration loaded from: {}", config_path.display());
     println!("\n📡 Server:");
@@ -97,7 +120,7 @@ pub fn show_config(config_path: &PathBuf) -> Result<()> {
     println!("\n💾 Storage:");
     println!("  Type: {}", settings.storage.storage_type);
     if let Some(redis_url) = &settings.storage.redis_url {
-        println!("  Redis URL: {}", redis_url);
+        println!("  Redis URL: {redis_url}");
     }
     println!("  Cache size: {}", settings.storage.cache_size);
 
@@ -108,7 +131,7 @@ pub fn show_config(config_path: &PathBuf) -> Result<()> {
     println!("\n🌍 Geolocation:");
     println!("  Enabled: {}", settings.geolocation.enabled);
     if let Some(db) = &settings.geolocation.database {
-        println!("  Database: {}", db);
+        println!("  Database: {db}");
     }
 
     println!("\n⏱️  Rate Limiting:");
@@ -129,8 +152,18 @@ pub fn show_config(config_path: &PathBuf) -> Result<()> {
 }
 
 /// Check storage backend health
-pub async fn check_storage(config_path: &PathBuf) -> Result<()> {
-    let settings = load_from_file(config_path.to_str().unwrap())?;
+///
+/// # Errors
+///
+/// Returns error if:
+/// - Configuration file cannot be read or parsed
+/// - Storage backend is unavailable or unhealthy
+pub async fn check_storage(config_path: &Path) -> Result<()> {
+    let settings = load_from_file(
+        config_path
+            .to_str()
+            .ok_or_else(|| Error::Config("Invalid UTF-8 in config path".to_string()))?,
+    )?;
 
     println!("🔍 Checking storage backend...");
     println!("Storage type: {}", settings.storage.storage_type);
@@ -142,7 +175,7 @@ pub async fn check_storage(config_path: &PathBuf) -> Result<()> {
                 .redis_url
                 .ok_or_else(|| Error::Config("Redis URL not configured".to_string()))?;
 
-            println!("Redis URL: {}", redis_url);
+            println!("Redis URL: {redis_url}");
             println!("Connecting to Redis...");
 
             match RedisRepository::new(&redis_url).await {
@@ -156,10 +189,10 @@ pub async fn check_storage(config_path: &PathBuf) -> Result<()> {
                             // Get count
                             match repo.count().await {
                                 Ok(count) => {
-                                    println!("📊 Tracked IPs: {}", count);
+                                    println!("📊 Tracked IPs: {count}");
                                 }
                                 Err(e) => {
-                                    println!("⚠️  Failed to get count: {}", e);
+                                    println!("⚠️  Failed to get count: {e}");
                                 }
                             }
                         }
@@ -168,13 +201,13 @@ pub async fn check_storage(config_path: &PathBuf) -> Result<()> {
                             return Err(Error::Storage("Redis unhealthy".to_string()));
                         }
                         Err(e) => {
-                            println!("❌ Redis health check error: {}", e);
+                            println!("❌ Redis health check error: {e}");
                             return Err(e);
                         }
                     }
                 }
                 Err(e) => {
-                    println!("❌ Failed to connect to Redis: {}", e);
+                    println!("❌ Failed to connect to Redis: {e}");
                     return Err(e);
                 }
             }
@@ -198,16 +231,22 @@ pub async fn check_storage(config_path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-/// Display live statistics (requires running WebSec instance)
+/// Display live statistics (requires running `WebSec` instance)
 ///
 /// # Arguments
 ///
-/// * `metrics_url` - URL of /metrics endpoint (e.g., "http://localhost:8080/metrics")
+/// * `metrics_url` - URL of /metrics endpoint (e.g., "<http://localhost:8080/metrics>")
 /// * `interval_secs` - Refresh interval in seconds
+///
+/// # Errors
+///
+/// Returns error if unable to fetch metrics (network error, `WebSec` not running, etc.)
+///
+/// Note: This function runs indefinitely until interrupted (Ctrl+C)
 pub async fn show_stats(metrics_url: &str, interval_secs: u64) -> Result<()> {
     println!("📊 Live Statistics");
-    println!("Endpoint: {}", metrics_url);
-    println!("Refresh interval: {}s", interval_secs);
+    println!("Endpoint: {metrics_url}");
+    println!("Refresh interval: {interval_secs}s");
     println!("Press Ctrl+C to stop\n");
 
     let client = reqwest::Client::new();
@@ -230,7 +269,7 @@ pub async fn show_stats(metrics_url: &str, interval_secs: u64) -> Result<()> {
                 }
             }
             Err(e) => {
-                eprintln!("❌ Failed to fetch metrics: {} - Is WebSec running?", e);
+                eprintln!("❌ Failed to fetch metrics: {e} - Is WebSec running?");
             }
         }
 
@@ -279,13 +318,13 @@ fn display_metrics(metrics_text: &str) {
 
     // Display requests
     println!("📊 Requests:");
-    println!("  Total:        {}", total_requests);
+    println!("  Total:        {total_requests}");
     println!("  ✅ Allowed:    {} ({:.1}%)", allowed, percentage(allowed, total_requests));
     println!("  ❌ Blocked:    {} ({:.1}%)", blocked, percentage(blocked, total_requests));
     println!("  ⏱️  Rate Limited: {} ({:.1}%)", rate_limited, percentage(rate_limited, total_requests));
 
     println!();
-    println!("🌐 Tracked IPs: {}", tracked_ips);
+    println!("🌐 Tracked IPs: {tracked_ips}");
 
     if !signals.is_empty() {
         println!();
@@ -322,6 +361,8 @@ fn percentage(value: u64, total: u64) -> f64 {
     if total == 0 {
         0.0
     } else {
-        (value as f64 / total as f64) * 100.0
+        #[allow(clippy::cast_precision_loss)]
+        let result = (value as f64 / total as f64) * 100.0;
+        result
     }
 }

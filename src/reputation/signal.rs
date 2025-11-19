@@ -26,7 +26,7 @@ pub struct Signal {
 ///
 /// Each variant represents a specific threat family or attack pattern.
 /// Weights are assigned based on severity and confidence.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SignalVariant {
     // Bot Detection Signals (US1)
     /// Suspicious User-Agent header (bot signatures, missing UA)
@@ -246,7 +246,7 @@ impl Signal {
     pub fn new(variant: SignalVariant) -> Self {
         Self {
             id: Uuid::new_v4(),
-            variant: variant.clone(),
+            variant,
             timestamp: Utc::now(),
             weight: variant.default_weight(),
             context: None,
@@ -274,6 +274,7 @@ impl Signal {
     /// * `half_life_hours` - Half-life duration in hours
     #[must_use]
     pub fn decayed_weight(&self, half_life_hours: f64) -> f64 {
+        #[allow(clippy::cast_precision_loss)]
         let age_hours = Utc::now()
             .signed_duration_since(self.timestamp)
             .num_seconds() as f64

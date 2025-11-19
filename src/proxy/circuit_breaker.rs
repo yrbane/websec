@@ -6,7 +6,7 @@
 //!
 //! - **Closed**: Normal operation, requests pass through
 //! - **Open**: Backend is failing, reject requests immediately
-//! - **HalfOpen**: Testing if backend recovered, allow limited requests
+//! - **`HalfOpen`**: Testing if backend recovered, allow limited requests
 //!
 //! # State Transitions
 //!
@@ -133,7 +133,7 @@ impl CircuitBreaker {
             CircuitState::Open => {
                 // Check if timeout expired
                 if self.should_attempt_reset().await {
-                    self.transition_to_half_open().await;
+                    self.transition_to_half_open();
                     Ok(())
                 } else {
                     Err(())
@@ -213,7 +213,7 @@ impl CircuitBreaker {
         // Check if call is allowed
         self.call_allowed()
             .await
-            .map_err(|_| CircuitBreakerError::CircuitOpen)?;
+            .map_err(|()| CircuitBreakerError::CircuitOpen)?;
 
         // Execute operation
         match operation().await {
@@ -259,7 +259,7 @@ impl CircuitBreaker {
     }
 
     /// Transition to half-open state
-    async fn transition_to_half_open(&self) {
+    fn transition_to_half_open(&self) {
         info!(backend = %self.name, "Circuit breaker: OPEN -> HALF_OPEN (testing recovery)");
         self.state
             .store(CircuitState::HalfOpen as u8, Ordering::SeqCst);

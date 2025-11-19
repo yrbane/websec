@@ -131,7 +131,7 @@ mod tests {
 
         async fn analyze(&self, _context: &HttpRequestContext) -> DetectionResult {
             if let Some(variant) = &self.signal_to_generate {
-                DetectionResult::with_signal(Signal::new(variant.clone()))
+                DetectionResult::with_signal(Signal::new(*variant))
             } else {
                 DetectionResult::clean()
             }

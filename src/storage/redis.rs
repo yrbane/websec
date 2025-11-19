@@ -1,6 +1,6 @@
 //! Redis-based reputation repository
 //!
-//! Centralized persistent storage using Redis for distributed WebSec deployments.
+//! Centralized persistent storage using Redis for distributed `WebSec` deployments.
 //! Supports clustering and provides reliable reputation data across instances.
 
 use super::repository::ReputationRepository;
@@ -15,7 +15,7 @@ use std::time::Duration;
 /// Redis repository implementation
 ///
 /// Uses Redis as backend for persistent, centralized IP reputation storage.
-/// Supports multiple WebSec instances sharing the same Redis cluster.
+/// Supports multiple `WebSec` instances sharing the same Redis cluster.
 ///
 /// # Features
 ///
@@ -38,7 +38,7 @@ impl RedisRepository {
     ///
     /// # Arguments
     ///
-    /// * `redis_url` - Redis connection URL (e.g., "redis://localhost:6379")
+    /// * `redis_url` - Redis connection URL (e.g., "<redis://localhost:6379>")
     ///
     /// # Errors
     ///
@@ -65,6 +65,10 @@ impl RedisRepository {
     /// * `redis_url` - Redis connection URL
     /// * `key_prefix` - Prefix for all Redis keys (for namespacing)
     /// * `default_ttl` - Default TTL for profiles (None = no expiration)
+    ///
+    /// # Errors
+    ///
+    /// Returns error if connection to Redis fails
     pub async fn with_config(
         redis_url: impl AsRef<str>,
         key_prefix: impl Into<String>,
@@ -243,7 +247,7 @@ mod tests {
     // Puis : cargo test --lib storage::redis -- --ignored
 
     #[tokio::test]
-    #[ignore] // Nécessite Redis
+    #[ignore = "Requires Redis server running on localhost:6379"]
     async fn test_redis_connection() {
         let repo = RedisRepository::new("redis://localhost:6379")
             .await
@@ -253,7 +257,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "Requires Redis server running on localhost:6379"]
     async fn test_redis_save_and_get() {
         let repo = RedisRepository::new("redis://localhost:6379")
             .await
@@ -276,7 +280,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "Requires Redis server running on localhost:6379"]
     async fn test_redis_delete() {
         let repo = RedisRepository::new("redis://localhost:6379")
             .await
@@ -298,7 +302,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "Requires Redis server running on localhost:6379"]
     async fn test_redis_list_all() {
         let repo = RedisRepository::new("redis://localhost:6379")
             .await
@@ -325,7 +329,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "Requires Redis server running on localhost:6379"]
     async fn test_redis_ttl() {
         let repo = RedisRepository::with_config(
             "redis://localhost:6379",

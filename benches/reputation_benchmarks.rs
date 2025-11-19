@@ -126,7 +126,8 @@ fn bench_repository_operations(c: &mut Criterion) {
     c.bench_function("repository/save", |b| {
         b.to_async(tokio::runtime::Runtime::new().unwrap()).iter(|| async {
             let profile = create_profile_with_signals(50);
-            black_box(repository.save(black_box(&profile)).await.unwrap())
+            let _: () = repository.save(black_box(&profile)).await.unwrap();
+            black_box(())
         });
     });
 }

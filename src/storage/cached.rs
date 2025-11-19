@@ -2,7 +2,7 @@
 //!
 //! Two-tier storage architecture:
 //! - **L1**: LRU in-memory cache (fast, < 1ms latency)
-//! - **L2**: Underlying repository (Redis, InMemory, etc.)
+//! - **L2**: Underlying repository (Redis, `InMemory`, etc.)
 //!
 //! # Architecture
 //!
@@ -63,6 +63,10 @@ impl<R: ReputationRepository> CachedRepository<R> {
     ///
     /// * `repository` - Underlying L2 repository
     /// * `cache_size` - Maximum number of entries in L1 cache
+    ///
+    /// # Panics
+    ///
+    /// Panics if default cache size (10000) cannot be converted to `NonZeroUsize`
     ///
     /// # Examples
     ///

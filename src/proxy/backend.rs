@@ -207,7 +207,7 @@ impl BackendClient {
                     // Check circuit breaker
                     cb.call_allowed()
                         .await
-                        .map_err(|_| Error::Http("Circuit breaker is open".to_string()))?;
+                        .map_err(|()| Error::Http("Circuit breaker is open".to_string()))?;
 
                     // Build request
                     let uri = Uri::from_str(&uri_str_clone)
