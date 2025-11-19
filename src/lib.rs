@@ -30,6 +30,7 @@
 #![warn(clippy::pedantic)]
 #![warn(missing_docs)]
 
+pub mod challenge;
 pub mod cli;
 pub mod config;
 pub mod detectors;

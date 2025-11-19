@@ -78,16 +78,16 @@ fn test_validate_incorrect_answer() {
 
 #[test]
 fn test_challenge_expiration() {
-    // Challenge avec expiration très courte (100ms)
-    let manager = ChallengeManager::new(Duration::from_millis(100));
+    // Challenge avec expiration très courte (50ms)
+    let manager = ChallengeManager::new(Duration::from_millis(50));
     let ip = IpAddr::from_str("192.168.1.100").unwrap();
 
     let challenge = manager.create_challenge(ip, ChallengeType::SimpleMath).unwrap();
     let token = challenge.token.clone();
     let answer = challenge.answer.clone();
 
-    // Attendre l'expiration
-    std::thread::sleep(Duration::from_millis(150));
+    // Attendre l'expiration (bien au-delà du timeout)
+    std::thread::sleep(Duration::from_millis(200));
 
     // Le challenge doit être expiré
     let is_valid = manager.validate(ip, &token, &answer);
@@ -205,7 +205,7 @@ fn test_challenge_max_attempts() {
 
 #[test]
 fn test_cleanup_expired_challenges() {
-    let manager = ChallengeManager::new(Duration::from_millis(50));
+    let manager = ChallengeManager::new(Duration::from_millis(30));
 
     // Créer plusieurs challenges
     for i in 0..10 {
@@ -213,8 +213,8 @@ fn test_cleanup_expired_challenges() {
         manager.create_challenge(ip, ChallengeType::SimpleMath);
     }
 
-    // Attendre l'expiration
-    std::thread::sleep(Duration::from_millis(100));
+    // Attendre l'expiration (bien au-delà du timeout)
+    std::thread::sleep(Duration::from_millis(150));
 
     // Nettoyer les challenges expirés
     let cleaned = manager.cleanup_expired();
