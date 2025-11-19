@@ -1,11 +1,11 @@
-//! Observability: logging, tracing, and metrics
+//! Observabilité : logging, tracing et métriques
 //!
-//! - Structured logging with `tracing` (JSON format for production)
-//! - Prometheus metrics exposition (request counts, latency histograms, reputation distributions)
-//! - Distributed tracing with request IDs
+//! - Logging structuré avec `tracing` (format JSON pour production)
+//! - Exposition de métriques Prometheus (compteurs de requêtes, histogrammes de latence, distributions de réputation)
+//! - Tracing distribué avec request IDs
 
 pub mod logging;
 pub mod metrics;
 
-pub use logging::init_logging;
-pub use metrics::{record_request_decision, record_signal, update_score_bucket};
+pub use logging::{init_logging, LogFormat};
+pub use metrics::{init_metrics, MetricsRegistry};

@@ -1,39 +1,53 @@
-//! Structured logging configuration
+//! Configuration du logging structuré
 //!
-//! Sets up tracing with JSON or pretty formatting for production/development.
+//! Configure tracing avec formatage JSON ou Pretty pour production/développement.
 
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-/// Initialize structured logging
+/// Format de sortie des logs
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogFormat {
+    /// Format JSON structuré (production)
+    Json,
+    /// Format lisible coloré (développement)
+    Pretty,
+}
+
+/// Initialise le logging structuré
 ///
 /// # Arguments
 ///
-/// * `log_level` - Log level filter (trace, debug, info, warn, error)
-/// * `format` - Format type ("json" or "pretty")
+/// * `format` - Format de sortie (Json ou Pretty)
+/// * `log_level` - Niveau de filtrage (trace, debug, info, warn, error)
 ///
-/// # Example
+/// # Exemple
 ///
 /// ```no_run
-/// websec::observability::init_logging("info", "json");
+/// use websec::observability::logging::{init_logging, LogFormat};
+/// init_logging(LogFormat::Json, "info").unwrap();
 /// ```
-pub fn init_logging(log_level: &str, format: &str) {
+pub fn init_logging(format: LogFormat, log_level: &str) -> Result<(), String> {
     let env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(log_level));
 
     let subscriber = tracing_subscriber::registry().with(env_filter);
 
     match format {
-        "json" => {
+        LogFormat::Json => {
             subscriber
                 .with(fmt::layer().json().with_target(true).with_level(true))
-                .init();
+                .try_init()
+                .map_err(|e| format!("Erreur d'initialisation du logging : {}", e))?;
         }
-        "pretty" | _ => {
+        LogFormat::Pretty => {
             subscriber
                 .with(fmt::layer().pretty().with_target(true).with_level(true))
-                .init();
+                .try_init()
+                .map_err(|e| format!("Erreur d'initialisation du logging : {}", e))?;
         }
     }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -48,20 +62,20 @@ mod tests {
     fn init_once() {
         let mut initialized = INIT.lock().unwrap();
         if !*initialized {
-            init_logging("info", "json");
+            let _ = init_logging(LogFormat::Json, "info");
             *initialized = true;
         }
     }
 
     #[test]
     fn test_init_logging_json() {
-        // Just verify it doesn't panic
+        // Vérifie simplement que ça ne panique pas
         init_once();
     }
 
     #[test]
     fn test_init_logging_pretty() {
-        // Already initialized by test_init_logging_json
+        // Déjà initialisé par test_init_logging_json
         init_once();
     }
 }
