@@ -174,8 +174,8 @@ pub async fn proxy_handler(
     // 5. Agir selon la décision
     let response = match decision_result.decision {
         ProxyDecision::Allow => {
-            // Forward la requête au backend
-            forward_to_backend(state.clone(), parts, body_bytes).await
+            // Forward la requête au backend (avec sanitization des headers)
+            forward_to_backend(state.clone(), parts, body_bytes, client_ip).await
         }
         ProxyDecision::Block => {
             tracing::warn!(
@@ -401,14 +401,123 @@ fn build_http_context(
     }
 }
 
-/// Forward la requête au backend
+/// Sanitize les headers HTTP avant de forwarder au backend
+///
+/// Supprime les headers hop-by-hop et potentiellement dangereux,
+/// normalise Host, et ajoute X-Forwarded-* appropriés.
+///
+/// # Sécurité
+///
+/// - Supprime headers hop-by-hop (Connection, Transfer-Encoding, etc.)
+/// - Empêche Host header poisoning en fixant Host au backend
+/// - Normalise Content-Length/Transfer-Encoding
+/// - Ajoute X-Forwarded-For/X-Real-IP avec l'IP réelle du client
+fn sanitize_request_headers(
+    mut parts: http::request::Parts,
+    state: &ProxyState,
+    client_ip: IpAddr,
+) -> http::request::Parts {
+    // Liste des headers hop-by-hop à supprimer (RFC 7230)
+    const HOP_BY_HOP_HEADERS: &[&str] = &[
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailers",
+        "transfer-encoding",
+        "upgrade",
+    ];
+
+    // Supprimer tous les headers hop-by-hop
+    for header in HOP_BY_HOP_HEADERS {
+        parts.headers.remove(*header);
+    }
+
+    // Supprimer headers potentiellement dangereux multiples
+    // (empêche HTTP request smuggling via headers dupliqués)
+    let host_count = parts.headers.get_all("host").iter().count();
+    if host_count > 1 {
+        tracing::warn!("Multiple Host headers detected, removing all");
+        parts.headers.remove("host");
+    }
+
+    // Fixer le Host header vers le backend (empêche Host header poisoning)
+    if let Some(backend_host) = extract_host_from_url(&state.backend_client.backend_url()) {
+        parts.headers.insert(
+            "host",
+            backend_host.parse().unwrap_or_else(|_| {
+                tracing::warn!("Failed to parse backend host, using default");
+                "localhost".parse().unwrap()
+            }),
+        );
+    }
+
+    // Ajouter/remplacer X-Forwarded-For avec l'IP réelle du client
+    // (pas celle potentiellement spoofée)
+    let forwarded_for = match parts.headers.get("x-forwarded-for") {
+        Some(existing) => {
+            // Ajouter l'IP client à la fin de la liste
+            format!(
+                "{}, {}",
+                existing.to_str().unwrap_or(""),
+                client_ip
+            )
+        }
+        None => client_ip.to_string(),
+    };
+
+    parts.headers.insert(
+        "x-forwarded-for",
+        forwarded_for
+            .parse()
+            .unwrap_or_else(|_| client_ip.to_string().parse().unwrap()),
+    );
+
+    // Définir X-Real-IP avec l'IP du client
+    parts.headers.insert(
+        "x-real-ip",
+        client_ip
+            .to_string()
+            .parse()
+            .unwrap_or_else(|_| "127.0.0.1".parse().unwrap()),
+    );
+
+    // Normaliser Content-Length et Transfer-Encoding
+    // Si les deux sont présents, supprimer Transfer-Encoding (prévention smuggling)
+    if parts.headers.contains_key("content-length")
+        && parts.headers.contains_key("transfer-encoding")
+    {
+        tracing::warn!(
+            "Both Content-Length and Transfer-Encoding present, removing Transfer-Encoding"
+        );
+        parts.headers.remove("transfer-encoding");
+    }
+
+    parts
+}
+
+/// Extrait le hostname d'une URL backend (simple parsing)
+fn extract_host_from_url(url: &str) -> Option<String> {
+    // Simple parsing: http://host:port/path -> host:port
+    url.strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .and_then(|rest| rest.split('/').next())
+        .map(|host| host.to_string())
+}
+
+/// Forward la requête au backend avec sanitization des headers
 async fn forward_to_backend(
     state: Arc<ProxyState>,
     parts: http::request::Parts,
     body: Bytes,
+    client_ip: IpAddr,
 ) -> Response<Body> {
-    // Reconstruire la requête avec le body
-    let request = Request::from_parts(parts, Full::new(body));
+    // Sanitize headers avant de forwarder (sécurité)
+    let sanitized_parts = sanitize_request_headers(parts, &state, client_ip);
+
+    // Reconstruire la requête avec le body et headers sanitizés
+    let request = Request::from_parts(sanitized_parts, Full::new(body));
 
     // Forward au backend
     match state.backend_client.forward(request).await {
