@@ -1,10 +1,17 @@
-//! Brute force attack detection
+//! Brute force attack detection (RGPD-compliant)
 //!
-//! Detects brute force and credential stuffing attacks through:
-//! - Failed login attempt tracking per IP
+//! Detects brute force attacks through:
+//! - Failed login attempt COUNT tracking per IP (no credentials stored)
 //! - Rapid authentication attempt patterns
-//! - Credential stuffing detection (cross-IP correlation)
 //! - Time-windowed tracking with automatic expiry
+//!
+//! ## Privacy/RGPD Compliance
+//!
+//! This detector does NOT store:
+//! - Usernames or passwords (even hashed)
+//! - Any personally identifiable information (PII)
+//!
+//! Only timestamps of authentication attempts are tracked for pattern detection.
 
 use super::detector::{DetectionResult, Detector, HttpRequestContext};
 use crate::reputation::{Signal, SignalVariant};
@@ -24,16 +31,14 @@ static AUTH_ENDPOINT_PATTERNS: std::sync::LazyLock<Regex> = std::sync::LazyLock:
 const FAILED_LOGIN_THRESHOLD: usize = 5; // Generate signal after 5 failures
 const PATTERN_THRESHOLD: usize = 8; // Generate pattern signal after 8 rapid attempts
 const TIME_WINDOW_MINUTES: i64 = 15; // Track attempts within 15 minute window
-const CREDENTIAL_STUFFING_THRESHOLD: usize = 4; // Same creds from N different IPs
+// REMOVED: CREDENTIAL_STUFFING_THRESHOLD (RGPD compliance - no credential tracking)
 
-/// Failed login attempt record
+/// Failed login attempt record (RGPD-compliant - NO passwords stored)
 #[derive(Debug, Clone)]
 struct LoginAttempt {
     timestamp: DateTime<Utc>,
-    #[allow(dead_code)]
-    username: Option<String>,
-    #[allow(dead_code)]
-    password_hash: Option<String>, // Simple hash for credential correlation
+    // REMOVED: username and password_hash for RGPD compliance
+    // We only track attempt counts and patterns, not actual credentials
 }
 
 /// Tracking data for an IP address
@@ -50,19 +55,17 @@ impl IpTrackingData {
     }
 
     /// Add a failed attempt and clean up expired attempts
-    fn add_attempt(&mut self, username: Option<String>, password: Option<String>) {
+    /// Note: We do NOT store credentials for RGPD compliance
+    fn add_attempt(&mut self) {
         let now = Utc::now();
         let cutoff = now - Duration::minutes(TIME_WINDOW_MINUTES);
 
         // Remove expired attempts
         self.attempts.retain(|attempt| attempt.timestamp > cutoff);
 
-        // Add new attempt
-        let password_hash = password.map(|p| format!("{:x}", md5::compute(p.as_bytes())));
+        // Add new attempt (just timestamp, no credentials)
         self.attempts.push(LoginAttempt {
             timestamp: now,
-            username,
-            password_hash,
         });
     }
 
@@ -77,19 +80,13 @@ impl IpTrackingData {
     }
 }
 
-/// Credential stuffing tracking (cross-IP)
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-struct CredentialKey {
-    username: String,
-    password_hash: String,
-}
+// REMOVED: Credential stuffing tracking for RGPD compliance
+// We no longer track credentials across IPs to avoid storing passwords
 
 /// Brute force detector implementation
 pub struct BruteForceDetector {
-    /// Per-IP tracking
+    /// Per-IP tracking (counts only, no credentials stored)
     ip_tracking: Arc<DashMap<IpAddr, IpTrackingData>>,
-    /// Credential stuffing tracking (credential -> set of IPs)
-    credential_tracking: Arc<DashMap<CredentialKey, Vec<IpAddr>>>,
     enabled: bool,
 }
 
@@ -99,7 +96,6 @@ impl BruteForceDetector {
     pub fn new() -> Self {
         Self {
             ip_tracking: Arc::new(DashMap::new()),
-            credential_tracking: Arc::new(DashMap::new()),
             enabled: true,
         }
     }
@@ -109,59 +105,24 @@ impl BruteForceDetector {
         AUTH_ENDPOINT_PATTERNS.is_match(path)
     }
 
-    /// Extract username and password from request body
-    fn extract_credentials(context: &HttpRequestContext) -> (Option<String>, Option<String>) {
-        let body = match &context.body {
-            Some(b) => String::from_utf8_lossy(b).to_string(),
-            None => return (None, None),
-        };
+    // REMOVED: extract_credentials() - RGPD compliance
+    // We no longer extract or store usernames/passwords
 
-        let mut username = None;
-        let mut password = None;
-
-        // Parse form-encoded body
-        for pair in body.split('&') {
-            if let Some((key, value)) = pair.split_once('=') {
-                let decoded_value = urlencoding::decode(value).unwrap_or_default().to_string();
-                match key {
-                    "username" | "user" | "email" | "login" => username = Some(decoded_value),
-                    "password" | "pass" | "pwd" => password = Some(decoded_value),
-                    _ => {}
-                }
-            }
-        }
-
-        (username, password)
-    }
-
-    /// Track failed login attempt
-    fn track_attempt(&self, ip: &IpAddr, username: Option<String>, password: Option<String>) {
-        // Track per-IP
+    /// Track failed login attempt (counts only, no credentials)
+    fn track_attempt(&self, ip: &IpAddr) {
+        // Track per-IP (just count, no credentials stored)
         self.ip_tracking
             .entry(*ip)
             .or_insert_with(IpTrackingData::new)
-            .add_attempt(username.clone(), password.clone());
-
-        // Track for credential stuffing detection
-        if let (Some(user), Some(pass)) = (username, password) {
-            let password_hash = format!("{:x}", md5::compute(pass.as_bytes()));
-            let key = CredentialKey {
-                username: user,
-                password_hash,
-            };
-
-            self.credential_tracking.entry(key).or_default().push(*ip);
-        }
+            .add_attempt();
     }
 
-    /// Analyze failed login patterns
+    /// Analyze failed login patterns (RGPD-compliant - no credential storage)
     fn analyze_auth_attempt(&self, context: &HttpRequestContext) -> Vec<Signal> {
         let mut signals = Vec::new();
 
-        let (username, password) = Self::extract_credentials(context);
-
-        // Track this attempt
-        self.track_attempt(&context.ip, username.clone(), password.clone());
+        // Track this attempt (count only, no credentials)
+        self.track_attempt(&context.ip);
 
         // Check per-IP attempts
         if let Some(tracking) = self.ip_tracking.get(&context.ip) {
@@ -190,27 +151,8 @@ impl BruteForceDetector {
             }
         }
 
-        // Check for credential stuffing (same credentials from multiple IPs)
-        if let (Some(user), Some(pass)) = (username, password) {
-            let password_hash = format!("{:x}", md5::compute(pass.as_bytes()));
-            let key = CredentialKey {
-                username: user,
-                password_hash,
-            };
-
-            if let Some(ips) = self.credential_tracking.get(&key) {
-                // Count unique IPs
-                let unique_ips: std::collections::HashSet<_> = ips.iter().collect();
-                if unique_ips.len() >= CREDENTIAL_STUFFING_THRESHOLD {
-                    tracing::warn!(
-                        ip = %context.ip,
-                        unique_ip_count = unique_ips.len(),
-                        "Credential stuffing detected: same credentials from multiple IPs"
-                    );
-                    signals.push(Signal::new(SignalVariant::CredentialStuffing));
-                }
-            }
-        }
+        // REMOVED: Credential stuffing detection for RGPD compliance
+        // We no longer track credentials across IPs
 
         signals
     }
@@ -279,15 +221,7 @@ mod tests {
         assert!(!BruteForceDetector::is_auth_endpoint("/dashboard"));
     }
 
-    #[test]
-    fn test_extract_credentials() {
-        let context = create_context("192.168.1.1", "/login", "admin", "password123");
-
-        let (username, password) = BruteForceDetector::extract_credentials(&context);
-
-        assert_eq!(username, Some("admin".to_string()));
-        assert_eq!(password, Some("password123".to_string()));
-    }
+    // REMOVED: test_extract_credentials() - Function removed for RGPD compliance
 
     #[tokio::test]
     async fn test_single_attempt_no_signal() {
