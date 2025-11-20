@@ -603,6 +603,8 @@ mod tests {
 listen = "0.0.0.0:8080"
 backend = "http://127.0.0.1:3000"
 workers = 4
+trusted_proxies = []
+max_body_size = 10485760
 
 [reputation]
 base_score = 100
@@ -615,12 +617,10 @@ correlation_penalty_bonus = 10
 
 [storage]
 type = "memory"
-redis_url = null
 cache_size = 10000
 
 [geolocation]
 enabled = false
-database = null
 penalties = {}
 
 [ratelimit]

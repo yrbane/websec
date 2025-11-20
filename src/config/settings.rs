@@ -37,6 +37,13 @@ pub struct ServerConfig {
     /// Optional list of explicit listeners (HTTP/HTTPS)
     #[serde(default)]
     pub listeners: Vec<ListenerConfig>,
+    /// Trusted proxies/load balancers allowed to set X-Forwarded-For/X-Real-IP
+    /// If empty, these headers are ignored (direct client connection assumed)
+    #[serde(default)]
+    pub trusted_proxies: Vec<String>,
+    /// Maximum request body size in bytes (0 = unlimited, not recommended)
+    #[serde(default = "default_max_body_size")]
+    pub max_body_size: usize,
 }
 
 /// Individual listener configuration (port/backend/TLS)
@@ -163,6 +170,10 @@ pub struct MetricsConfig {
 // Default value functions
 fn default_workers() -> usize {
     num_cpus::get()
+}
+
+fn default_max_body_size() -> usize {
+    10 * 1024 * 1024 // 10 MB par défaut
 }
 
 fn default_base_score() -> u8 {

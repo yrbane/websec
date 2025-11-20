@@ -43,7 +43,7 @@ use axum::{routing::get, Router};
 use axum_server::tls_rustls::RustlsConfig;
 use futures::future::try_join_all;
 use std::io;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -179,6 +179,41 @@ impl ProxyServer {
         let metrics = Arc::new(MetricsRegistry::new());
         tracing::info!("MetricsRegistry initialized");
 
+        // Parser les trusted proxies
+        let trusted_proxies: Vec<IpAddr> = settings
+            .server
+            .trusted_proxies
+            .iter()
+            .filter_map(|s| {
+                s.parse::<IpAddr>().ok().or_else(|| {
+                    tracing::warn!("Invalid IP in trusted_proxies: {}", s);
+                    None
+                })
+            })
+            .collect();
+
+        if !trusted_proxies.is_empty() {
+            tracing::info!(
+                "Trusted proxies configured: {} IPs",
+                trusted_proxies.len()
+            );
+        } else {
+            tracing::info!("No trusted proxies configured (direct client connections)");
+        }
+
+        let trusted_proxies = Arc::new(trusted_proxies);
+        let max_body_size = settings.server.max_body_size;
+
+        if max_body_size > 0 {
+            tracing::info!(
+                "Request body size limit: {} bytes ({} MB)",
+                max_body_size,
+                max_body_size / (1024 * 1024)
+            );
+        } else {
+            tracing::warn!("No request body size limit configured (not recommended in production)");
+        }
+
         let effective_listeners = resolve_listeners(&settings.server)?;
         if effective_listeners.is_empty() {
             return Err(Error::Config(
@@ -204,6 +239,8 @@ impl ProxyServer {
                 backend_client,
                 challenge_manager.clone(),
                 metrics.clone(),
+                trusted_proxies.clone(),
+                max_body_size,
             ));
             let app = build_router(proxy_state);
 
@@ -366,8 +403,8 @@ fn map_bind_error(error: io::Error, addr: SocketAddr) -> Error {
 mod tests {
     use super::*;
     use crate::config::settings::{
-        GeolocationConfig, LoggingConfig, MetricsConfig, RateLimitConfig, ReputationConfig,
-        ServerConfig, Settings, StorageConfig,
+        GeolocationConfig, ListenerConfig, LoggingConfig, MetricsConfig, RateLimitConfig,
+        ReputationConfig, ServerConfig, Settings, StorageConfig,
     };
 
     fn create_test_settings() -> Settings {
@@ -377,6 +414,8 @@ mod tests {
                 backend: "http://127.0.0.1:13000".to_string(),
                 workers: 4,
                 listeners: Vec::new(),
+                trusted_proxies: Vec::new(),
+                max_body_size: 10 * 1024 * 1024,
             },
             reputation: ReputationConfig {
                 base_score: 100,

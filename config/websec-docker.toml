@@ -11,6 +11,12 @@ backend = "http://backend:3000"
 # Number of worker threads (default: CPU cores)
 workers = 4
 
+# Trusted proxies/load balancers (empty for direct client connections)
+trusted_proxies = []
+
+# Maximum request body size in bytes
+max_body_size = 10485760
+
 [reputation]
 # Base score for new IPs (0-100, where 100 is excellent)
 base_score = 100

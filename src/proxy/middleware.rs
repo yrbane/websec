@@ -38,6 +38,10 @@ pub struct ProxyState {
     pub challenge_manager: Arc<ChallengeManager>,
     /// Registry de métriques
     pub metrics: Arc<MetricsRegistry>,
+    /// Liste des proxies/LB de confiance (X-Forwarded-For autorisé uniquement depuis ces IPs)
+    pub trusted_proxies: Arc<Vec<IpAddr>>,
+    /// Taille maximale du corps de requête en bytes
+    pub max_body_size: usize,
 }
 
 impl ProxyState {
@@ -48,12 +52,16 @@ impl ProxyState {
         backend_client: Arc<BackendClient>,
         challenge_manager: Arc<ChallengeManager>,
         metrics: Arc<MetricsRegistry>,
+        trusted_proxies: Arc<Vec<IpAddr>>,
+        max_body_size: usize,
     ) -> Self {
         Self {
             decision_engine,
             backend_client,
             challenge_manager,
             metrics,
+            trusted_proxies,
+            max_body_size,
         }
     }
 }
@@ -80,8 +88,8 @@ pub async fn proxy_handler(
 ) -> Response<Body> {
     let start = Instant::now();
 
-    // 1. Extraire l'IP du client
-    let client_ip = extract_client_ip(&req);
+    // 1. Extraire l'IP du client (avec validation des proxies de confiance)
+    let client_ip = extract_client_ip(&req, &state.trusted_proxies);
 
     // Incrémenter le compteur de requêtes
     state.metrics.increment_counter("requests_total");
@@ -89,14 +97,47 @@ pub async fn proxy_handler(
     // 2. Lire le body de la requête (nécessaire pour analyse)
     let (parts, body) = req.into_parts();
 
-    let body_bytes = match body.collect().await {
-        Ok(collected) => collected.to_bytes(),
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to read request body");
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::from("Bad Request"))
-                .unwrap();
+    // Limiter la taille du body pour éviter le DoS mémoire
+    let body_bytes = if state.max_body_size > 0 {
+        match http_body_util::Limited::new(body, state.max_body_size)
+            .collect()
+            .await
+        {
+            Ok(collected) => collected.to_bytes(),
+            Err(e) => {
+                // Vérifier si c'est une erreur de limite dépassée
+                if e.to_string().contains("body length limit exceeded") {
+                    tracing::warn!(
+                        ip = %client_ip,
+                        max_size = state.max_body_size,
+                        "Request body too large, rejecting"
+                    );
+                    return Response::builder()
+                        .status(StatusCode::PAYLOAD_TOO_LARGE)
+                        .body(Body::from(format!(
+                            "Request body too large (max {} bytes)",
+                            state.max_body_size
+                        )))
+                        .unwrap();
+                }
+                tracing::error!(error = %e, "Failed to read request body");
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body(Body::from("Bad Request"))
+                    .unwrap();
+            }
+        }
+    } else {
+        // Pas de limite configurée (déconseillé en production)
+        match body.collect().await {
+            Ok(collected) => collected.to_bytes(),
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to read request body");
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body(Body::from("Bad Request"))
+                    .unwrap();
+            }
         }
     };
 
@@ -222,17 +263,56 @@ pub async fn metrics_handler(
 
 /// Extrait l'IP du client depuis les headers ou la socket
 ///
-/// Priorité :
+/// Priorité (seulement si la connexion vient d'un proxy de confiance) :
 /// 1. X-Forwarded-For (premier IP)
 /// 2. X-Real-IP
-/// 3. `SocketAddr` de la connexion
-fn extract_client_ip(req: &Request<Body>) -> IpAddr {
+/// 3. `SocketAddr` de la connexion (par défaut)
+///
+/// # Sécurité
+///
+/// Les headers X-Forwarded-For/X-Real-IP ne sont acceptés QUE si la connexion
+/// provient d'une IP listée dans `trusted_proxies`. Sinon, on utilise toujours
+/// le `SocketAddr` réel pour empêcher l'usurpation d'IP.
+fn extract_client_ip(req: &Request<Body>, trusted_proxies: &[IpAddr]) -> IpAddr {
+    // Extraire l'IP de la socket (connexion réelle)
+    let socket_ip = if let Some(addr) = req.extensions().get::<SocketAddr>() {
+        addr.ip()
+    } else {
+        // Fallback si pas de SocketAddr (ne devrait jamais arriver)
+        return IpAddr::from_str("127.0.0.1").unwrap();
+    };
+
+    // Si trusted_proxies est vide, TOUJOURS utiliser l'IP socket (connexion directe)
+    if trusted_proxies.is_empty() {
+        tracing::debug!(
+            "No trusted proxies configured, using socket IP: {}",
+            socket_ip
+        );
+        return socket_ip;
+    }
+
+    // Vérifier si la connexion vient d'un proxy de confiance
+    if !trusted_proxies.contains(&socket_ip) {
+        tracing::debug!(
+            "Connection from untrusted IP {}, ignoring X-Forwarded-For/X-Real-IP headers",
+            socket_ip
+        );
+        return socket_ip;
+    }
+
+    // La connexion vient d'un proxy de confiance, on peut lire les headers
+    tracing::debug!(
+        "Connection from trusted proxy {}, checking forwarding headers",
+        socket_ip
+    );
+
     // Essayer X-Forwarded-For
     if let Some(forwarded) = req.headers().get("X-Forwarded-For") {
         if let Ok(value) = forwarded.to_str() {
-            // Prendre le premier IP de la liste
+            // Prendre le premier IP de la liste (client originel)
             if let Some(first_ip) = value.split(',').next() {
                 if let Ok(ip) = IpAddr::from_str(first_ip.trim()) {
+                    tracing::debug!("Using X-Forwarded-For IP: {}", ip);
                     return ip;
                 }
             }
@@ -243,12 +323,17 @@ fn extract_client_ip(req: &Request<Body>) -> IpAddr {
     if let Some(real_ip) = req.headers().get("X-Real-IP") {
         if let Ok(value) = real_ip.to_str() {
             if let Ok(ip) = IpAddr::from_str(value.trim()) {
+                tracing::debug!("Using X-Real-IP: {}", ip);
                 return ip;
             }
         }
     }
 
-    // Fallback : extraire de la SocketAddr des extensions
+    // Fallback : utiliser l'IP du proxy de confiance
+    tracing::debug!(
+        "No valid forwarding headers, using trusted proxy IP: {}",
+        socket_ip
+    );
     if let Some(addr) = req.extensions().get::<SocketAddr>() {
         return addr.ip();
     }
@@ -368,25 +453,70 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extract_client_ip_from_x_forwarded_for() {
-        let req = Request::builder()
+    fn test_extract_client_ip_ignores_headers_without_trusted_proxy() {
+        // Sans trusted proxies, les headers doivent être ignorés (sécurité)
+        let mut req = Request::builder()
             .header("X-Forwarded-For", "203.0.113.195, 70.41.3.18")
-            .body(Body::empty())
-            .unwrap();
-
-        let ip = extract_client_ip(&req);
-        assert_eq!(ip.to_string(), "203.0.113.195");
-    }
-
-    #[test]
-    fn test_extract_client_ip_from_x_real_ip() {
-        let req = Request::builder()
             .header("X-Real-IP", "198.51.100.42")
             .body(Body::empty())
             .unwrap();
 
-        let ip = extract_client_ip(&req);
+        // Ajouter un SocketAddr dans les extensions
+        req.extensions_mut()
+            .insert(SocketAddr::from_str("127.0.0.1:1234").unwrap());
+
+        let ip = extract_client_ip(&req, &[]);
+        // Doit utiliser le SocketAddr, pas les headers
+        assert_eq!(ip.to_string(), "127.0.0.1");
+    }
+
+    #[test]
+    fn test_extract_client_ip_from_x_forwarded_for_with_trusted_proxy() {
+        // Avec un proxy de confiance, on peut lire X-Forwarded-For
+        let trusted_proxy = IpAddr::from_str("127.0.0.1").unwrap();
+        let mut req = Request::builder()
+            .header("X-Forwarded-For", "203.0.113.195, 70.41.3.18")
+            .body(Body::empty())
+            .unwrap();
+
+        req.extensions_mut()
+            .insert(SocketAddr::from_str("127.0.0.1:1234").unwrap());
+
+        let ip = extract_client_ip(&req, &[trusted_proxy]);
+        assert_eq!(ip.to_string(), "203.0.113.195");
+    }
+
+    #[test]
+    fn test_extract_client_ip_from_x_real_ip_with_trusted_proxy() {
+        let trusted_proxy = IpAddr::from_str("127.0.0.1").unwrap();
+        let mut req = Request::builder()
+            .header("X-Real-IP", "198.51.100.42")
+            .body(Body::empty())
+            .unwrap();
+
+        req.extensions_mut()
+            .insert(SocketAddr::from_str("127.0.0.1:1234").unwrap());
+
+        let ip = extract_client_ip(&req, &[trusted_proxy]);
         assert_eq!(ip.to_string(), "198.51.100.42");
+    }
+
+    #[test]
+    fn test_extract_client_ip_untrusted_proxy_ignores_headers() {
+        // Si la connexion vient d'une IP NON listée dans trusted_proxies
+        let trusted_proxy = IpAddr::from_str("10.0.0.1").unwrap();
+        let mut req = Request::builder()
+            .header("X-Forwarded-For", "203.0.113.195")
+            .body(Body::empty())
+            .unwrap();
+
+        // Connexion depuis 127.0.0.1 qui n'est PAS dans trusted_proxies
+        req.extensions_mut()
+            .insert(SocketAddr::from_str("127.0.0.1:1234").unwrap());
+
+        let ip = extract_client_ip(&req, &[trusted_proxy]);
+        // Doit ignorer X-Forwarded-For et utiliser l'IP socket
+        assert_eq!(ip.to_string(), "127.0.0.1");
     }
 
     #[test]
