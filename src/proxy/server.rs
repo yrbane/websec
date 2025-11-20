@@ -34,7 +34,7 @@ use crate::detectors::DetectorRegistry;
 use crate::observability::logging::{init_logging, LogFormat};
 use crate::observability::metrics::MetricsRegistry;
 use crate::proxy::backend::BackendClient;
-use crate::proxy::middleware::{metrics_handler, proxy_handler, ProxyState};
+use crate::proxy::middleware::{metrics_standalone_handler, proxy_handler, ProxyState};
 use crate::reputation::decision::{DecisionEngine, DecisionEngineConfig};
 use crate::storage::InMemoryRepository;
 use crate::{Error, Result};
@@ -257,6 +257,26 @@ impl ProxyServer {
             });
         }
 
+        // Add dedicated metrics listener (separate port for security)
+        if settings.metrics.enabled {
+            let metrics_addr = SocketAddr::from(([0, 0, 0, 0], settings.metrics.port));
+            let metrics_app = build_metrics_router(metrics.clone());
+
+            tracing::info!(
+                "Metrics server configured on {}{}",
+                metrics_addr,
+                " (separate port for security)"
+            );
+
+            runtimes.push(ListenerRuntime {
+                addr: metrics_addr,
+                app: metrics_app,
+                tls: None, // Metrics always served over HTTP (internal only)
+            });
+        } else {
+            tracing::warn!("Metrics disabled - Prometheus endpoint not available");
+        }
+
         Ok(Self {
             listeners: runtimes,
             info,
@@ -320,9 +340,16 @@ struct EffectiveListener {
 
 fn build_router(state: Arc<ProxyState>) -> Router {
     Router::new()
-        .route("/metrics", get(metrics_handler))
+        // REMOVED: /metrics route for security (served on separate port)
         .fallback(proxy_handler)
         .with_state(state)
+}
+
+/// Build a dedicated metrics router (separate port for security)
+fn build_metrics_router(metrics: Arc<MetricsRegistry>) -> Router {
+    Router::new()
+        .route("/metrics", get(metrics_standalone_handler))
+        .with_state(metrics)
 }
 
 fn resolve_listeners(server_cfg: &ServerConfig) -> Result<Vec<EffectiveListener>> {
