@@ -134,12 +134,15 @@ async fn test_login_attempt_pattern_detection() {
     }
 }
 
-/// T044: Test credential stuffing detection
+/// T044: Test multiple IPs attempting login (credential stuffing pattern)
+/// Note: Credential stuffing detection was removed for RGPD compliance (Issue #6)
+/// This test now verifies that the detector handles multiple IPs without crashing
 #[tokio::test]
 async fn test_credential_stuffing_same_creds_different_ips() {
     let detector = BruteForceDetector::new();
 
-    // Same credentials attempted from multiple IPs (credential stuffing attack)
+    // Same credentials attempted from multiple IPs (credential stuffing attack pattern)
+    // Note: We no longer store credentials, so cross-IP correlation is not possible
     let ips = [
         "192.168.1.10",
         "192.168.1.11",
@@ -150,23 +153,23 @@ async fn test_credential_stuffing_same_creds_different_ips() {
     let username = "admin";
     let password = "password123";
 
-    for (idx, ip) in ips.iter().enumerate() {
+    // Verify detector handles multiple IPs correctly (per-IP tracking)
+    for ip in ips.iter() {
         let context = create_login_context(ip, username, password, 401);
-        let result = detector.analyze(&context).await;
-
-        // After seeing same credentials from multiple IPs, should detect credential stuffing
-        if idx >= 3 {
-            let has_stuffing = result
-                .signals
-                .iter()
-                .any(|s| matches!(s.variant, SignalVariant::CredentialStuffing));
-            assert!(
-                has_stuffing,
-                "Should detect CredentialStuffing after {} IPs",
-                idx + 1
-            );
-        }
+        let _result = detector.analyze(&context).await;
+        // Each IP is tracked independently, no cross-IP correlation for RGPD compliance
     }
+
+    // Verify that each IP has independent tracking
+    let context = create_login_context("192.168.1.10", username, password, 401);
+    let result = detector.analyze(&context).await;
+
+    // Should detect failed login pattern for this specific IP (not credential stuffing)
+    // CredentialStuffing signal no longer exists due to RGPD compliance
+    assert!(
+        !result.signals.iter().any(|s| matches!(s.variant, SignalVariant::CredentialStuffing)),
+        "CredentialStuffing signal should not exist (removed for RGPD)"
+    );
 }
 
 #[tokio::test]
