@@ -93,8 +93,11 @@ sudo certbot certonly --standalone -d example.com -d www.example.com
 
 **Permissions** :
 ```bash
-# WebSec doit pouvoir lire les certificats
-sudo chown root:websec /etc/letsencrypt/archive/example.com/*.pem
+# L'utilisateur websec doit pouvoir lire les certificats
+sudo chown -R root:websec /etc/letsencrypt/archive/example.com/
+sudo chown -R root:websec /etc/letsencrypt/live/example.com/
+sudo chmod 750 /etc/letsencrypt/archive/example.com/
+sudo chmod 750 /etc/letsencrypt/live/example.com/
 sudo chmod 640 /etc/letsencrypt/archive/example.com/*.pem
 ```
 
@@ -203,6 +206,9 @@ sudo apachectl configtest
 ### 2. Démarrage
 
 ```bash
+# Donner la capability CAP_NET_BIND_SERVICE à WebSec (si pas déjà fait)
+sudo setcap 'cap_net_bind_service=+ep' /opt/websec/target/release/websec
+
 # Démarrer dans l'ordre :
 sudo systemctl start apache2
 sudo systemctl start websec
@@ -246,7 +252,47 @@ sudo tail -f /var/log/apache2/access.log
 
 ## Sécurité supplémentaire
 
-### 1. Firewall
+### 1. WebSec sans root (Capabilities Linux)
+
+**WebSec ne doit PAS tourner en root !** Utilisez les capabilities Linux :
+
+```bash
+# Créer un utilisateur système dédié
+sudo useradd -r -s /bin/false -d /opt/websec websec
+
+# Donner la permission d'écouter sur ports 80/443 sans root
+sudo setcap 'cap_net_bind_service=+ep' /opt/websec/target/release/websec
+
+# Vérifier
+getcap /opt/websec/target/release/websec
+# Attendu: /opt/websec/target/release/websec cap_net_bind_service=ep
+```
+
+**Service systemd sécurisé** (`/etc/systemd/system/websec.service`) :
+```ini
+[Service]
+Type=simple
+User=websec
+Group=websec
+
+# Capability pour écouter sur ports 80/443 sans root
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+# Sécurité renforcée
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+```
+
+**Avantages** :
+- ✅ Pas besoin de root complet
+- ✅ Isolation du système de fichiers
+- ✅ Limitation des privilèges au strict minimum
+- ✅ Standard Linux moderne (kernel 2.2+)
+
+### 2. Firewall
 
 ```bash
 # Bloquer l'accès direct à Apache (uniquement depuis localhost)
@@ -256,7 +302,7 @@ sudo ufw deny 8080/tcp  # Empêcher bypass de WebSec
 sudo ufw enable
 ```
 
-### 2. Apache : bind uniquement localhost
+### 3. Apache : bind uniquement localhost
 
 Dans `/etc/apache2/ports.conf` :
 ```apache
@@ -266,7 +312,7 @@ Listen 127.0.0.1:8080
 
 Ainsi, même si le firewall est mal configuré, Apache refuse les connexions externes.
 
-### 3. Monitoring
+### 4. Monitoring
 
 ```bash
 # Métriques Prometheus

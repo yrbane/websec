@@ -136,10 +136,27 @@ enabled = true
 port = 9090  # Métriques internes uniquement
 ```
 
-### 3. Lancer WebSec
+### 3. Sécurité : Capabilities Linux (pas besoin de root)
+
+**WebSec n'a pas besoin de root !** Utilisez les capabilities Linux :
 
 ```bash
-./target/release/websec --config websec.toml
+# Créer un utilisateur système dédié
+sudo useradd -r -s /bin/false -d /opt/websec websec
+
+# Donner la permission d'écouter sur ports 80/443 sans root
+sudo setcap 'cap_net_bind_service=+ep' ./target/release/websec
+
+# Permissions certificats SSL
+sudo chown -R root:websec /etc/letsencrypt/archive/example.com/
+sudo chmod 640 /etc/letsencrypt/archive/example.com/*.pem
+```
+
+### 4. Lancer WebSec
+
+```bash
+# En tant qu'utilisateur websec (pas root !)
+sudo -u websec ./target/release/websec --config websec.toml
 ```
 
 Voir [docs/getting-started.md](docs/getting-started.md) pour un guide complet.

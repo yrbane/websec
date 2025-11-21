@@ -28,19 +28,37 @@ sudo systemctl enable redis-server
 redis-cli ping  # Doit retourner "PONG"
 ```
 
-### 3. Cloner et Compiler WebSec
+### 3. Créer un utilisateur dédié
+
+```bash
+# Créer un utilisateur système pour WebSec (sans login)
+sudo useradd -r -s /bin/false -d /opt/websec websec
+
+# Créer le groupe websec (si pas déjà fait)
+sudo groupadd websec 2>/dev/null || true
+```
+
+### 4. Cloner et Compiler WebSec
 
 ```bash
 # Cloner le repo
 cd /opt
 sudo git clone https://github.com/yrbane/websec.git
-cd websec
+sudo chown -R websec:websec /opt/websec
 
 # Compiler avec TLS (IMPORTANT pour HTTPS)
-sudo cargo build --release --features tls
+cd /opt/websec
+sudo -u websec cargo build --release --features tls
+
+# Donner la capability CAP_NET_BIND_SERVICE (pour écouter sur ports 80/443 sans root)
+sudo setcap 'cap_net_bind_service=+ep' /opt/websec/target/release/websec
 
 # Vérifier le binaire
 ./target/release/websec --version
+
+# Vérifier les capabilities
+getcap /opt/websec/target/release/websec
+# Attendu: /opt/websec/target/release/websec cap_net_bind_service=ep
 ```
 
 ---
@@ -64,12 +82,11 @@ sudo certbot certonly --standalone -d votre-domaine.com -d www.votre-domaine.com
 ### 2. Permissions Certificats
 
 ```bash
-# WebSec doit pouvoir lire les certificats
-sudo groupadd websec
-sudo usermod -aG websec $USER
-
+# L'utilisateur websec doit pouvoir lire les certificats
 sudo chown -R root:websec /etc/letsencrypt/archive/votre-domaine.com/
+sudo chown -R root:websec /etc/letsencrypt/live/votre-domaine.com/
 sudo chmod 750 /etc/letsencrypt/archive/votre-domaine.com/
+sudo chmod 750 /etc/letsencrypt/live/votre-domaine.com/
 sudo chmod 640 /etc/letsencrypt/archive/votre-domaine.com/*.pem
 ```
 
@@ -297,11 +314,11 @@ sudo ufw status
 ```bash
 cd /opt/websec
 
-# Test dry-run
-sudo ./target/release/websec --config /etc/websec/websec.toml run --dry-run
+# Test dry-run (en tant qu'utilisateur websec)
+sudo -u websec ./target/release/websec --config /etc/websec/websec.toml run --dry-run
 
 # Lancer WebSec manuellement (pour tester)
-sudo ./target/release/websec --config /etc/websec/websec.toml run
+sudo -u websec ./target/release/websec --config /etc/websec/websec.toml run
 ```
 
 ### 2. Service systemd (production)
@@ -319,16 +336,24 @@ Wants=redis-server.service
 
 [Service]
 Type=simple
-User=root
+User=websec
 Group=websec
 WorkingDirectory=/opt/websec
+
+# Capability pour écouter sur ports 80/443 sans root
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
 ExecStart=/opt/websec/target/release/websec --config /etc/websec/websec.toml run
 Restart=on-failure
 RestartSec=5s
 
-# Sécurité
+# Sécurité renforcée
 NoNewPrivileges=true
 PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log
 
 # Logs
 StandardOutput=journal
@@ -432,15 +457,17 @@ sudo certbot renew --dry-run
 
 ## 🛡️ Checklist Finale
 
+- [ ] Utilisateur système `websec` créé
 - [ ] Redis actif (`redis-cli ping`)
 - [ ] WebSec compilé avec `--features tls`
-- [ ] Certificats SSL valides et lisibles
+- [ ] Capability `CAP_NET_BIND_SERVICE` attribuée (`getcap websec`)
+- [ ] Certificats SSL valides et lisibles par groupe `websec`
 - [ ] `websec.toml` avec bon domaine et chemins certificats
 - [ ] Apache écoute sur `127.0.0.1:8080` uniquement
 - [ ] VirtualHosts mis à jour (RemoteIPHeader, SetEnvIf)
 - [ ] Modules Apache activés (remoteip, headers)
 - [ ] Firewall configuré (80/443 open, 8080 closed)
-- [ ] Service systemd créé et activé
+- [ ] Service systemd créé avec `User=websec` et capabilities
 - [ ] WebSec démarre sans erreur (`systemctl status websec`)
 - [ ] Ports corrects (`ss -tlnp`)
 - [ ] Tests HTTP/HTTPS fonctionnent
@@ -457,10 +484,16 @@ sudo certbot renew --dry-run
 
 ```bash
 # Vérifier la config
-sudo /opt/websec/target/release/websec --config /etc/websec/websec.toml run --dry-run
+sudo -u websec /opt/websec/target/release/websec --config /etc/websec/websec.toml run --dry-run
 
 # Vérifier les logs
 sudo journalctl -u websec -n 50
+
+# Vérifier les capabilities
+getcap /opt/websec/target/release/websec
+
+# Si capability manquante, la réappliquer
+sudo setcap 'cap_net_bind_service=+ep' /opt/websec/target/release/websec
 ```
 
 ### "Address already in use"
@@ -491,8 +524,14 @@ curl http://127.0.0.1:8080
 ls -la /etc/letsencrypt/live/votre-domaine.com/
 ls -la /etc/letsencrypt/archive/votre-domaine.com/
 
-# Ajuster les permissions
+# Vérifier que l'utilisateur websec peut lire
+sudo -u websec cat /etc/letsencrypt/live/votre-domaine.com/fullchain.pem > /dev/null
+
+# Ajuster les permissions si nécessaire
 sudo chown -R root:websec /etc/letsencrypt/archive/votre-domaine.com/
+sudo chown -R root:websec /etc/letsencrypt/live/votre-domaine.com/
+sudo chmod 750 /etc/letsencrypt/archive/votre-domaine.com/
+sudo chmod 750 /etc/letsencrypt/live/votre-domaine.com/
 sudo chmod 640 /etc/letsencrypt/archive/votre-domaine.com/*.pem
 ```
 
