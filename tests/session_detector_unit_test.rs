@@ -242,6 +242,6 @@ async fn test_concurrent_analysis() {
     for handle in handles {
         let result = handle.await.unwrap();
         // Each session is independent, should not interfere
-        assert!(!result.suspicious || result.suspicious); // Just verify it completes
+        let _ = result.suspicious; // Just verify it completes
     }
 }

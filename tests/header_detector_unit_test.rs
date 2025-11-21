@@ -91,7 +91,6 @@ async fn test_host_header_mismatch() {
     let result = detector.analyze(&context).await;
 
     // May or may not be suspicious depending on configuration
-    assert!(result.signals.len() >= 0);
 }
 
 #[tokio::test]
@@ -108,7 +107,6 @@ async fn test_referer_spoofing() {
     let result = detector.analyze(&context).await;
 
     // Referer from different domain might be flagged
-    assert!(result.signals.len() >= 0);
 }
 
 #[tokio::test]
@@ -200,7 +198,6 @@ async fn test_x_forwarded_for_spoofing() {
     let result = detector.analyze(&context).await;
 
     // Multiple localhost entries might be suspicious
-    assert!(result.signals.len() >= 0);
 }
 
 #[tokio::test]
@@ -213,7 +210,6 @@ async fn test_missing_required_headers() {
     let result = detector.analyze(&context).await;
 
     // Missing Host header might be flagged
-    assert!(result.signals.len() >= 0);
 }
 
 #[tokio::test]
@@ -248,10 +244,7 @@ async fn test_concurrent_header_analysis() {
 
     for handle in handles {
         let result = handle.await.unwrap();
-        assert!(
-            result.signals.len() >= 0,
-            "Should handle concurrent analysis"
-        );
+        let _ = result.signals;
     }
 }
 

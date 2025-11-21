@@ -81,10 +81,7 @@ async fn test_impossible_travel_detection() {
 
     // Note: This test requires the detector to track previous locations
     // For now, we'll just check that the detector can process both requests
-    assert!(
-        result2.signals.len() >= 0,
-        "Detector should process request"
-    );
+    let _ = result2.signals;
 }
 
 #[tokio::test]
@@ -129,7 +126,6 @@ async fn test_multiple_high_risk_countries() {
 
         // At least some should be detected as high-risk
         // (depends on actual GeoIP database)
-        assert!(result.signals.len() >= 0);
     }
 }
 
@@ -154,7 +150,6 @@ async fn test_configurable_risk_countries() {
     let result = detector.analyze(&context).await;
 
     // Should use custom risk country list
-    assert!(result.signals.len() >= 0);
 }
 
 #[tokio::test]
@@ -193,9 +188,6 @@ async fn test_concurrent_geo_lookups() {
     for handle in handles {
         let result = handle.await.unwrap();
         // DetectionResult doesn't have is_ok, just check it ran
-        assert!(
-            result.signals.len() >= 0,
-            "Concurrent lookups should succeed"
-        );
+        let _ = result.signals;
     }
 }

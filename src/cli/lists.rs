@@ -106,7 +106,7 @@ impl ListManager {
     /// Import entries from JSON or CSV files.
     pub fn import(&self, path: &Path) -> Result<()> {
         let content = fs::read_to_string(path).map_err(Error::Io)?;
-        if content.trim_start().starts_with("{") {
+        if content.trim_start().starts_with('{') {
             let value: Value = serde_json::from_str(&content)
                 .map_err(|e| Error::Config(format!("JSON invalide: {e}")))?;
             if let Some(items) = value.get("blacklist").and_then(|v| v.as_array()) {

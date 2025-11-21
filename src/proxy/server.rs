@@ -34,7 +34,9 @@ use crate::detectors::DetectorRegistry;
 use crate::observability::logging::{init_logging, LogFormat};
 use crate::observability::metrics::MetricsRegistry;
 use crate::proxy::backend::BackendClient;
-use crate::proxy::middleware::{metrics_standalone_handler, proxy_handler, ProxyState};
+use crate::proxy::middleware::{
+    metrics_standalone_handler, proxy_handler, ProxyState, ProxyStateConfig,
+};
 use crate::reputation::decision::{DecisionEngine, DecisionEngineConfig};
 use crate::storage::InMemoryRepository;
 use crate::{Error, Result};
@@ -192,13 +194,10 @@ impl ProxyServer {
             })
             .collect();
 
-        if !trusted_proxies.is_empty() {
-            tracing::info!(
-                "Trusted proxies configured: {} IPs",
-                trusted_proxies.len()
-            );
-        } else {
+        if trusted_proxies.is_empty() {
             tracing::info!("No trusted proxies configured (direct client connections)");
+        } else {
+            tracing::info!("Trusted proxies configured: {} IPs", trusted_proxies.len());
         }
 
         let trusted_proxies = Arc::new(trusted_proxies);
@@ -234,14 +233,14 @@ impl ProxyServer {
             );
 
             let backend_client = Arc::new(BackendClient::new(&listener.backend));
-            let proxy_state = Arc::new(ProxyState::new(
-                decision_engine.clone(),
+            let proxy_state = Arc::new(ProxyState::new(ProxyStateConfig {
+                decision_engine: decision_engine.clone(),
                 backend_client,
-                challenge_manager.clone(),
-                metrics.clone(),
-                trusted_proxies.clone(),
+                challenge_manager: challenge_manager.clone(),
+                metrics: metrics.clone(),
+                trusted_proxies: trusted_proxies.clone(),
                 max_body_size,
-            ));
+            }));
             let app = build_router(proxy_state);
 
             info.push(ListenerInfo {
@@ -311,7 +310,7 @@ impl ProxyServer {
     /// # }
     /// ```
     pub async fn run(self) -> Result<()> {
-        try_join_all(self.listeners.into_iter().map(|listener| listener.run())).await?;
+        try_join_all(self.listeners.into_iter().map(ListenerRuntime::run)).await?;
         Ok(())
     }
 }
@@ -411,6 +410,8 @@ async fn run_tls_listener(addr: SocketAddr, app: Router, tls: ListenerTlsConfig)
 
 #[cfg(not(feature = "tls"))]
 async fn run_tls_listener(_addr: SocketAddr, _app: Router, _tls: ListenerTlsConfig) -> Result<()> {
+    // Wrap in async to match signature of TLS-enabled version
+    tokio::task::yield_now().await;
     Err(Error::Config(
         "Listener TLS configuré mais la fonctionnalité 'tls' n'est pas activée".to_string(),
     ))

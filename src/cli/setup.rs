@@ -1,15 +1,15 @@
-//! Interactive setup command for integrating WebSec with Apache.
+//! Interactive setup command for integrating `WebSec` with Apache.
 //!
-//! The goal is to automate the steps required to insert WebSec in front of
+//! The goal is to automate the steps required to insert `WebSec` in front of
 //! an existing Apache deployment by:
 //! - Detecting Apache configuration directories
-//! - Enumerating VirtualHosts that listen on HTTP (port 80)
-//! - Asking the operator which VirtualHosts should be migrated
+//! - Enumerating `VirtualHosts` that listen on HTTP (port 80)
+//! - Asking the operator which `VirtualHosts` should be migrated
 //! - Rewriting the `<VirtualHost>` directives to use an internal port
-//! - Updating Apache's `ports.conf` and the WebSec TOML configuration
+//! - Updating Apache's `ports.conf` and the `WebSec` TOML configuration
 //!
 //! **Important**: This command expects to run with sufficient privileges to
-//! read and modify `/etc/apache2/**` as well as the WebSec config file. In the
+//! read and modify `/etc/apache2/**` as well as the `WebSec` config file. In the
 //! current repository the command is implemented but not executed.
 
 use crate::config::load_from_file;
@@ -30,14 +30,12 @@ const DEFAULT_INTERNAL_HTTPS_PORT: u16 = 8443;
 
 fn apache_sites_enabled_path() -> PathBuf {
     env::var("WEBSEC_APACHE_SITES_ENABLED")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(APACHE_SITES_ENABLED))
+        .map_or_else(|_| PathBuf::from(APACHE_SITES_ENABLED), PathBuf::from)
 }
 
 fn apache_ports_conf_path() -> PathBuf {
     env::var("WEBSEC_APACHE_PORTS_CONF")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(APACHE_PORTS_CONF))
+        .map_or_else(|_| PathBuf::from(APACHE_PORTS_CONF), PathBuf::from)
 }
 
 /// Run the interactive setup for Apache.
@@ -50,8 +48,7 @@ pub fn run_setup(config_path: &Path) -> Result<()> {
 
     if virtual_hosts.is_empty() {
         println!(
-            "⚠️  Aucun VirtualHost détecté dans {}",
-            APACHE_SITES_ENABLED
+            "⚠️  Aucun VirtualHost détecté dans {APACHE_SITES_ENABLED}"
         );
         return Err(Error::Config(
             "Impossible de continuer sans configuration Apache".to_string(),
@@ -242,8 +239,8 @@ impl ApacheEnvironment {
     fn scan_virtual_hosts(&self) -> Result<Vec<VirtualHostEntry>> {
         let mut entries = Vec::new();
         for entry in fs::read_dir(&self.sites_enabled)
-            .map_err(|e| Error::Io(e))?
-            .flat_map(|e| e.ok())
+            .map_err(Error::Io)?
+            .filter_map(std::result::Result::ok)
         {
             let path = entry.path();
             if path.is_file() {
@@ -279,7 +276,7 @@ impl ApacheEnvironment {
                 if let Some(current) = active_index {
                     if entries[current].server_name.is_none() {
                         entries[current].server_name =
-                            trimmed.split_whitespace().nth(1).map(|s| s.to_string());
+                            trimmed.split_whitespace().nth(1).map(std::string::ToString::to_string);
                     }
                 }
             } else if trimmed.starts_with("ServerAlias") {
@@ -287,7 +284,7 @@ impl ApacheEnvironment {
                     let aliases = trimmed
                         .split_whitespace()
                         .skip(1)
-                        .map(|s| s.to_string())
+                        .map(std::string::ToString::to_string)
                         .collect::<Vec<_>>();
                     entries[current].server_aliases.extend(aliases);
                 }
@@ -334,8 +331,8 @@ impl ApacheEnvironment {
     ) -> Result<()> {
         let content = fs::read_to_string(file).map_err(Error::Io)?;
         let had_trailing_newline = content.ends_with('\n');
-        let mut lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
-        let port_pattern = Regex::new(&format!(r":{}(?=[^\d]|$)", from_port))
+        let mut lines: Vec<String> = content.lines().map(std::string::ToString::to_string).collect();
+        let port_pattern = Regex::new(&format!(r":{from_port}(?=[^\d]|$)"))
             .map_err(|e| Error::Config(format!("Regex error: {e}")))?;
 
         let mut touched = false;
@@ -388,7 +385,7 @@ impl ApacheEnvironment {
 
         'line_loop: for line in content.lines() {
             if line.trim_start().starts_with("Listen ") {
-                let mut parts = line.trim().split_whitespace();
+                let mut parts = line.split_whitespace();
                 let _ = parts.next();
                 if let Some(port_str) = parts.next() {
                     for (from_port, to_port) in mappings {
@@ -453,7 +450,7 @@ impl VirtualHostEntry {
     }
 }
 
-/// Line selection for a VirtualHost.
+/// Line selection for a `VirtualHost`.
 struct VirtualHostSelection {
     file_path: PathBuf,
     line_index: usize,
@@ -541,8 +538,7 @@ fn backup_file(path: &Path) -> Result<PathBuf> {
     let timestamp = Utc::now().format("%Y%m%d%H%M%S");
     let file_name = path
         .file_name()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "config".to_string());
+        .map_or_else(|| "config".to_string(), |s| s.to_string_lossy().into_owned());
     let backup_name = format!("{file_name}.websec.bak.{timestamp}");
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let backup_path = parent.join(backup_name);
@@ -646,12 +642,11 @@ port = 9090
     fn list_backups(dir: &Path, needle: &str) -> Vec<PathBuf> {
         fs::read_dir(dir)
             .unwrap()
-            .filter_map(|entry| entry.ok())
+            .filter_map(std::result::Result::ok)
             .map(|e| e.path())
             .filter(|p| {
                 p.file_name()
-                    .map(|n| n.to_string_lossy().contains(needle))
-                    .unwrap_or(false)
+                    .is_some_and(|n| n.to_string_lossy().contains(needle))
             })
             .collect()
     }

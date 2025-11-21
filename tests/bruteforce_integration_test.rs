@@ -192,7 +192,7 @@ async fn test_rapid_login_attempts_pattern() {
 
         // After threshold, should detect LoginAttemptPattern
         if i >= 7 {
-            let has_pattern = result
+            let _has_pattern = result
                 .detection
                 .signals
                 .iter()
@@ -249,7 +249,7 @@ async fn test_mixed_success_and_failure() {
 
     // Final check
     let context = create_failed_login(ip, "admin", "wrongpass_final");
-    let result = engine.process_request(&context).await.unwrap();
+    let _result = engine.process_request(&context).await.unwrap();
 
     // Behavior is implementation-specific
 }
@@ -270,7 +270,7 @@ async fn test_credential_stuffing_detection() {
 
         // After seeing same credentials from multiple IPs, should detect credential stuffing
         if i >= 3 {
-            let has_stuffing = result
+            let _has_stuffing = result
                 .detection
                 .signals
                 .iter()

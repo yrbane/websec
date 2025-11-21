@@ -44,24 +44,33 @@ pub struct ProxyState {
     pub max_body_size: usize,
 }
 
+/// Parameters for creating a `ProxyState`
+pub struct ProxyStateConfig {
+    /// Decision engine for reputation scoring
+    pub decision_engine: Arc<DecisionEngine>,
+    /// Backend client for forwarding requests
+    pub backend_client: Arc<BackendClient>,
+    /// Challenge manager for CAPTCHA
+    pub challenge_manager: Arc<ChallengeManager>,
+    /// Metrics registry for Prometheus
+    pub metrics: Arc<MetricsRegistry>,
+    /// Trusted proxy IPs (X-Forwarded-For only accepted from these IPs)
+    pub trusted_proxies: Arc<Vec<IpAddr>>,
+    /// Maximum request body size in bytes
+    pub max_body_size: usize,
+}
+
 impl ProxyState {
     /// Crée un nouvel état de proxy
     #[must_use]
-    pub fn new(
-        decision_engine: Arc<DecisionEngine>,
-        backend_client: Arc<BackendClient>,
-        challenge_manager: Arc<ChallengeManager>,
-        metrics: Arc<MetricsRegistry>,
-        trusted_proxies: Arc<Vec<IpAddr>>,
-        max_body_size: usize,
-    ) -> Self {
+    pub fn new(config: ProxyStateConfig) -> Self {
         Self {
-            decision_engine,
-            backend_client,
-            challenge_manager,
-            metrics,
-            trusted_proxies,
-            max_body_size,
+            decision_engine: config.decision_engine,
+            backend_client: config.backend_client,
+            challenge_manager: config.challenge_manager,
+            metrics: config.metrics,
+            trusted_proxies: config.trusted_proxies,
+            max_body_size: config.max_body_size,
         }
     }
 }
@@ -458,7 +467,7 @@ fn sanitize_request_headers(
     }
 
     // Fixer le Host header vers le backend (empêche Host header poisoning)
-    if let Some(backend_host) = extract_host_from_url(&state.backend_client.backend_url()) {
+    if let Some(backend_host) = extract_host_from_url(state.backend_client.backend_url()) {
         parts.headers.insert(
             "host",
             backend_host.parse().unwrap_or_else(|_| {
@@ -473,11 +482,7 @@ fn sanitize_request_headers(
     let forwarded_for = match parts.headers.get("x-forwarded-for") {
         Some(existing) => {
             // Ajouter l'IP client à la fin de la liste
-            format!(
-                "{}, {}",
-                existing.to_str().unwrap_or(""),
-                client_ip
-            )
+            format!("{}, {}", existing.to_str().unwrap_or(""), client_ip)
         }
         None => client_ip.to_string(),
     };
@@ -518,7 +523,7 @@ fn extract_host_from_url(url: &str) -> Option<String> {
     url.strip_prefix("http://")
         .or_else(|| url.strip_prefix("https://"))
         .and_then(|rest| rest.split('/').next())
-        .map(|host| host.to_string())
+        .map(std::string::ToString::to_string)
 }
 
 /// Forward la requête au backend avec sanitization des headers

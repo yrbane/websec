@@ -39,10 +39,8 @@ async fn test_bot_detector_implements_detector_trait() {
         result.signals.is_empty() || !result.signals.is_empty(),
         "signals field must exist"
     );
-    assert!(
-        !result.suspicious || result.suspicious,
-        "suspicious field must exist"
-    );
+    // Verify suspicious field exists (it's a boolean, so just accessing it is enough)
+    let _ = result.suspicious;
 }
 
 /// Contract test: BotDetector can be used as Arc<dyn Detector>
@@ -169,8 +167,9 @@ async fn test_bruteforce_detector_implements_detector_trait() {
 
     let result = detector.analyze(&context).await;
 
-    assert!(result.signals.is_empty() || !result.signals.is_empty());
-    assert!(!result.suspicious || result.suspicious);
+    // Verify fields exist
+    let _ = result.signals;
+    let _ = result.suspicious;
 }
 
 /// Contract test: BruteForceDetector can be used as Arc<dyn Detector>

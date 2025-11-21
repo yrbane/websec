@@ -170,9 +170,13 @@ pub fn format_port_conflict_error(port: u16, addr: &str) -> String {
     let mut message = format!("❌ Port {port} is already in use (bind to {addr} failed)\n");
 
     if let Some(user) = find_port_user(port) {
-        message.push_str(&format!("\n🔍 Process using port {port}:\n"));
-        message.push_str(&format!("   PID:  {}\n", user.pid));
-        message.push_str(&format!("   Name: {}\n", user.name));
+        message.push_str("\n🔍 Process using port ");
+        message.push_str(&port.to_string());
+        message.push_str(":\n   PID:  ");
+        message.push_str(&user.pid);
+        message.push_str("\n   Name: ");
+        message.push_str(&user.name);
+        message.push('\n');
 
         if let Some(cmd) = user.command {
             // Tronquer la commande si trop longue
@@ -181,21 +185,22 @@ pub fn format_port_conflict_error(port: u16, addr: &str) -> String {
             } else {
                 cmd
             };
-            message.push_str(&format!("   Command: {display_cmd}\n"));
+            message.push_str("   Command: ");
+            message.push_str(&display_cmd);
+            message.push('\n');
         }
 
-        message.push_str(&format!("\n💡 To fix this issue:\n"));
-        message.push_str(&format!("   • Stop the process: sudo kill {}\n", user.pid));
-        message.push_str(&format!(
-            "   • Or choose a different port in config/websec.toml\n"
-        ));
+        message.push_str("\n💡 To fix this issue:\n   • Stop the process: sudo kill ");
+        message.push_str(&user.pid);
+        message.push_str("\n   • Or choose a different port in config/websec.toml\n");
     } else {
-        message.push_str(&format!("\n💡 To find what's using port {port}, try:\n"));
-        message.push_str(&format!("   • Linux/Mac: sudo lsof -i :{port}\n"));
-        message.push_str(&format!("   • Linux: sudo ss -tulpn | grep :{port}\n"));
-        message.push_str(&format!(
-            "   • Or choose a different port in config/websec.toml\n"
-        ));
+        message.push_str("\n💡 To find what's using port ");
+        message.push_str(&port.to_string());
+        message.push_str(", try:\n   • Linux/Mac: sudo lsof -i :");
+        message.push_str(&port.to_string());
+        message.push_str("\n   • Linux: sudo ss -tulpn | grep :");
+        message.push_str(&port.to_string());
+        message.push_str("\n   • Or choose a different port in config/websec.toml\n");
     }
 
     message

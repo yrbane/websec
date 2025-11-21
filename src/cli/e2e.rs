@@ -13,7 +13,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio::{signal, time};
 
-/// Run the in-process E2E suite (backend + WebSec) against the provided config.
+/// Run the in-process E2E suite (backend + `WebSec`) against the provided config.
 pub async fn run_e2e(config_path: &Path, backend_port: u16, proxy_port: u16) -> Result<()> {
     println!("🚀 Lancement des tests E2E WebSec\n");
 
@@ -169,7 +169,7 @@ async fn run_functional_tests(proxy_port: u16) -> Result<()> {
 async fn get_expect(client: &Client, base: &str, path: &str, status: StatusCode) -> Result<()> {
     print!("  GET {path} ... ");
     let resp = client
-        .get(&format!("{base}{path}"))
+        .get(format!("{base}{path}"))
         .send()
         .await
         .map_err(|e| Error::Http(format!("requête {path} échouée: {e}")))?;
@@ -187,7 +187,7 @@ async fn get_expect(client: &Client, base: &str, path: &str, status: StatusCode)
 async fn get_metrics(client: &Client, base: &str) -> Result<()> {
     print!("  GET /metrics ... ");
     let body = client
-        .get(&format!("{base}/metrics"))
+        .get(format!("{base}/metrics"))
         .send()
         .await
         .map_err(|e| Error::Http(format!("metrics request failed: {e}")))?
@@ -205,7 +205,7 @@ async fn get_metrics(client: &Client, base: &str) -> Result<()> {
 async fn post_echo(client: &Client, base: &str) -> Result<()> {
     print!("  POST /api/echo ... ");
     let body = client
-        .post(&format!("{base}/api/echo"))
+        .post(format!("{base}/api/echo"))
         .json(&json!({"test": "data"}))
         .send()
         .await
@@ -224,7 +224,7 @@ async fn post_echo(client: &Client, base: &str) -> Result<()> {
 async fn check_headers(client: &Client, base: &str) -> Result<()> {
     print!("  Headers WebSec ... ");
     let resp = client
-        .get(&format!("{base}/"))
+        .get(format!("{base}/"))
         .header("User-Agent", "Mozilla/5.0")
         .send()
         .await
@@ -241,7 +241,7 @@ async fn display_metrics(proxy_port: u16) -> Result<()> {
     println!("\n📊 Métriques finales\n");
     let client = Client::new();
     let body = client
-        .get(&format!("http://127.0.0.1:{proxy_port}/metrics"))
+        .get(format!("http://127.0.0.1:{proxy_port}/metrics"))
         .send()
         .await
         .map_err(|e| Error::Http(format!("metrics request failed: {e}")))?

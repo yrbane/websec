@@ -31,7 +31,7 @@ static AUTH_ENDPOINT_PATTERNS: std::sync::LazyLock<Regex> = std::sync::LazyLock:
 const FAILED_LOGIN_THRESHOLD: usize = 5; // Generate signal after 5 failures
 const PATTERN_THRESHOLD: usize = 8; // Generate pattern signal after 8 rapid attempts
 const TIME_WINDOW_MINUTES: i64 = 15; // Track attempts within 15 minute window
-// REMOVED: CREDENTIAL_STUFFING_THRESHOLD (RGPD compliance - no credential tracking)
+                                     // REMOVED: CREDENTIAL_STUFFING_THRESHOLD (RGPD compliance - no credential tracking)
 
 /// Failed login attempt record (RGPD-compliant - NO passwords stored)
 #[derive(Debug, Clone)]
@@ -64,9 +64,7 @@ impl IpTrackingData {
         self.attempts.retain(|attempt| attempt.timestamp > cutoff);
 
         // Add new attempt (just timestamp, no credentials)
-        self.attempts.push(LoginAttempt {
-            timestamp: now,
-        });
+        self.attempts.push(LoginAttempt { timestamp: now });
     }
 
     /// Get count of recent attempts

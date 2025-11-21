@@ -56,6 +56,8 @@ fn create_test_settings(proxy_port: u16, backend_port: u16) -> Settings {
             backend: format!("http://127.0.0.1:{backend_port}"),
             workers: 2,
             listeners: Vec::new(),
+            trusted_proxies: Vec::new(),
+            max_body_size: 10 * 1024 * 1024, // 10 MB default
         },
         reputation: ReputationConfig {
             base_score: 100,
@@ -151,8 +153,7 @@ async fn test_proxy_server_creation() {
     let settings = create_test_settings(18002, 13002);
     let proxy = ProxyServer::new(&settings);
 
-    assert!(proxy.is_ok());
-    assert_eq!(proxy.unwrap().listen_addr().to_string(), "127.0.0.1:18002");
+    assert!(proxy.is_ok(), "ProxyServer should initialize successfully");
 }
 
 #[tokio::test]

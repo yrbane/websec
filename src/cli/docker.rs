@@ -14,7 +14,7 @@ impl ComposeCommand {
     fn new(program: &str, args: &[&str]) -> Self {
         Self {
             program: program.to_string(),
-            args: args.iter().map(|s| s.to_string()).collect(),
+            args: args.iter().map(std::string::ToString::to_string).collect(),
         }
     }
 
@@ -55,7 +55,7 @@ impl ComposeCommand {
     }
 }
 
-/// Build the WebSec Docker image with tags `latest` and the current git SHA.
+/// Build the `WebSec` Docker image with tags `latest` and the current git SHA.
 pub fn docker_build() -> Result<()> {
     println!("🐳 Building WebSec Docker image\n");
 
@@ -93,28 +93,29 @@ pub fn docker_build() -> Result<()> {
     Ok(())
 }
 
+/// Guard to automatically stop docker-compose on drop
+struct ComposeGuard {
+    compose: ComposeCommand,
+    keep: bool,
+}
+
+impl Drop for ComposeGuard {
+    fn drop(&mut self) {
+        if self.keep {
+            println!("Stack laissé en fonctionnement (option --keep-up)");
+            return;
+        }
+        let _ = self.compose.run(["down", "-v"].as_ref());
+    }
+}
+
 /// Launch the docker-compose stack and run the functional test suite.
 pub async fn docker_test(keep_up: bool) -> Result<()> {
     println!("🐳 Testing WebSec Docker stack\n");
     let compose = ComposeCommand::base()?;
     compose.run(["up", "-d"].as_ref())?;
 
-    struct Guard {
-        compose: ComposeCommand,
-        keep: bool,
-    }
-
-    impl Drop for Guard {
-        fn drop(&mut self) {
-            if self.keep {
-                println!("Stack laissé en fonctionnement (option --keep-up)");
-                return;
-            }
-            let _ = self.compose.run(["down", "-v"].as_ref());
-        }
-    }
-
-    let _guard = Guard {
+    let _guard = ComposeGuard {
         compose: compose.clone(),
         keep: keep_up,
     };
