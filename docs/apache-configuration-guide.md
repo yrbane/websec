@@ -425,7 +425,35 @@ Listen 127.0.0.1:8080
 
 Ainsi, même si le firewall est mal configuré, Apache refuse les connexions externes.
 
-### 4. Monitoring
+### 4. ModSecurity (si installé)
+
+Si Apache a **mod_security2**, recommandation : **le désactiver**.
+
+**Pourquoi ?**
+- WebSec analyse déjà tout le trafic en frontal (HTTP + HTTPS déchiffré)
+- Apache est en localhost uniquement → pas d'accès direct
+- Évite double overhead et faux positifs
+
+```bash
+# Vérifier si actif
+apache2ctl -M | grep security
+
+# Désactiver
+sudo a2dismod security2
+sudo systemctl restart apache2
+```
+
+**Architecture** :
+```
+Internet → WebSec :80/443 (WAF) → Apache :8080 (localhost)
+              ↑
+         🛡️ Analyse ici
+         (pas besoin de ModSecurity après)
+```
+
+Si vous voulez garder ModSecurity en défense en profondeur, activez-le dans `/etc/modsecurity/modsecurity.conf`.
+
+### 5. Monitoring
 
 ```bash
 # Métriques Prometheus

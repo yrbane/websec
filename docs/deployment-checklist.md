@@ -103,6 +103,14 @@ sudo mkdir -p /etc/websec
 sudo nano /etc/websec/websec.toml
 ```
 
+**Après création du fichier, configurer les permissions** :
+```bash
+# Permettre à l'utilisateur websec de lire la config
+sudo chown -R root:websec /etc/websec
+sudo chmod 750 /etc/websec
+sudo chmod 640 /etc/websec/*.toml
+```
+
 **Contenu (adaptez votre-domaine.com)** :
 
 ```toml
@@ -321,6 +329,34 @@ sudo apachectl configtest
 sudo systemctl restart apache2
 ```
 
+### 5. ModSecurity (si installé)
+
+Si Apache a **mod_security2** installé, vous avez deux WAF. Recommandation :
+
+**Désactiver ModSecurity** (WebSec fait déjà le travail en frontal) :
+```bash
+# Vérifier si ModSecurity est actif
+apache2ctl -M | grep security
+
+# Désactiver mod_security2
+sudo a2dismod security2
+sudo systemctl restart apache2
+```
+
+**Pourquoi ?**
+- ✅ WebSec analyse **tout** le trafic avant Apache (HTTP + HTTPS déchiffré)
+- ✅ Apache est en localhost uniquement (pas d'accès direct)
+- ✅ Pas de double overhead (performance)
+- ✅ Un seul WAF = plus simple à maintenir
+
+**Si vous voulez garder ModSecurity** (défense en profondeur) :
+```bash
+# Activer le moteur
+sudo nano /etc/modsecurity/modsecurity.conf
+# Changer: SecRuleEngine On
+sudo systemctl restart apache2
+```
+
 ---
 
 ## 🔥 Configuration Firewall
@@ -498,7 +534,8 @@ sudo certbot renew --dry-run
 - [ ] WebSec compilé avec `--features tls`
 - [ ] Capability `CAP_NET_BIND_SERVICE` attribuée (`getcap websec`)
 - [ ] Certificats SSL valides et lisibles par groupe `websec`
-- [ ] `websec.toml` avec bon domaine et chemins certificats
+- [ ] `websec.toml` créé avec bon domaine et chemins certificats
+- [ ] `/etc/websec` permissions configurées (750, fichiers 640, group websec)
 - [ ] Apache écoute sur `127.0.0.1:8080` uniquement
 - [ ] VirtualHosts mis à jour (RemoteIPHeader, SetEnvIf)
 - [ ] Modules Apache activés (remoteip, headers)
@@ -530,6 +567,27 @@ getcap /opt/websec/target/release/websec
 
 # Si capability manquante, la réappliquer
 sudo setcap 'cap_net_bind_service=+ep' /opt/websec/target/release/websec
+```
+
+### "Permission denied" lors de la lecture de la config
+
+**Erreur** :
+```
+Error: Config("Failed to read config file: Permission denied (os error 13)")
+```
+
+**Solution** : Vérifier les permissions de `/etc/websec` :
+```bash
+# Vérifier les permissions actuelles
+ls -la /etc/websec/
+
+# Corriger les permissions
+sudo chown -R root:websec /etc/websec
+sudo chmod 750 /etc/websec
+sudo chmod 640 /etc/websec/*.toml
+
+# Vérifier que websec peut lire
+sudo -u websec cat /etc/websec/websec.toml > /dev/null && echo "OK" || echo "ERREUR"
 ```
 
 ### "Address already in use"
