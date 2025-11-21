@@ -78,13 +78,37 @@ Internet → WebSec :80/:443 → Apache :8080 (interne)
 
 ## 🚀 Installation Rapide
 
-### Prérequis
+### Option 1 : Installation Automatique (Recommandé)
+
+Le script interactif `install.sh` gère automatiquement :
+- ✅ Vérification et installation des dépendances
+- ✅ Installation de Rust (si nécessaire)
+- ✅ Création de l'utilisateur système `websec`
+- ✅ Clonage et compilation avec TLS
+- ✅ Configuration des permissions et capabilities Linux
+- ✅ Vérification du binaire
+
+```bash
+# Télécharger et exécuter le script
+curl -sSL https://raw.githubusercontent.com/yrbane/websec/main/install.sh | sudo bash
+
+# Ou cloner d'abord puis exécuter
+git clone https://github.com/yrbane/websec.git
+cd websec
+sudo bash install.sh
+```
+
+Le script vous guide à travers chaque étape et demande confirmation avant chaque action.
+
+### Option 2 : Installation Manuelle
+
+#### Prérequis
 
 - **Rust 1.75+** (stable)
 - **Redis** (optionnel, recommandé en production)
 - **Linux** (Ubuntu 22.04+, RHEL 8+)
 
-### 1. Compilation
+#### 1. Compilation
 
 ```bash
 git clone https://github.com/yrbane/websec.git
@@ -93,6 +117,20 @@ cargo build --release --features tls
 
 # Le binaire est dans target/release/websec
 ./target/release/websec --version
+```
+
+#### 2. Configuration pour déploiement non-root (Recommandé)
+
+```bash
+# Créer l'utilisateur système
+sudo useradd -r -s /bin/false -d /opt/websec websec
+
+# Appliquer ownership et capability
+sudo chown -R websec:websec /opt/websec
+sudo setcap 'cap_net_bind_service=+ep' /opt/websec/target/release/websec
+
+# Vérifier
+getcap /opt/websec/target/release/websec
 ```
 
 ### 2. Configuration Minimale
