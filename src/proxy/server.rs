@@ -398,11 +398,38 @@ async fn run_http_listener(addr: SocketAddr, app: Router) -> Result<()> {
 
 #[cfg(feature = "tls")]
 async fn run_tls_listener(addr: SocketAddr, app: Router, tls: ListenerTlsConfig) -> Result<()> {
-    let config = RustlsConfig::from_pem_file(tls.cert_file, tls.key_file)
-        .await
-        .map_err(|e| Error::Config(format!("Failed to load TLS config: {e}")))?;
+    use crate::proxy::sni::SniResolver;
+    use rustls::ServerConfig as RustlsServerConfig;
+    use std::sync::Arc;
 
-    tracing::info!("🔒 HTTPS listener ready on {}", addr);
+    // Create SNI resolver (supports multiple certs)
+    let sni_resolver = Arc::new(SniResolver::new(&tls)?);
+
+    // Build rustls ServerConfig with our SNI resolver (rustls 0.23 API)
+    let mut rustls_config = RustlsServerConfig::builder()
+        .with_no_client_auth()
+        .with_cert_resolver(sni_resolver);
+
+    // Set ALPN protocols (HTTP/1.1 and HTTP/2)
+    rustls_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+
+    // Wrap in axum-server's RustlsConfig
+    let config = RustlsConfig::from_config(Arc::new(rustls_config));
+
+    // Log certificate info
+    if tls.sni_certificates.is_empty() {
+        tracing::info!(
+            "🔒 HTTPS listener ready on {} (single certificate)",
+            addr
+        );
+    } else {
+        tracing::info!(
+            "🔒 HTTPS listener ready on {} (SNI enabled, {} certificates)",
+            addr,
+            tls.sni_certificates.len() + 1
+        );
+    }
+
     axum_server::bind_rustls(addr, config)
         .serve(app.into_make_service_with_connect_info::<SocketAddr>())
         .await

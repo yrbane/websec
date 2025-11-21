@@ -13,17 +13,38 @@ workers = 4
 
 # Optionnel : définir plusieurs listeners (HTTP / HTTPS)
 # Quand ce bloc est présent, la configuration ci-dessus sert de valeur par défaut.
-# Exemple :
+#
+# Exemple simple (un seul domaine):
 # [[server.listeners]]
 # listen = "0.0.0.0:80"
-# backend = "http://127.0.0.1:8081"
+# backend = "http://127.0.0.1:8080"
 #
 # [[server.listeners]]
 # listen = "0.0.0.0:443"
-# backend = "http://127.0.0.1:8443"
+# backend = "http://127.0.0.1:8080"
 # [server.listeners.tls]
 # cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
 # key_file = "/etc/letsencrypt/live/example.com/privkey.pem"
+#
+# Exemple avancé (SNI multi-domaines sur le même port 443):
+# [[server.listeners]]
+# listen = "0.0.0.0:443"
+# backend = "http://127.0.0.1:8080"
+# [server.listeners.tls]
+# # Certificat par défaut/fallback
+# cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
+# key_file = "/etc/letsencrypt/live/example.com/privkey.pem"
+#
+# # Certificats SNI additionnels (multiples domaines)
+# [[server.listeners.tls.sni_certificates]]
+# server_name = "example.org"
+# cert_file = "/etc/letsencrypt/live/example.org/fullchain.pem"
+# key_file = "/etc/letsencrypt/live/example.org/privkey.pem"
+#
+# [[server.listeners.tls.sni_certificates]]
+# server_name = "*.example.net"  # Support wildcard
+# cert_file = "/etc/letsencrypt/live/example.net/fullchain.pem"
+# key_file = "/etc/letsencrypt/live/example.net/privkey.pem"
 
 [reputation]
 # Base score for new IPs (0-100, where 100 is excellent)

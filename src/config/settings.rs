@@ -61,9 +61,24 @@ pub struct ListenerConfig {
 /// TLS certificate/key configuration for HTTPS listeners
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ListenerTlsConfig {
-    /// Path to PEM-encoded certificate chain
+    /// Path to PEM-encoded certificate chain (default/fallback cert)
     pub cert_file: String,
-    /// Path to private key (PEM)
+    /// Path to private key (PEM) (default/fallback key)
+    pub key_file: String,
+    /// SNI: Additional certificates for multiple domains on same listener
+    /// Map of domain -> certificate configuration
+    #[serde(default)]
+    pub sni_certificates: Vec<SniCertConfig>,
+}
+
+/// SNI certificate configuration for a specific domain
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SniCertConfig {
+    /// Server name (e.g., "example.com", "*.example.com")
+    pub server_name: String,
+    /// Path to PEM-encoded certificate chain for this domain
+    pub cert_file: String,
+    /// Path to private key (PEM) for this domain
     pub key_file: String,
 }
 
