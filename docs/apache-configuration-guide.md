@@ -93,12 +93,25 @@ sudo certbot certonly --standalone -d example.com -d www.example.com
 
 **Permissions** :
 ```bash
-# L'utilisateur websec doit pouvoir lire les certificats
-sudo chown -R root:websec /etc/letsencrypt/archive/example.com/
-sudo chown -R root:websec /etc/letsencrypt/live/example.com/
-sudo chmod 750 /etc/letsencrypt/archive/example.com/
-sudo chmod 750 /etc/letsencrypt/live/example.com/
+# IMPORTANT : Les répertoires parents doivent être traversables
+# Car /etc/letsencrypt/live contient des symlinks vers /etc/letsencrypt/archive
+sudo chmod 755 /etc/letsencrypt
+sudo chmod 755 /etc/letsencrypt/live
+sudo chmod 755 /etc/letsencrypt/archive
+
+# Donner accès au groupe websec pour le domaine spécifique
+sudo chown root:websec /etc/letsencrypt/live/example.com
+sudo chmod 750 /etc/letsencrypt/live/example.com
+
+sudo chown root:websec /etc/letsencrypt/archive/example.com
+sudo chmod 750 /etc/letsencrypt/archive/example.com
+
+# Permissions sur les fichiers certificats
+sudo chown root:websec /etc/letsencrypt/archive/example.com/*.pem
 sudo chmod 640 /etc/letsencrypt/archive/example.com/*.pem
+
+# Vérifier
+sudo -u websec cat /etc/letsencrypt/live/example.com/fullchain.pem | head -5
 ```
 
 ### 3. Renouvellement automatique

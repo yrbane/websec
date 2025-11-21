@@ -84,12 +84,26 @@ sudo certbot certonly --standalone -d votre-domaine.com -d www.votre-domaine.com
 ### 2. Permissions Certificats
 
 ```bash
-# L'utilisateur websec doit pouvoir lire les certificats
-sudo chown -R root:websec /etc/letsencrypt/archive/votre-domaine.com/
-sudo chown -R root:websec /etc/letsencrypt/live/votre-domaine.com/
-sudo chmod 750 /etc/letsencrypt/archive/votre-domaine.com/
-sudo chmod 750 /etc/letsencrypt/live/votre-domaine.com/
+# IMPORTANT : Les répertoires parents doivent être traversables
+# Car /etc/letsencrypt/live contient des symlinks vers /etc/letsencrypt/archive
+sudo chmod 755 /etc/letsencrypt
+sudo chmod 755 /etc/letsencrypt/live
+sudo chmod 755 /etc/letsencrypt/archive
+
+# Donner accès au groupe websec pour le domaine spécifique
+sudo chown root:websec /etc/letsencrypt/live/votre-domaine.com
+sudo chmod 750 /etc/letsencrypt/live/votre-domaine.com
+
+sudo chown root:websec /etc/letsencrypt/archive/votre-domaine.com
+sudo chmod 750 /etc/letsencrypt/archive/votre-domaine.com
+
+# Permissions sur les fichiers certificats
+sudo chown root:websec /etc/letsencrypt/archive/votre-domaine.com/*.pem
 sudo chmod 640 /etc/letsencrypt/archive/votre-domaine.com/*.pem
+
+# Vérifier que websec peut lire les certificats
+sudo -u websec cat /etc/letsencrypt/live/votre-domaine.com/fullchain.pem | head -5
+# Doit afficher: -----BEGIN CERTIFICATE-----
 ```
 
 ---
@@ -613,20 +627,34 @@ curl http://127.0.0.1:8080
 
 ### Certificats SSL non accessibles
 
+**Erreur** :
+```
+Failed to load TLS config: failed to read from file: Permission denied (os error 13)
+```
+
+**Cause** : Les symlinks dans `/etc/letsencrypt/live/` nécessitent que **tous les répertoires parents** soient traversables.
+
+**Solution complète** :
 ```bash
-# Vérifier les permissions
-ls -la /etc/letsencrypt/live/votre-domaine.com/
-ls -la /etc/letsencrypt/archive/votre-domaine.com/
+# 1. Rendre les répertoires parents traversables
+sudo chmod 755 /etc/letsencrypt
+sudo chmod 755 /etc/letsencrypt/live
+sudo chmod 755 /etc/letsencrypt/archive
 
-# Vérifier que l'utilisateur websec peut lire
-sudo -u websec cat /etc/letsencrypt/live/votre-domaine.com/fullchain.pem > /dev/null
+# 2. Donner accès au domaine spécifique
+sudo chown root:websec /etc/letsencrypt/live/votre-domaine.com
+sudo chmod 750 /etc/letsencrypt/live/votre-domaine.com
 
-# Ajuster les permissions si nécessaire
-sudo chown -R root:websec /etc/letsencrypt/archive/votre-domaine.com/
-sudo chown -R root:websec /etc/letsencrypt/live/votre-domaine.com/
-sudo chmod 750 /etc/letsencrypt/archive/votre-domaine.com/
-sudo chmod 750 /etc/letsencrypt/live/votre-domaine.com/
+sudo chown root:websec /etc/letsencrypt/archive/votre-domaine.com
+sudo chmod 750 /etc/letsencrypt/archive/votre-domaine.com
+
+# 3. Permissions sur les fichiers .pem
+sudo chown root:websec /etc/letsencrypt/archive/votre-domaine.com/*.pem
 sudo chmod 640 /etc/letsencrypt/archive/votre-domaine.com/*.pem
+
+# 4. Vérifier que ça fonctionne
+sudo -u websec cat /etc/letsencrypt/live/votre-domaine.com/fullchain.pem | head -5
+# Doit afficher: -----BEGIN CERTIFICATE-----
 ```
 
 ---
