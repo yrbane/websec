@@ -418,10 +418,7 @@ async fn run_tls_listener(addr: SocketAddr, app: Router, tls: ListenerTlsConfig)
 
     // Log certificate info
     if tls.sni_certificates.is_empty() {
-        tracing::info!(
-            "🔒 HTTPS listener ready on {} (single certificate)",
-            addr
-        );
+        tracing::info!("🔒 HTTPS listener ready on {} (single certificate)", addr);
     } else {
         tracing::info!(
             "🔒 HTTPS listener ready on {} (SNI enabled, {} certificates)",

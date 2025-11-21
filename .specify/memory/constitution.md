@@ -1,21 +1,21 @@
 <!--
 RAPPORT D'IMPACT DE SYNCHRONISATION
-Version: 1.0.0 → 1.1.0
-Type de Changement: MINEUR - Ajout conventions de commit
+Version: 1.1.0 → 1.1.1
+Type de Changement: PATCH - Mise à jour de conformité
 Principes Modifiés: Aucun
-Sections Ajoutées:
-  - Workflow de Développement > Conventions de Commit
-Sections Modifiées:
-  - Aucune
+Sections Ajoutées: Aucune
+Sections Modifiées: Aucune
 Changements:
-  - Ajout section "Conventions de Commit" dans Workflow de Développement
-  - Spécification format Conventional Commits
-  - Interdiction explicite de références aux outils d'IA dans les commits
-  - Interdiction de footers "Co-Authored-By" pour outils automatisés
-  - Exemples corrects et interdits fournis
+  - Mise à jour de la date de dernière modification (2025-11-18 → 2025-11-21)
+  - Validation de conformité après correction des commits violant les conventions
+  - Confirmation que tous les principes sont appliqués dans le code actuel
 Templates Nécessitant Mise à Jour:
-  ✅ Aucun - Cette modification n'affecte pas les templates
+  ✅ Aucun - Pas de changements structurels
 TODOs de Suivi: Aucun
+Note de Conformité:
+  Les commits ont été corrigés le 2025-11-21 pour retirer toutes les références
+  aux outils d'IA (Claude) conformément aux conventions de commit établies dans
+  la section "Workflow de Développement > Conventions de Commit".
 -->
 
 # Constitution WebSec
@@ -193,4 +193,4 @@ Cette constitution supplante toutes les autres pratiques de développement.
 - Les violations nécessitent une justification explicite dans la table de suivi de complexité
 - Les mainteneurs résolvent les disputes via interprétation de la constitution
 
-**Version** : 1.1.0 | **Ratifiée** : 2025-11-18 | **Dernière Modification** : 2025-11-18
+**Version** : 1.1.1 | **Ratifiée** : 2025-11-18 | **Dernière Modification** : 2025-11-21

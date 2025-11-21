@@ -167,7 +167,10 @@ async fn test_credential_stuffing_same_creds_different_ips() {
     // Should detect failed login pattern for this specific IP (not credential stuffing)
     // CredentialStuffing signal no longer exists due to RGPD compliance
     assert!(
-        !result.signals.iter().any(|s| matches!(s.variant, SignalVariant::CredentialStuffing)),
+        !result
+            .signals
+            .iter()
+            .any(|s| matches!(s.variant, SignalVariant::CredentialStuffing)),
         "CredentialStuffing signal should not exist (removed for RGPD)"
     );
 }

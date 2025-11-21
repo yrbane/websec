@@ -37,9 +37,9 @@
 
 use crate::config::settings::ListenerTlsConfig;
 use crate::{Error, Result};
+use rustls::pki_types::CertificateDer;
 use rustls::server::{ClientHello, ResolvesServerCert};
 use rustls::sign::CertifiedKey;
-use rustls::pki_types::CertificateDer;
 use std::collections::HashMap;
 use std::fs;
 use std::io::BufReader;
@@ -183,7 +183,11 @@ fn load_certified_key(cert_path: &str, key_path: &str) -> Result<CertifiedKey> {
 
     let certs: Vec<CertificateDer> = rustls_pemfile::certs(&mut cert_reader)
         .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| Error::Config(format!("Failed to parse certificates from {cert_path}: {e}")))?;
+        .map_err(|e| {
+            Error::Config(format!(
+                "Failed to parse certificates from {cert_path}: {e}"
+            ))
+        })?;
 
     if certs.is_empty() {
         return Err(Error::Config(format!(
@@ -201,8 +205,12 @@ fn load_certified_key(cert_path: &str, key_path: &str) -> Result<CertifiedKey> {
         .ok_or_else(|| Error::Config(format!("No private key found in {key_path}")))?;
 
     // Create signing key (rustls 0.23 uses the crypto provider directly)
-    let signing_key = rustls::crypto::ring::sign::any_supported_type(&private_key)
-        .map_err(|e| Error::Config(format!("Failed to create signing key from private key: {e}")))?;
+    let signing_key =
+        rustls::crypto::ring::sign::any_supported_type(&private_key).map_err(|e| {
+            Error::Config(format!(
+                "Failed to create signing key from private key: {e}"
+            ))
+        })?;
 
     Ok(CertifiedKey::new(certs, signing_key))
 }
