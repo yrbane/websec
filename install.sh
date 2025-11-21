@@ -325,6 +325,93 @@ apply_permissions() {
     print_success "Capability applied"
 }
 
+# Function to install default configuration
+install_default_config() {
+    print_info "Installing default configuration..."
+
+    local config_dir="/etc/websec"
+    local config_file="$config_dir/websec.toml"
+    local example_config="$INSTALL_DIR/config/websec.toml.example"
+
+    # Check if example config exists
+    if [[ ! -f "$example_config" ]]; then
+        print_warning "Configuration example not found at $example_config"
+        print_info "Skipping configuration installation"
+        return 0
+    fi
+
+    # Create config directory if it doesn't exist
+    if [[ ! -d "$config_dir" ]]; then
+        print_info "Creating configuration directory: $config_dir"
+        mkdir -p "$config_dir"
+    fi
+
+    # Check if config already exists
+    if [[ -f "$config_file" ]]; then
+        print_success "Configuration file already exists at $config_file"
+
+        if ask_confirmation "Do you want to backup and replace it with the default configuration?"; then
+            local backup_file="$config_file.backup.$(date +%Y%m%d-%H%M%S)"
+            print_info "Backing up existing config to $backup_file"
+            cp "$config_file" "$backup_file"
+        else
+            print_info "Keeping existing configuration"
+            return 0
+        fi
+    fi
+
+    # Copy configuration
+    print_info "Copying default configuration..."
+    cp "$example_config" "$config_file"
+
+    # Ask if user wants to customize key settings
+    echo -e "\n${BLUE}Configuration customization${NC}"
+    echo "The default configuration uses:"
+    echo "  - Listen: 0.0.0.0:8080"
+    echo "  - Backend: http://127.0.0.1:3000"
+    echo ""
+
+    if ask_confirmation "Do you want to customize the listen address and backend URL?"; then
+        # Ask for listen address
+        echo -ne "${BLUE}Enter listen address [0.0.0.0:80]: ${NC}"
+        read listen_address
+        listen_address=${listen_address:-"0.0.0.0:80"}
+
+        # Ask for backend URL
+        echo -ne "${BLUE}Enter backend URL [http://127.0.0.1:8080]: ${NC}"
+        read backend_url
+        backend_url=${backend_url:-"http://127.0.0.1:8080"}
+
+        # Update config file
+        sed -i "s|listen = \"0.0.0.0:8080\"|listen = \"$listen_address\"|g" "$config_file"
+        sed -i "s|backend = \"http://127.0.0.1:3000\"|backend = \"$backend_url\"|g" "$config_file"
+
+        print_success "Configuration customized with:"
+        echo "  - Listen: $listen_address"
+        echo "  - Backend: $backend_url"
+    else
+        print_info "Using default configuration values"
+    fi
+
+    # Apply correct permissions
+    print_info "Applying configuration permissions..."
+    chown root:$WEBSEC_USER "$config_dir"
+    chmod 750 "$config_dir"
+    chown root:$WEBSEC_USER "$config_file"
+    chmod 640 "$config_file"
+
+    print_success "Configuration installed at $config_file"
+
+    # Test configuration
+    print_info "Testing configuration..."
+    if sudo -u "$WEBSEC_USER" "$INSTALL_DIR/target/release/websec" --config "$config_file" run --dry-run >/dev/null 2>&1; then
+        print_success "Configuration is valid"
+    else
+        print_warning "Configuration validation failed (may need SSL certificates or Redis)"
+        print_info "You can test with: sudo -u $WEBSEC_USER $INSTALL_DIR/target/release/websec --config $config_file run --dry-run"
+    fi
+}
+
 # Function to verify installation
 verify_installation() {
     print_info "Verifying installation..."
@@ -403,18 +490,11 @@ display_next_steps() {
 
     print_info "Next Steps:\n"
 
-    echo "1. Create configuration directory:"
-    echo -e "   ${BLUE}sudo mkdir -p /etc/websec${NC}"
-    echo -e "   ${BLUE}sudo chown root:$WEBSEC_USER /etc/websec${NC}"
-    echo -e "   ${BLUE}sudo chmod 750 /etc/websec${NC}\n"
+    echo "1. Review and edit configuration (if needed):"
+    echo -e "   ${BLUE}sudo nano /etc/websec/websec.toml${NC}"
+    echo -e "   Configuration already installed with your settings\n"
 
-    echo "2. Copy and edit configuration:"
-    echo -e "   ${BLUE}sudo cp $INSTALL_DIR/websec.toml.example /etc/websec/websec.toml${NC}"
-    echo -e "   ${BLUE}sudo chown root:$WEBSEC_USER /etc/websec/websec.toml${NC}"
-    echo -e "   ${BLUE}sudo chmod 640 /etc/websec/websec.toml${NC}"
-    echo -e "   ${BLUE}sudo nano /etc/websec/websec.toml${NC}\n"
-
-    echo "3. Configure SSL certificates (if using HTTPS):"
+    echo "2. Configure SSL certificates (if using HTTPS):"
     echo -e "   ${BLUE}sudo chmod 755 /etc/letsencrypt${NC}"
     echo -e "   ${BLUE}sudo chmod 755 /etc/letsencrypt/live${NC}"
     echo -e "   ${BLUE}sudo chmod 755 /etc/letsencrypt/archive${NC}"
@@ -422,16 +502,16 @@ display_next_steps() {
     echo -e "   ${BLUE}sudo chmod 750 /etc/letsencrypt/archive/your-domain.com${NC}"
     echo -e "   ${BLUE}sudo chmod 640 /etc/letsencrypt/archive/your-domain.com/*.pem${NC}\n"
 
-    echo "4. Test configuration (dry-run):"
+    echo "3. Test configuration (dry-run):"
     echo -e "   ${BLUE}sudo -u $WEBSEC_USER $INSTALL_DIR/target/release/websec --config /etc/websec/websec.toml run --dry-run${NC}\n"
 
-    echo "5. Create systemd service:"
+    echo "4. Create systemd service:"
     echo -e "   ${BLUE}sudo cp $INSTALL_DIR/systemd/websec.service /etc/systemd/system/${NC}"
     echo -e "   ${BLUE}sudo systemctl daemon-reload${NC}"
     echo -e "   ${BLUE}sudo systemctl enable websec${NC}"
     echo -e "   ${BLUE}sudo systemctl start websec${NC}\n"
 
-    echo "6. Check status and logs:"
+    echo "5. Check status and logs:"
     echo -e "   ${BLUE}sudo systemctl status websec${NC}"
     echo -e "   ${BLUE}sudo journalctl -u websec -f${NC}\n"
 
@@ -474,13 +554,16 @@ main() {
     # Step 7: Apply permissions and capabilities
     apply_permissions
 
-    # Step 8: Verify installation
+    # Step 8: Install default configuration
+    install_default_config
+
+    # Step 9: Verify installation
     verify_installation
 
-    # Step 9: Optional system path installation
+    # Step 10: Optional system path installation
     install_to_system_path
 
-    # Step 10: Display next steps
+    # Step 11: Display next steps
     display_next_steps
 }
 

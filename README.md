@@ -85,6 +85,7 @@ Le script interactif `install.sh` gère automatiquement :
 - ✅ Installation de Rust (si nécessaire)
 - ✅ Création de l'utilisateur système `websec`
 - ✅ Clonage et compilation avec TLS
+- ✅ Installation de la configuration par défaut (`/etc/websec/websec.toml`)
 - ✅ Configuration des permissions et capabilities Linux
 - ✅ Vérification du binaire
 
