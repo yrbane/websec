@@ -12,7 +12,7 @@
 > ✅ **6/6 issues de sécurité critiques résolues**
 > ✅ **144 tests unitaires passent** (0 erreur)
 > ✅ **0 warning clippy**
-> ✅ **Documentation complète** (6 guides)
+> ✅ **Documentation complète** (9 guides + troubleshooting)
 
 ---
 
@@ -134,7 +134,16 @@ cache_size = 10000
 [metrics]
 enabled = true
 port = 9090  # Métriques internes uniquement
+
+[logging]
+level = "info"     # Options: trace, debug, info, warn, error
+format = "compact" # Options: json, compact, pretty
 ```
+
+**Formats de logs** :
+- **`json`** : Machine-parsable, pour outils d'analyse
+- **`compact`** : Une ligne, lisible par humains (recommandé production)
+- **`pretty`** : Multi-lignes avec sources (développement uniquement)
 
 ### 3. Sécurité : Capabilities Linux (pas besoin de root)
 
@@ -387,20 +396,27 @@ cargo bench
 
 ## 📚 Documentation
 
-### Guides Utilisateur
+### 🚀 Guides de Déploiement
+
+- **[Deployment Checklist](docs/deployment-checklist.md)** - ✅ Checklist complète de déploiement production
+- **[Apache Configuration Guide](docs/apache-configuration-guide.md)** - 🌐 Configuration HTTP/HTTPS avec Apache
+- **[Security Deployment Options](docs/security-deployment-options.md)** - 🔐 Capabilities Linux vs root
+- **[Security Audit Plan](docs/security-audit-plan.md)** - 🔍 Plan d'audit avec 21 tests
+- **[Troubleshooting Guide](docs/troubleshooting-guide.md)** - 🔧 Résolution des problèmes courants
+
+### 📖 Guides Utilisateur
 
 - **[Getting Started](docs/getting-started.md)** - Démarrage rapide
 - **[Configuration](docs/configuration.md)** - Référence complète
 - **[Déploiement Production](docs/deployment.md)** - Docker, systemd, monitoring
-- **[Apache Configuration](docs/apache-configuration-guide.md)** - HTTP/HTTPS setup complet
 - **[Architecture](docs/architecture.md)** - Architecture technique
 
-### Configuration Examples
+### 📝 Configuration Examples
 
 - **[websec.toml](config/websec.toml)** - Configuration de base
 - **[websec-apache-example.toml](config/websec-apache-example.toml)** - Config HTTP/HTTPS pour Apache
 
-### Spécifications Projet
+### 📐 Spécifications Projet
 
 - **[Specification](specs/001-websec-proxy/spec.md)** - User stories et acceptation
 - **[Plan](specs/001-websec-proxy/plan.md)** - Architecture et implémentation
