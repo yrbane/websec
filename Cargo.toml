@@ -1,11 +1,11 @@
 [package]
 name = "websec"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["WebSec Team"]
 description = "High-performance security reverse proxy for HTTP(S) threat detection and mitigation"
 license = "MIT"
-repository = "https://github.com/SinceAndCo/websec"
+repository = "https://github.com/yrbane/websec"
 
 [[bin]]
 name = "websec"
