@@ -115,6 +115,8 @@ install_dependencies() {
             dnf|yum)
                 if [[ "$pkg" == "libssl-dev" ]]; then
                     pkg="openssl-devel"
+                elif [[ "$pkg" == "redis-server" ]]; then
+                    pkg="redis"
                 fi
                 if ! rpm -qa | grep -q "$pkg"; then
                     missing_deps+=("$pkg")
@@ -123,6 +125,8 @@ install_dependencies() {
             pacman)
                 if [[ "$pkg" == "libssl-dev" ]]; then
                     pkg="openssl"
+                elif [[ "$pkg" == "redis-server" ]]; then
+                    pkg="redis"
                 fi
                 if ! pacman -Q "$pkg" >/dev/null 2>&1; then
                     missing_deps+=("$pkg")
