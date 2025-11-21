@@ -94,7 +94,10 @@ impl BackendClient {
         retry_policy: RetryPolicy,
         cb_config: CircuitBreakerConfig,
     ) -> Self {
-        let client = Client::builder(TokioExecutor::new()).build_http();
+        // Force HTTP/1 only - most backends (like Apache) don't support HTTP/2
+        let client = Client::builder(TokioExecutor::new())
+            .http2_only(false)
+            .build_http();
         let url = backend_url.into();
         let circuit_breaker = Arc::new(CircuitBreaker::new(url.clone(), cb_config));
 

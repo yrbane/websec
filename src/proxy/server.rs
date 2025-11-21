@@ -119,8 +119,9 @@ impl ProxyServer {
         // 1. Initialiser le logging
         let log_format = match settings.logging.format.as_str() {
             "json" => LogFormat::Json,
+            "compact" => LogFormat::Compact,
             "pretty" => LogFormat::Pretty,
-            _ => LogFormat::Pretty,
+            _ => LogFormat::Compact,
         };
 
         if let Err(e) = init_logging(log_format, &settings.logging.level) {

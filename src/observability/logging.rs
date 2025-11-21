@@ -37,7 +37,7 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, Env
 ///
 /// Détermine comment les logs sont formatés en sortie.
 /// Utilisez JSON en production pour parsing automatique,
-/// Pretty en développement pour lisibilité humaine.
+/// Compact pour production lisible, Pretty en développement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogFormat {
     /// Format JSON structuré (production)
@@ -55,6 +55,17 @@ pub enum LogFormat {
     /// ```
     Json,
 
+    /// Format compact sur une ligne (production lisible)
+    ///
+    /// Format texte sur une seule ligne, sans source file/line.
+    /// Idéal pour production avec logs lisibles par humains.
+    ///
+    /// Exemple :
+    /// ```text
+    /// 2025-11-19T10:30:45.123Z  INFO websec: Requête traitée ip=192.168.1.1 method=GET
+    /// ```
+    Compact,
+
     /// Format lisible coloré (développement)
     ///
     /// Format multi-lignes avec indentation et couleurs pour
@@ -66,6 +77,7 @@ pub enum LogFormat {
     ///   ip: 192.168.1.1
     ///   method: GET
     ///   Requête traitée
+    ///     at src/main.rs:42
     /// ```
     Pretty,
 }
@@ -119,6 +131,19 @@ pub fn init_logging(format: LogFormat, log_level: &str) -> Result<(), String> {
         LogFormat::Json => {
             subscriber
                 .with(fmt::layer().json().with_target(true).with_level(true))
+                .try_init()
+                .map_err(|e| format!("Erreur d'initialisation du logging : {e}"))?;
+        }
+        LogFormat::Compact => {
+            subscriber
+                .with(
+                    fmt::layer()
+                        .compact()
+                        .with_target(true)
+                        .with_level(true)
+                        .with_file(false)
+                        .with_line_number(false),
+                )
                 .try_init()
                 .map_err(|e| format!("Erreur d'initialisation du logging : {e}"))?;
         }
