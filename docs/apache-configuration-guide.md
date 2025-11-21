@@ -137,9 +137,11 @@ Apache n'a **plus besoin de gérer SSL** (WebSec s'en charge).
 ```
 
 #### Après (Apache reçoit HTTP de WebSec) :
+
+**IPv4 + IPv6** :
 ```apache
-# Port 8080 pour tout le trafic (HTTP + HTTPS déchiffré)
-<VirtualHost *:8080>
+# VirtualHost IPv4
+<VirtualHost 127.0.0.1:8080>
     ServerName example.com
 
     # Pas de SSLEngine - WebSec gère le TLS
@@ -164,6 +166,36 @@ Apache n'a **plus besoin de gérer SSL** (WebSec s'en charge).
         Require all granted
     </Directory>
 </VirtualHost>
+
+# VirtualHost IPv6 (même configuration)
+<VirtualHost [::1]:8080>
+    ServerName example.com
+
+    RemoteIPHeader X-Real-IP
+    RemoteIPTrustedProxy 127.0.0.1
+    RemoteIPTrustedProxy ::1
+
+    SetEnvIf X-Forwarded-Proto "https" HTTPS=on
+
+    LogFormat "%a %l %u %t \"%r\" %>s %b" combined_real_ip
+    CustomLog /var/log/apache2/access.log combined_real_ip
+
+    DocumentRoot /var/www/html
+
+    <Directory /var/www/html>
+        Options -Indexes +FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+</VirtualHost>
+```
+
+**Ou IPv4 uniquement** :
+```apache
+<VirtualHost 127.0.0.1:8080>
+    ServerName example.com
+    # ... reste de la config
+</VirtualHost>
 ```
 
 ### 2. Changer les ports d'écoute Apache
@@ -172,13 +204,22 @@ Apache n'a **plus besoin de gérer SSL** (WebSec s'en charge).
 sudo nano /etc/apache2/ports.conf
 ```
 
+**IPv4 + IPv6 (recommandé)** :
 ```apache
 # Apache écoute UNIQUEMENT en local sur 8080
+# IPv4
 Listen 127.0.0.1:8080
+# IPv6
+Listen [::1]:8080
 
 # Supprimer :
 # Listen 80
 # Listen 443
+```
+
+**IPv4 uniquement** :
+```apache
+Listen 127.0.0.1:8080
 ```
 
 ### 3. Activer les modules nécessaires
@@ -246,6 +287,78 @@ sudo journalctl -u websec -f
 
 # Apache (doit voir les vraies IPs clients)
 sudo tail -f /var/log/apache2/access.log
+```
+
+---
+
+## 🌐 Support IPv6
+
+### WebSec écoute sur IPv4 et IPv6
+
+Par défaut, `0.0.0.0` dans WebSec écoute **uniquement sur IPv4**. Pour écouter sur IPv6, utilisez `::` :
+
+**Configuration websec.toml** :
+
+```toml
+# Écouter sur IPv4 ET IPv6
+[[server.listeners]]
+listen = "[::]:80"          # IPv6 (inclut aussi IPv4 avec dual-stack)
+backend = "http://127.0.0.1:8080"
+
+[[server.listeners]]
+listen = "[::]:443"         # IPv6 (inclut aussi IPv4 avec dual-stack)
+backend = "http://127.0.0.1:8080"
+
+[server.listeners.tls]
+cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
+key_file = "/etc/letsencrypt/live/example.com/privkey.pem"
+```
+
+**Ou séparer IPv4 et IPv6** :
+
+```toml
+# Listener IPv4
+[[server.listeners]]
+listen = "0.0.0.0:80"
+backend = "http://127.0.0.1:8080"
+
+# Listener IPv6
+[[server.listeners]]
+listen = "[::]:80"
+backend = "http://[::1]:8080"
+
+# Listener HTTPS IPv4
+[[server.listeners]]
+listen = "0.0.0.0:443"
+backend = "http://127.0.0.1:8080"
+
+[server.listeners.tls]
+cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
+key_file = "/etc/letsencrypt/live/example.com/privkey.pem"
+
+# Listener HTTPS IPv6
+[[server.listeners]]
+listen = "[::]:443"
+backend = "http://[::1]:8080"
+
+[server.listeners.tls]
+cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
+key_file = "/etc/letsencrypt/live/example.com/privkey.pem"
+```
+
+### Apache doit écouter sur IPv6 localhost
+
+Comme vu plus haut, Apache doit écouter sur `[::1]:8080` en plus de `127.0.0.1:8080`.
+
+**Vérification** :
+
+```bash
+# Voir les ports écoutés
+sudo ss -tlnp | grep :8080
+
+# Attendu (avec IPv6) :
+# 127.0.0.1:8080    LISTEN   apache2
+# [::1]:8080        LISTEN   apache2
 ```
 
 ---

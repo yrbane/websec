@@ -227,9 +227,17 @@ Listen 80
 </IfModule>
 ```
 
-**Par** :
+**Par (IPv4 + IPv6)** :
 ```apache
 # Apache écoute UNIQUEMENT en local (WebSec forward sur ce port)
+# IPv4
+Listen 127.0.0.1:8080
+# IPv6
+Listen [::1]:8080
+```
+
+**Ou si vous voulez IPv4 uniquement** :
+```apache
 Listen 127.0.0.1:8080
 ```
 
@@ -250,8 +258,9 @@ sudo nano /etc/apache2/sites-enabled/000-default.conf
 </VirtualHost>
 ```
 
-**Après** :
+**Après (IPv4 + IPv6)** :
 ```apache
+# VirtualHost IPv4
 <VirtualHost 127.0.0.1:8080>
     ServerName votre-domaine.com
 
@@ -276,7 +285,32 @@ sudo nano /etc/apache2/sites-enabled/000-default.conf
         Require all granted
     </Directory>
 </VirtualHost>
+
+# VirtualHost IPv6 (même configuration)
+<VirtualHost [::1]:8080>
+    ServerName votre-domaine.com
+
+    RemoteIPHeader X-Real-IP
+    RemoteIPTrustedProxy 127.0.0.1
+    RemoteIPTrustedProxy ::1
+
+    SetEnvIf X-Forwarded-Proto "https" HTTPS=on
+
+    LogFormat "%a %l %u %t \"%r\" %>s %b" combined_real_ip
+    CustomLog /var/log/apache2/access.log combined_real_ip
+    ErrorLog /var/log/apache2/error.log
+
+    DocumentRoot /var/www/html
+
+    <Directory /var/www/html>
+        Options -Indexes +FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+</VirtualHost>
 ```
+
+**Note** : Si vous n'utilisez qu'IPv4, le premier VirtualHost suffit.
 
 ### 4. Activer les modules Apache
 
