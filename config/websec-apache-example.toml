@@ -1,0 +1,111 @@
+# WebSec Configuration for Apache with HTTP + HTTPS
+#
+# Architecture:
+#   Internet → WebSec :80/:443 (WAF + TLS termination) → Apache :8080/:8443 (HTTP/HTTPS backend)
+#
+# WebSec terminates TLS on port 443 and forwards to Apache on 8080 (HTTP) or 8443 (HTTPS)
+
+[server]
+# Legacy single listener (kept for backwards compatibility)
+listen = "0.0.0.0:80"
+backend = "http://127.0.0.1:8080"
+workers = 4
+
+# Trusted proxies (empty = WebSec is edge proxy)
+trusted_proxies = []
+
+# Maximum request body size (200 MB for video uploads)
+max_body_size = 209715200  # 200 * 1024 * 1024
+
+# Modern multi-listener configuration
+# WebSec can handle multiple ports with different backends
+
+[[server.listeners]]
+# HTTP listener (port 80)
+listen = "0.0.0.0:80"
+backend = "http://127.0.0.1:8080"  # Apache HTTP backend
+# No TLS for HTTP
+
+[[server.listeners]]
+# HTTPS listener (port 443) - TLS terminated by WebSec
+listen = "0.0.0.0:443"
+backend = "http://127.0.0.1:8080"  # Apache receives plain HTTP from WebSec
+
+# TLS configuration - Use your domain's Let's Encrypt certificates
+[server.listeners.tls]
+cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
+key_file = "/etc/letsencrypt/live/example.com/privkey.pem"
+
+# Alternative: If Apache still handles HTTPS internally (not recommended)
+# [[server.listeners]]
+# listen = "0.0.0.0:443"
+# backend = "https://127.0.0.1:8443"  # Apache HTTPS backend
+# [server.listeners.tls]
+# cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
+# key_file = "/etc/letsencrypt/live/example.com/privkey.pem"
+
+[reputation]
+base_score = 100
+threshold_allow = 70
+threshold_ratelimit = 40
+threshold_challenge = 20
+threshold_block = 0
+decay_half_life_hours = 24.0
+correlation_penalty_bonus = 10
+
+[reputation.signal_weights]
+VulnerabilityScan = 25
+SuspiciousUserAgent = 10
+BotBehaviorPattern = 15
+AbusiveClient = 15
+FailedLogin = 20
+LoginAttemptPattern = 20
+CredentialStuffing = 25
+RequestFlood = 20
+ConnectionFlood = 20
+DistributedAttack = 10
+SqlInjectionAttempt = 30
+XssAttempt = 30
+PathTraversalAttempt = 30
+RceAttempt = 50
+HighRiskCountry = 15
+ImpossibleTravel = 20
+HeaderInjection = 20
+HostHeaderAttack = 20
+RefererSpoofing = 10
+
+[lists]
+blacklist = []
+whitelist = [
+    "127.0.0.1",
+    "::1",
+]
+
+[storage]
+type = "redis"
+redis_url = "redis://127.0.0.1:6379"
+cache_size = 10000
+
+[geolocation]
+enabled = true
+database = "/usr/share/GeoIP/GeoLite2-Country.mmdb"
+risk_countries = ["CN", "RU", "KP", "IR", "SY"]
+impossible_travel_window = 3600
+
+[ratelimit]
+normal_rpm = 1000
+normal_burst = 100
+suspicious_rpm = 200
+suspicious_burst = 20
+aggressive_rpm = 50
+aggressive_burst = 5
+window_duration_secs = 60
+
+[logging]
+level = "info"
+format = "json"
+
+[metrics]
+# Metrics exposed on separate port (internal monitoring only)
+enabled = true
+port = 9090
