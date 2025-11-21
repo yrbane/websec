@@ -44,13 +44,13 @@ sudo groupadd websec 2>/dev/null || true
 # Cloner le repo
 cd /opt
 sudo git clone https://github.com/yrbane/websec.git
-sudo chown -R websec:websec /opt/websec
 
 # Compiler avec TLS (IMPORTANT pour HTTPS)
 cd /opt/websec
-sudo -u websec cargo build --release --features tls
+cargo build --release --features tls
 
-# Donner la capability CAP_NET_BIND_SERVICE (pour écouter sur ports 80/443 sans root)
+# APRÈS compilation : changer le propriétaire et ajouter la capability
+sudo chown -R websec:websec /opt/websec
 sudo setcap 'cap_net_bind_service=+ep' /opt/websec/target/release/websec
 
 # Vérifier le binaire
@@ -60,6 +60,8 @@ sudo setcap 'cap_net_bind_service=+ep' /opt/websec/target/release/websec
 getcap /opt/websec/target/release/websec
 # Attendu: /opt/websec/target/release/websec cap_net_bind_service=ep
 ```
+
+**Note importante** : On compile d'abord avec l'utilisateur courant (qui a Rust installé), puis on change le propriétaire des fichiers. L'utilisateur `websec` n'a pas besoin d'avoir Rust installé puisqu'il exécutera seulement le binaire compilé.
 
 ---
 

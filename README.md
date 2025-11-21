@@ -144,6 +144,9 @@ port = 9090  # Métriques internes uniquement
 # Créer un utilisateur système dédié
 sudo useradd -r -s /bin/false -d /opt/websec websec
 
+# Après compilation, changer le propriétaire
+sudo chown -R websec:websec /path/to/websec
+
 # Donner la permission d'écouter sur ports 80/443 sans root
 sudo setcap 'cap_net_bind_service=+ep' ./target/release/websec
 
@@ -151,6 +154,8 @@ sudo setcap 'cap_net_bind_service=+ep' ./target/release/websec
 sudo chown -R root:websec /etc/letsencrypt/archive/example.com/
 sudo chmod 640 /etc/letsencrypt/archive/example.com/*.pem
 ```
+
+**Note** : L'utilisateur `websec` n'a pas besoin de Rust installé. Vous compilez avec votre utilisateur, puis changez le propriétaire du binaire.
 
 ### 4. Lancer WebSec
 

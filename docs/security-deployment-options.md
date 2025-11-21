@@ -27,19 +27,15 @@ Donner **uniquement** la permission de bind sur ports < 1024, sans accorder tous
 # 1. Créer un utilisateur système dédié
 sudo useradd -r -s /bin/false -d /opt/websec websec
 
-# 2. Compiler WebSec
+# 2. Compiler WebSec (avec votre utilisateur courant, pas websec)
 cd /opt/websec
-sudo chown -R websec:websec /opt/websec
-sudo -u websec cargo build --release --features tls
+cargo build --release --features tls
 
-# 3. Donner la capability CAP_NET_BIND_SERVICE
+# 3. Changer le propriétaire et donner la capability
+sudo chown -R websec:websec /opt/websec
 sudo setcap 'cap_net_bind_service=+ep' /opt/websec/target/release/websec
 
-# 4. Vérifier
-getcap /opt/websec/target/release/websec
-# Attendu: /opt/websec/target/release/websec cap_net_bind_service=ep
-
-# 5. Permissions certificats SSL
+# 4. Permissions certificats SSL
 sudo chown -R root:websec /etc/letsencrypt/archive/example.com/
 sudo chown -R root:websec /etc/letsencrypt/live/example.com/
 sudo chmod 750 /etc/letsencrypt/{archive,live}/example.com/
@@ -114,9 +110,32 @@ Pourquoi ? Les capabilities sont des **attributs de fichier étendus (xattr)** q
 ```bash
 # Dans votre script de déploiement
 cargo build --release --features tls
+sudo chown -R websec:websec /opt/websec
 sudo setcap 'cap_net_bind_service=+ep' ./target/release/websec
 sudo systemctl restart websec
 ```
+
+### ⚠️ Problème Commun : "Permission denied" lors de la compilation
+
+**Erreur** :
+```
+sudo -u websec cargo build --release --features tls
+sudo: unable to execute /usr/local/bin/cargo: Permission denied
+```
+
+**Cause** : L'utilisateur `websec` n'a pas accès à l'installation Rust de votre utilisateur.
+
+**Solution** : **Compilez avec votre utilisateur courant, pas avec `websec` !**
+
+```bash
+# ✅ BON : compiler avec votre utilisateur
+cargo build --release --features tls
+
+# ❌ MAUVAIS : essayer de compiler avec l'utilisateur websec
+sudo -u websec cargo build --release --features tls
+```
+
+L'utilisateur `websec` est créé uniquement pour **exécuter** le binaire, pas pour le compiler. Il n'a pas besoin d'avoir Rust installé.
 
 ---
 
@@ -286,10 +305,11 @@ sudo ./target/release/websec --config websec.toml run
 # 1. Créer l'utilisateur
 sudo useradd -r -s /bin/false websec
 
-# 2. Compiler
-sudo -u websec cargo build --release --features tls
+# 2. Compiler (avec votre utilisateur courant)
+cargo build --release --features tls
 
-# 3. Capability
+# 3. Changer propriétaire + capability
+sudo chown -R websec:websec /opt/websec
 sudo setcap 'cap_net_bind_service=+ep' ./target/release/websec
 
 # 4. Permissions SSL
@@ -299,6 +319,8 @@ sudo chmod 640 /etc/letsencrypt/archive/example.com/*.pem
 # 5. Lancer
 sudo -u websec ./target/release/websec --config websec.toml run
 ```
+
+**Important** : L'utilisateur `websec` n'a pas besoin d'avoir Rust installé. On compile avec l'utilisateur courant, puis on change le propriétaire du binaire compilé.
 
 **C'est tout !** Pas besoin de root, pas d'iptables, pas de proxy supplémentaire.
 
