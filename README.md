@@ -335,9 +335,22 @@ Toutes les issues de sécurité identifiées ont été corrigées :
 
 ## 💻 CLI d'Administration
 
+### Variables d'environnement
+
+| Variable | Description | Défaut |
+|----------|-------------|--------|
+| `WEBSEC_CONFIG` | Chemin vers le fichier de configuration | `config/websec.toml` |
+| `WEBSEC_SERVER_LISTEN` | Adresse d'écoute du proxy | (depuis config) |
+| `WEBSEC_SERVER_BACKEND` | URL du backend | (depuis config) |
+| `WEBSEC_STORAGE_REDIS_URL` | URL Redis | (depuis config) |
+| `WEBSEC_LOGGING_LEVEL` | Niveau de log | (depuis config) |
+
 ```bash
 # Démarrer le serveur
 websec run --config websec.toml
+
+# Ou via variable d'environnement
+WEBSEC_CONFIG=/etc/websec/websec.toml websec run
 
 # Validation config (dry-run)
 websec run --dry-run
@@ -373,7 +386,7 @@ websec e2e --backend-port 3000 --proxy-port 8080
 
 ## 📊 Métriques Prometheus
 
-Endpoint : `http://localhost:9090/metrics`
+Endpoint : `http://localhost:<metrics_port>/metrics` (port configurable dans `[metrics]`, défaut: 9090)
 
 ```
 # Requêtes par décision

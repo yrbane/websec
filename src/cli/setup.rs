@@ -198,68 +198,51 @@ impl CertbotManager {
     }
 }
 
-/// Run the interactive setup
-pub fn run_setup(config_path: &Path) -> Result<()> {
-    println!("🛠️  Assistant de configuration WebSec");
-    println!("Ce processus va configurer WebSec en frontal de votre serveur web.\n");
-
-    // Detect available web servers
-    let detected_servers = WebServer::detect_all();
-
-    if detected_servers.is_empty() {
-        return Err(Error::Config(
-            "Aucun serveur web détecté (Apache ou Nginx). Installez Apache2 ou Nginx d'abord.".to_string()
-        ));
-    }
-
-    // Choose web server
-    let web_server = if detected_servers.len() == 1 {
+/// Choose web server interactively from detected servers
+fn choose_web_server(detected_servers: &[WebServer]) -> Result<WebServer> {
+    if detected_servers.len() == 1 {
         let server = detected_servers[0].clone();
         println!("📡 Serveur web détecté : {}", server.name());
-        server
-    } else {
-        println!("📡 Plusieurs serveurs web détectés :");
-        for (idx, server) in detected_servers.iter().enumerate() {
-            println!("  [{}] {}", idx + 1, server.name());
-        }
+        return Ok(server);
+    }
 
-        loop {
-            print!("\nChoisissez le serveur à configurer [1-{}]: ", detected_servers.len());
-            io::stdout().flush().map_err(Error::Io)?;
+    println!("📡 Plusieurs serveurs web détectés :");
+    for (idx, server) in detected_servers.iter().enumerate() {
+        println!("  [{}] {}", idx + 1, server.name());
+    }
 
-            let mut input = String::new();
-            io::stdin().read_line(&mut input).map_err(Error::Io)?;
+    loop {
+        print!("\nChoisissez le serveur à configurer [1-{}]: ", detected_servers.len());
+        io::stdout().flush().map_err(Error::Io)?;
 
-            if let Ok(choice) = input.trim().parse::<usize>() {
-                if choice >= 1 && choice <= detected_servers.len() {
-                    break detected_servers[choice - 1].clone();
-                }
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).map_err(Error::Io)?;
+
+        if let Ok(choice) = input.trim().parse::<usize>() {
+            if choice >= 1 && choice <= detected_servers.len() {
+                return Ok(detected_servers[choice - 1].clone());
             }
-            println!("Choix invalide, réessayez.");
         }
-    };
+        println!("Choix invalide, réessayez.");
+    }
+}
 
-    println!("\n🔍 Configuration de {} avec WebSec...\n", web_server.name());
-
-    // Scan virtual hosts based on server type
-    let virtual_hosts = match web_server {
+/// Scan virtual hosts for the given web server
+fn scan_virtual_hosts_for_server(web_server: &WebServer) -> Result<Vec<VirtualHostEntry>> {
+    match web_server {
         WebServer::Apache => {
             let apache = ApacheEnvironment::detect()?;
-            apache.scan_virtual_hosts()?
+            apache.scan_virtual_hosts()
         }
         WebServer::Nginx => {
             let nginx = NginxEnvironment::detect()?;
-            nginx.scan_virtual_hosts()?
+            nginx.scan_virtual_hosts()
         }
-    };
-
-    if virtual_hosts.is_empty() {
-        println!("⚠️  Aucun VirtualHost détecté dans {APACHE_SITES_ENABLED}");
-        return Err(Error::Config(
-            "Impossible de continuer sans configuration Apache".to_string(),
-        ));
     }
+}
 
+/// Collect port migrations interactively from user
+fn collect_port_migrations(virtual_hosts: &[VirtualHostEntry]) -> Result<Vec<PortMigration>> {
     let plans = vec![
         PortPlan {
             port: 80,
@@ -279,94 +262,99 @@ pub fn run_setup(config_path: &Path) -> Result<()> {
     let mut migrations: Vec<PortMigration> = Vec::new();
 
     for plan in plans {
-        let hosts: Vec<&VirtualHostEntry> = virtual_hosts
-            .iter()
-            .filter(|vh| vh.supports_port(plan.port))
-            .collect();
-        if hosts.is_empty() {
-            continue;
+        if let Some(migration) = collect_migration_for_plan(&plan, virtual_hosts)? {
+            migrations.push(migration);
         }
-
-        println!(
-            "\n============================================================\n{label} - VirtualHosts détectés sur le port {port}\n{desc}\n============================================================",
-            label = plan.label,
-            port = plan.port,
-            desc = plan.description
-        );
-
-        if !prompt_yes_no(
-            format!(
-                "Migrer les VirtualHosts {label} vers WebSec ?",
-                label = plan.label
-            )
-            .as_str(),
-            plan.port == 80,
-        )? {
-            continue;
-        }
-
-        let internal_port = prompt_port(
-            format!(
-                "Port interne Apache pour {label} [{default}]: ",
-                label = plan.label,
-                default = plan.default_internal
-            )
-            .as_str(),
-            plan.default_internal,
-        )?;
-
-        println!(
-            "\nRépondez 'o' pour chaque VirtualHost {label} à migrer :",
-            label = plan.label
-        );
-
-        let mut selections: Vec<VirtualHostSelection> = Vec::new();
-        for (idx, entry) in hosts.iter().enumerate() {
-            println!(
-                "\n[{}] {} (fichier {}:{})",
-                idx + 1,
-                entry.display_name(),
-                entry.file_path.display(),
-                entry.line_index + 1
-            );
-            if let Some(alias) = entry.alias_preview() {
-                println!("    Alias : {alias}");
-            }
-
-            if prompt_yes_no("Migrer ce VirtualHost ?", true)? {
-                selections.push(VirtualHostSelection {
-                    file_path: entry.file_path.clone(),
-                    line_index: entry.line_index,
-                });
-            }
-        }
-
-        if selections.is_empty() {
-            println!(
-                "\nAucun VirtualHost sélectionné pour {label}. Aucun changement appliqué pour ce port.",
-                label = plan.label
-            );
-            continue;
-        }
-
-        migrations.push(PortMigration {
-            original_port: plan.port,
-            internal_port,
-            selections,
-        });
     }
 
-    if migrations.is_empty() {
-        println!("\nAucun site sélectionné. Annulation.");
-        return Ok(());
+    Ok(migrations)
+}
+
+/// Collect migration for a single port plan
+fn collect_migration_for_plan(
+    plan: &PortPlan<'_>,
+    virtual_hosts: &[VirtualHostEntry],
+) -> Result<Option<PortMigration>> {
+    let hosts: Vec<&VirtualHostEntry> = virtual_hosts
+        .iter()
+        .filter(|vh| vh.supports_port(plan.port))
+        .collect();
+
+    if hosts.is_empty() {
+        return Ok(None);
     }
 
-    // Apply changes based on server type
+    println!(
+        "\n============================================================\n\
+         {label} - VirtualHosts détectés sur le port {port}\n\
+         {desc}\n\
+         ============================================================",
+        label = plan.label,
+        port = plan.port,
+        desc = plan.description
+    );
+
+    if !prompt_yes_no(
+        &format!("Migrer les VirtualHosts {} vers WebSec ?", plan.label),
+        plan.port == 80,
+    )? {
+        return Ok(None);
+    }
+
+    let internal_port = prompt_port(
+        &format!(
+            "Port interne Apache pour {} [{}]: ",
+            plan.label, plan.default_internal
+        ),
+        plan.default_internal,
+    )?;
+
+    println!("\nRépondez 'o' pour chaque VirtualHost {} à migrer :", plan.label);
+
+    let mut selections: Vec<VirtualHostSelection> = Vec::new();
+    for (idx, entry) in hosts.iter().enumerate() {
+        println!(
+            "\n[{}] {} (fichier {}:{})",
+            idx + 1,
+            entry.display_name(),
+            entry.file_path.display(),
+            entry.line_index + 1
+        );
+        if let Some(alias) = entry.alias_preview() {
+            println!("    Alias : {alias}");
+        }
+
+        if prompt_yes_no("Migrer ce VirtualHost ?", true)? {
+            selections.push(VirtualHostSelection {
+                file_path: entry.file_path.clone(),
+                line_index: entry.line_index,
+            });
+        }
+    }
+
+    if selections.is_empty() {
+        println!(
+            "\nAucun VirtualHost sélectionné pour {}. Aucun changement appliqué pour ce port.",
+            plan.label
+        );
+        return Ok(None);
+    }
+
+    Ok(Some(PortMigration {
+        original_port: plan.port,
+        internal_port,
+        selections,
+    }))
+}
+
+/// Apply migrations to the web server configuration files
+fn apply_web_server_changes(web_server: &WebServer, migrations: &[PortMigration]) -> Result<()> {
     println!("\n➡️  Mise à jour des fichiers {}...", web_server.name());
+
     match web_server {
         WebServer::Apache => {
             let apache = ApacheEnvironment::detect()?;
-            for migration in &migrations {
+            for migration in migrations {
                 apache.apply_virtualhost_changes(
                     &migration.selections,
                     migration.original_port,
@@ -388,7 +376,7 @@ pub fn run_setup(config_path: &Path) -> Result<()> {
         }
         WebServer::Nginx => {
             let nginx = NginxEnvironment::detect()?;
-            for migration in &migrations {
+            for migration in migrations {
                 nginx.apply_virtualhost_changes(
                     &migration.selections,
                     migration.original_port,
@@ -399,13 +387,22 @@ pub fn run_setup(config_path: &Path) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+/// Finalize setup: scan SSL certs and update `WebSec` config
+fn finalize_setup(
+    config_path: &Path,
+    migrations: &[PortMigration],
+    virtual_hosts: &[VirtualHostEntry],
+) -> Result<()> {
     // Scan SSL certificates
     println!("\n🔍 Scan des certificats SSL existants...");
     let certbot = CertbotManager::scan_existing()?;
-    if !certbot.list().is_empty() {
-        println!("✅ Certificats trouvés : {}", certbot.list().join(", "));
-    } else {
+    if certbot.list().is_empty() {
         println!("ℹ️  Aucun certificat Let's Encrypt détecté");
+    } else {
+        println!("✅ Certificats trouvés : {}", certbot.list().join(", "));
     }
 
     // Update WebSec configuration with SNI support
@@ -415,21 +412,21 @@ pub fn run_setup(config_path: &Path) -> Result<()> {
             config_path.display()
         );
 
-        let https_port = migrations
+        let tls_internal_port = migrations
             .iter()
             .find(|m| m.original_port == 443)
             .map(|m| m.internal_port);
 
-        let http_port = migrations
+        let plaintext_internal_port = migrations
             .iter()
             .find(|m| m.original_port == 80)
             .map(|m| m.internal_port);
 
         update_websec_config_with_sni(
             config_path,
-            http_port,
-            https_port,
-            &virtual_hosts,
+            plaintext_internal_port,
+            tls_internal_port,
+            virtual_hosts,
             &certbot,
         )?;
     } else {
@@ -439,6 +436,11 @@ pub fn run_setup(config_path: &Path) -> Result<()> {
         );
     }
 
+    Ok(())
+}
+
+/// Print final setup summary
+fn print_setup_summary(web_server: &WebServer, migrations: &[PortMigration]) {
     println!("\n🎉 Configuration terminée");
     if migrations.iter().any(|m| m.original_port == 80) {
         println!("- Les sites HTTP ont été déplacés. WebSec doit écouter sur 0.0.0.0:80.");
@@ -448,7 +450,49 @@ pub fn run_setup(config_path: &Path) -> Result<()> {
             "- Les sites HTTPS ont été déplacés. WebSec gère le TLS sur 0.0.0.0:443 avec support SNI multi-domaines."
         );
     }
-    println!("Pensez à redémarrer {} puis à lancer WebSec pour prendre en compte les modifications.\n", web_server.name());
+    println!(
+        "Pensez à redémarrer {} puis à lancer WebSec pour prendre en compte les modifications.\n",
+        web_server.name()
+    );
+}
+
+/// Run the interactive setup
+pub fn run_setup(config_path: &Path) -> Result<()> {
+    println!("🛠️  Assistant de configuration WebSec");
+    println!("Ce processus va configurer WebSec en frontal de votre serveur web.\n");
+
+    // Detect and choose web server
+    let detected_servers = WebServer::detect_all();
+    if detected_servers.is_empty() {
+        return Err(Error::Config(
+            "Aucun serveur web détecté (Apache ou Nginx). Installez Apache2 ou Nginx d'abord."
+                .to_string(),
+        ));
+    }
+    let web_server = choose_web_server(&detected_servers)?;
+
+    println!("\n🔍 Configuration de {} avec WebSec...\n", web_server.name());
+
+    // Scan virtual hosts
+    let virtual_hosts = scan_virtual_hosts_for_server(&web_server)?;
+    if virtual_hosts.is_empty() {
+        println!("⚠️  Aucun VirtualHost détecté dans {APACHE_SITES_ENABLED}");
+        return Err(Error::Config(
+            "Impossible de continuer sans configuration Apache".to_string(),
+        ));
+    }
+
+    // Collect migrations interactively
+    let migrations = collect_port_migrations(&virtual_hosts)?;
+    if migrations.is_empty() {
+        println!("\nAucun site sélectionné. Annulation.");
+        return Ok(());
+    }
+
+    // Apply changes and finalize
+    apply_web_server_changes(&web_server, &migrations)?;
+    finalize_setup(config_path, &migrations, &virtual_hosts)?;
+    print_setup_summary(&web_server, &migrations);
 
     Ok(())
 }
@@ -1035,11 +1079,11 @@ fn backup_file(path: &Path) -> Result<PathBuf> {
     Ok(backup_path)
 }
 
-/// Update WebSec configuration with SNI support for multi-domain HTTPS
+/// Update `WebSec` configuration with SNI support for multi-domain HTTPS
 fn update_websec_config_with_sni(
     config_path: &Path,
-    http_port: Option<u16>,
-    https_port: Option<u16>,
+    plaintext_backend_port: Option<u16>,
+    tls_backend_port: Option<u16>,
     virtual_hosts: &[VirtualHostEntry],
     certbot: &CertbotManager,
 ) -> Result<()> {
@@ -1061,7 +1105,7 @@ fn update_websec_config_with_sni(
     settings.server.listeners.clear();
 
     // Add HTTP listener if port was migrated
-    if let Some(port) = http_port {
+    if let Some(port) = plaintext_backend_port {
         settings.server.listeners.push(ListenerConfig {
             listen: "0.0.0.0:80".to_string(),
             backend: format!("http://127.0.0.1:{port}"),
@@ -1071,7 +1115,7 @@ fn update_websec_config_with_sni(
     }
 
     // Add HTTPS listener with SNI if port was migrated
-    if let Some(port) = https_port {
+    if let Some(port) = tls_backend_port {
         // Collect HTTPS domains and their certificates
         let https_domains: Vec<&VirtualHostEntry> = virtual_hosts
             .iter()

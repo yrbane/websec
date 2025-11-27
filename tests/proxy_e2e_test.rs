@@ -49,7 +49,8 @@ async fn start_test_backend(port: u16) -> tokio::task::JoinHandle<()> {
 }
 
 /// Crée des settings de test pour le proxy
-fn create_test_settings(proxy_port: u16, backend_port: u16) -> Settings {
+/// Le metrics_port doit être unique pour chaque test pour éviter les conflits
+fn create_test_settings(proxy_port: u16, backend_port: u16, metrics_port: u16) -> Settings {
     Settings {
         server: ServerConfig {
             listen: format!("127.0.0.1:{proxy_port}"),
@@ -93,7 +94,7 @@ fn create_test_settings(proxy_port: u16, backend_port: u16) -> Settings {
         },
         metrics: MetricsConfig {
             enabled: true,
-            port: 9090,
+            port: metrics_port,
         },
     }
 }
@@ -121,8 +122,8 @@ async fn test_proxy_forwards_to_backend() {
     // Attendre que le backend démarre
     sleep(Duration::from_millis(100)).await;
 
-    // 2. Démarrer le proxy sur port 18001
-    let settings = create_test_settings(18001, 13001);
+    // 2. Démarrer le proxy sur port 18001, metrics sur 19001
+    let settings = create_test_settings(18001, 13001, 19001);
     let proxy = ProxyServer::new(&settings).unwrap();
 
     let proxy_handle = tokio::spawn(async move {
@@ -150,7 +151,7 @@ async fn test_proxy_forwards_to_backend() {
 #[tokio::test]
 async fn test_proxy_server_creation() {
     // Test de création du serveur sans le démarrer
-    let settings = create_test_settings(18002, 13002);
+    let settings = create_test_settings(18002, 13002, 19002);
     let proxy = ProxyServer::new(&settings);
 
     assert!(proxy.is_ok(), "ProxyServer should initialize successfully");
@@ -162,8 +163,8 @@ async fn test_proxy_adds_websec_headers() {
     let backend_handle = start_test_backend(13003).await;
     sleep(Duration::from_millis(100)).await;
 
-    // 2. Démarrer le proxy sur port 18003
-    let settings = create_test_settings(18003, 13003);
+    // 2. Démarrer le proxy sur port 18003, metrics sur 19003
+    let settings = create_test_settings(18003, 13003, 19003);
     let proxy = ProxyServer::new(&settings).unwrap();
 
     let proxy_handle = tokio::spawn(async move {
@@ -196,8 +197,8 @@ async fn test_proxy_extracts_client_ip() {
     let backend_handle = start_test_backend(13004).await;
     sleep(Duration::from_millis(100)).await;
 
-    // 2. Démarrer le proxy sur port 18004
-    let settings = create_test_settings(18004, 13004);
+    // 2. Démarrer le proxy sur port 18004, metrics sur 19004
+    let settings = create_test_settings(18004, 13004, 19004);
     let proxy = ProxyServer::new(&settings).unwrap();
 
     let proxy_handle = tokio::spawn(async move {
@@ -233,8 +234,8 @@ async fn test_metrics_endpoint() {
     let backend_handle = start_test_backend(13005).await;
     sleep(Duration::from_millis(100)).await;
 
-    // 2. Démarrer le proxy sur port 18005
-    let settings = create_test_settings(18005, 13005);
+    // 2. Démarrer le proxy sur port 18005, metrics sur 19005
+    let settings = create_test_settings(18005, 13005, 19005);
     let proxy = ProxyServer::new(&settings).unwrap();
 
     let proxy_handle = tokio::spawn(async move {
@@ -248,8 +249,8 @@ async fn test_metrics_endpoint() {
 
     sleep(Duration::from_millis(100)).await;
 
-    // 4. Requêter l'endpoint /metrics
-    let response = make_request(18005, "/metrics").await.unwrap();
+    // 4. Requêter l'endpoint /metrics sur le port metrics dédié (19005)
+    let response = make_request(19005, "/metrics").await.unwrap();
 
     // 5. Vérifier le status et le content-type
     assert_eq!(response.status(), StatusCode::OK);

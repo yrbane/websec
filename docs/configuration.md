@@ -189,6 +189,7 @@ NG = 20   # Nigeria
 - **Type**: String (chemin fichier)
 - **Format**: Chemin vers MaxMind GeoLite2/GeoIP2 database
 - **Télécharger**: https://dev.maxmind.com/geoip/geolite2-free-geolocation-data
+- **Validation**: WebSec vérifie que le fichier existe au démarrage si `enabled = true`
 
 #### `penalties`
 - **Type**: Table (code pays ISO → pénalité)
@@ -279,7 +280,8 @@ port = 9090
 #### `port`
 - **Type**: Integer
 - **Défaut**: 9090
-- **Description**: Port pour l'endpoint `/metrics` (futur)
+- **Description**: Port dédié pour l'endpoint `/metrics` (séparé du proxy pour sécurité)
+- **Note**: Les métriques sont servies sur `http://0.0.0.0:<port>/metrics`, pas sur le port du proxy
 
 ---
 
@@ -345,20 +347,25 @@ Pour valider votre configuration:
 
 ## Variables d'environnement
 
-WebSec supporte le remplacement de variables (futur):
+WebSec supporte les variables d'environnement suivantes :
 
-```toml
-backend = "${BACKEND_URL}"
-redis_url = "${REDIS_URL}"
-```
-
-Puis:
+| Variable | Description | Exemple |
+|----------|-------------|---------|
+| `WEBSEC_CONFIG` | Chemin vers le fichier de configuration | `/etc/websec/websec.toml` |
+| `WEBSEC_SERVER_LISTEN` | Surcharge `server.listen` | `0.0.0.0:8080` |
+| `WEBSEC_SERVER_BACKEND` | Surcharge `server.backend` | `http://localhost:3000` |
+| `WEBSEC_STORAGE_REDIS_URL` | Surcharge `storage.redis_url` | `redis://localhost:6379` |
+| `WEBSEC_LOGGING_LEVEL` | Surcharge `logging.level` | `debug` |
 
 ```bash
-export BACKEND_URL="http://localhost:3000"
-export REDIS_URL="redis://localhost:6379"
-./websec
+# Exemple d'utilisation
+export WEBSEC_CONFIG=/etc/websec/websec.toml
+export WEBSEC_SERVER_BACKEND=http://backend.internal:3000
+export WEBSEC_LOGGING_LEVEL=debug
+websec run
 ```
+
+> **Note**: Les variables d'environnement ont la priorité sur le fichier de configuration.
 
 ## Rechargement à chaud
 

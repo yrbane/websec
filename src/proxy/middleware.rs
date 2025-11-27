@@ -22,10 +22,40 @@ use axum::extract::State;
 use axum::http::{Request, Response, StatusCode};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
+
+/// Localhost IP address constant (avoids runtime parsing)
+const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
+
+/// Build an error response with the given status and body
+///
+/// This helper ensures response construction never panics by using
+/// `expect()` with a descriptive message. The construction is infallible
+/// for valid `StatusCode` constants and string bodies.
+fn error_response(status: StatusCode, body: impl Into<String>) -> Response<Body> {
+    Response::builder()
+        .status(status)
+        .body(Body::from(body.into()))
+        .expect("error response construction with valid status code")
+}
+
+/// Build an error response with custom headers
+fn error_response_with_headers(
+    status: StatusCode,
+    headers: &[(&str, String)],
+    body: impl Into<String>,
+) -> Response<Body> {
+    let mut builder = Response::builder().status(status);
+    for (name, value) in headers {
+        builder = builder.header(*name, value);
+    }
+    builder
+        .body(Body::from(body.into()))
+        .expect("error response construction with valid status code and headers")
+}
 
 /// État partagé du middleware
 #[derive(Clone)]
@@ -121,19 +151,13 @@ pub async fn proxy_handler(
                         max_size = state.max_body_size,
                         "Request body too large, rejecting"
                     );
-                    return Response::builder()
-                        .status(StatusCode::PAYLOAD_TOO_LARGE)
-                        .body(Body::from(format!(
-                            "Request body too large (max {} bytes)",
-                            state.max_body_size
-                        )))
-                        .unwrap();
+                    return error_response(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        format!("Request body too large (max {} bytes)", state.max_body_size),
+                    );
                 }
                 tracing::error!(error = %e, "Failed to read request body");
-                return Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body(Body::from("Bad Request"))
-                    .unwrap();
+                return error_response(StatusCode::BAD_REQUEST, "Bad Request");
             }
         }
     } else {
@@ -142,10 +166,7 @@ pub async fn proxy_handler(
             Ok(collected) => collected.to_bytes(),
             Err(e) => {
                 tracing::error!(error = %e, "Failed to read request body");
-                return Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body(Body::from("Bad Request"))
-                    .unwrap();
+                return error_response(StatusCode::BAD_REQUEST, "Bad Request");
             }
         }
     };
@@ -160,10 +181,7 @@ pub async fn proxy_handler(
             tracing::error!(error = %e, ip = %client_ip, "Decision engine error");
             // En cas d'erreur, on AUTORISE par défaut (fail-open pour disponibilité)
             // Une alternative plus stricte serait BLOQUER (fail-closed)
-            return Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::from("Internal Server Error"))
-                .unwrap();
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error");
         }
     };
 
@@ -194,15 +212,14 @@ pub async fn proxy_handler(
                 "Request blocked"
             );
 
-            Response::builder()
-                .status(StatusCode::FORBIDDEN)
-                .header("X-WebSec-Decision", "BLOCK")
-                .header("X-WebSec-Score", decision_result.score.to_string())
-                .body(Body::from(format!(
-                    "Access Denied - Reputation Score: {}",
-                    decision_result.score
-                )))
-                .unwrap()
+            error_response_with_headers(
+                StatusCode::FORBIDDEN,
+                &[
+                    ("X-WebSec-Decision", "BLOCK".to_string()),
+                    ("X-WebSec-Score", decision_result.score.to_string()),
+                ],
+                format!("Access Denied - Reputation Score: {}", decision_result.score),
+            )
         }
         ProxyDecision::Challenge => {
             tracing::info!(
@@ -217,18 +234,17 @@ pub async fn proxy_handler(
                 .create_challenge(client_ip, crate::challenge::ChallengeType::SimpleMath)
             {
                 let html = challenge.to_html();
-                Response::builder()
-                    .status(StatusCode::FORBIDDEN)
-                    .header("Content-Type", "text/html; charset=utf-8")
-                    .header("X-WebSec-Decision", "CHALLENGE")
-                    .header("X-WebSec-Score", decision_result.score.to_string())
-                    .body(Body::from(html))
-                    .unwrap()
+                error_response_with_headers(
+                    StatusCode::FORBIDDEN,
+                    &[
+                        ("Content-Type", "text/html; charset=utf-8".to_string()),
+                        ("X-WebSec-Decision", "CHALLENGE".to_string()),
+                        ("X-WebSec-Score", decision_result.score.to_string()),
+                    ],
+                    html,
+                )
             } else {
-                Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(Body::from("Failed to generate challenge"))
-                    .unwrap()
+                error_response(StatusCode::INTERNAL_SERVER_ERROR, "Failed to generate challenge")
             }
         }
         ProxyDecision::RateLimit => {
@@ -238,13 +254,15 @@ pub async fn proxy_handler(
                 "Rate limit applied"
             );
 
-            Response::builder()
-                .status(StatusCode::TOO_MANY_REQUESTS)
-                .header("X-WebSec-Decision", "RATE_LIMIT")
-                .header("X-WebSec-Score", decision_result.score.to_string())
-                .header("Retry-After", "60")
-                .body(Body::from("Too Many Requests - Please slow down"))
-                .unwrap()
+            error_response_with_headers(
+                StatusCode::TOO_MANY_REQUESTS,
+                &[
+                    ("X-WebSec-Decision", "RATE_LIMIT".to_string()),
+                    ("X-WebSec-Score", decision_result.score.to_string()),
+                    ("Retry-After", "60".to_string()),
+                ],
+                "Too Many Requests - Please slow down",
+            )
         }
     };
 
@@ -267,7 +285,7 @@ pub async fn metrics_handler(
         .status(StatusCode::OK)
         .header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
         .body(axum::body::Body::from(metrics_text))
-        .unwrap()
+        .expect("metrics response construction")
 }
 
 /// Handler pour l'endpoint `/metrics` Prometheus (standalone metrics server)
@@ -282,7 +300,7 @@ pub async fn metrics_standalone_handler(
         .status(StatusCode::OK)
         .header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
         .body(axum::body::Body::from(metrics_text))
-        .unwrap()
+        .expect("metrics response construction")
 }
 
 /// Extrait l'IP du client depuis les headers ou la socket
@@ -303,7 +321,7 @@ fn extract_client_ip(req: &Request<Body>, trusted_proxies: &[IpAddr]) -> IpAddr 
         addr.ip()
     } else {
         // Fallback si pas de SocketAddr (ne devrait jamais arriver)
-        return IpAddr::from_str("127.0.0.1").unwrap();
+        return LOCALHOST;
     };
 
     // Si trusted_proxies est vide, TOUJOURS utiliser l'IP socket (connexion directe)
@@ -363,7 +381,7 @@ fn extract_client_ip(req: &Request<Body>, trusted_proxies: &[IpAddr]) -> IpAddr 
     }
 
     // Dernier fallback : localhost (pour tests)
-    IpAddr::from_str("127.0.0.1").unwrap()
+    LOCALHOST
 }
 
 /// Construit le contexte HTTP pour les détecteurs
@@ -472,7 +490,7 @@ fn sanitize_request_headers(
             "host",
             backend_host.parse().unwrap_or_else(|_| {
                 tracing::warn!("Failed to parse backend host, using default");
-                "localhost".parse().unwrap()
+                "localhost".parse().expect("localhost is a valid header value")
             }),
         );
     }
@@ -491,7 +509,12 @@ fn sanitize_request_headers(
         "x-forwarded-for",
         forwarded_for
             .parse()
-            .unwrap_or_else(|_| client_ip.to_string().parse().unwrap()),
+            .unwrap_or_else(|_| {
+                client_ip
+                    .to_string()
+                    .parse()
+                    .expect("IP address string is a valid header value")
+            }),
     );
 
     // Définir X-Real-IP avec l'IP du client
@@ -500,7 +523,7 @@ fn sanitize_request_headers(
         client_ip
             .to_string()
             .parse()
-            .unwrap_or_else(|_| "127.0.0.1".parse().unwrap()),
+            .unwrap_or_else(|_| "127.0.0.1".parse().expect("127.0.0.1 is a valid header value")),
     );
 
     // Normaliser Content-Length et Transfer-Encoding

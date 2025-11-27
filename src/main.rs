@@ -14,12 +14,14 @@ use websec::cli::{self, docker, e2e, lists};
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(about = "Proxy de sécurité HTTP intelligent avec système de réputation", long_about = None)]
 struct Args {
-    /// Chemin vers le fichier de configuration TOML
+    /// Chemin vers le fichier de configuration TOML.
+    /// Peut aussi être défini via la variable d'environnement WEBSEC_CONFIG.
     #[arg(
         short,
         long,
         value_name = "FILE",
         default_value = "config/websec.toml",
+        env = "WEBSEC_CONFIG",
         global = true
     )]
     config: PathBuf,

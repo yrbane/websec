@@ -110,10 +110,29 @@ fn validate(settings: &Settings) -> Result<()> {
     }
 
     // Validate geolocation database path if enabled
-    if settings.geolocation.enabled && settings.geolocation.database.is_none() {
-        return Err(Error::Config(
-            "geolocation.database path is required when geolocation is enabled".to_string(),
-        ));
+    if settings.geolocation.enabled {
+        match &settings.geolocation.database {
+            None => {
+                return Err(Error::Config(
+                    "geolocation.database path is required when geolocation is enabled".to_string(),
+                ));
+            }
+            Some(db_path) => {
+                let path = std::path::Path::new(db_path);
+                if !path.exists() {
+                    return Err(Error::Config(format!(
+                        "GeoIP database file not found: '{db_path}'. \
+                         Download from https://dev.maxmind.com/geoip/geolite2-free-geolocation-data \
+                         or disable geolocation in config."
+                    )));
+                }
+                if !path.is_file() {
+                    return Err(Error::Config(format!(
+                        "GeoIP database path '{db_path}' is not a file"
+                    )));
+                }
+            }
+        }
     }
 
     Ok(())
@@ -137,6 +156,8 @@ mod tests {
     #[test]
     fn test_validate_threshold_ordering() {
         let mut settings = load_from_file("config/websec.toml.example").unwrap();
+        // Disable geolocation for this test (DB file doesn't exist in test env)
+        settings.geolocation.enabled = false;
 
         // Invalid: allow <= ratelimit
         settings.reputation.threshold_allow = 40;
@@ -160,11 +181,32 @@ mod tests {
     #[test]
     fn test_validate_storage_type() {
         let mut settings = load_from_file("config/websec.toml.example").unwrap();
+        // Disable geolocation for this test (DB file doesn't exist in test env)
+        settings.geolocation.enabled = false;
 
         settings.storage.storage_type = "invalid".to_string();
         assert!(validate(&settings).is_err());
 
         settings.storage.storage_type = "memory".to_string();
         assert!(validate(&settings).is_ok());
+    }
+
+    #[test]
+    fn test_validate_geoip_database() {
+        let mut settings = load_from_file("config/websec.toml.example").unwrap();
+
+        // Enabled with non-existent database should fail
+        settings.geolocation.enabled = true;
+        settings.geolocation.database = Some("/nonexistent/path.mmdb".to_string());
+        assert!(validate(&settings).is_err());
+
+        // Disabled with non-existent database should pass
+        settings.geolocation.enabled = false;
+        assert!(validate(&settings).is_ok());
+
+        // Enabled with None database should fail
+        settings.geolocation.enabled = true;
+        settings.geolocation.database = None;
+        assert!(validate(&settings).is_err());
     }
 }
