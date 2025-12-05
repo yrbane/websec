@@ -29,6 +29,7 @@ INSTALL_DIR="/opt/websec"
 CONFIG_DIR="/etc/websec"
 LOG_DIR="/var/log/websec"
 DATA_DIR="/var/lib/websec"
+REPO_URL="https://github.com/yrbane/websec.git"
 
 # Function to print colored messages
 print_info() {
@@ -119,11 +120,6 @@ if [[ "$REMOTE_MODE" == "true" ]]; then
         # Try again in verbose mode to show the exact SSH error
         ssh -v $IDENTITY_FILE_ARG $SSH_PORT_ARG "$TARGET" "exit"
         echo "-------------------------------------------------------"
-        echo "Please check:"
-        echo "1. Your SSH key is added to the agent (ssh-add -l) or specified with -i"
-        echo "2. The user@host or alias is correct (e.g., 'debian@nethttp.net' or 'nethttp')"
-        echo "3. The specified port ($SSH_PORT_ARG if used) matches the remote SSH server port."
-        echo "4. Your local ~/.ssh/config for Host '$TARGET' or its domain is correctly read."
         exit 1
     fi
 
@@ -255,12 +251,20 @@ install_websec() {
     if [[ -d "$INSTALL_DIR/.git" ]]; then
         print_info "Updating repository..."
         cd "$INSTALL_DIR"
-        sudo -u "$WEBSEC_USER" git pull
+        # Ensure correct ownership for git operations
+        if ! sudo -u "$WEBSEC_USER" git pull; then
+            print_warning "Git pull failed (SSH issue?). Falling back to HTTPS reset..."
+            # Force HTTPS remote to avoid SSH key issues on server
+            sudo -u "$WEBSEC_USER" git remote set-url origin "$REPO_URL"
+            sudo -u "$WEBSEC_USER" git fetch origin
+            sudo -u "$WEBSEC_USER" git reset --hard origin/main
+            print_success "Repository reset to origin/main via HTTPS"
+        fi
     else
         print_info "Cloning repository..."
         # Ensure empty dir before clone
         if [[ -d "$INSTALL_DIR" ]]; then rm -rf "$INSTALL_DIR"; mkdir -p "$INSTALL_DIR"; chown "$WEBSEC_USER:$WEBSEC_USER" "$INSTALL_DIR"; fi
-        sudo -u "$WEBSEC_USER" git clone https://github.com/yrbane/websec.git "$INSTALL_DIR"
+        sudo -u "$WEBSEC_USER" git clone "$REPO_URL" "$INSTALL_DIR"
     fi
 
     # Compile
