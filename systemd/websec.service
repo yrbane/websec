@@ -1,0 +1,30 @@
+[Unit]
+Description=WebSec Security Proxy
+After=network.target syslog.target
+
+[Service]
+Type=simple
+User=websec
+Group=websec
+# Point to the installed binary location
+ExecStart=/usr/local/bin/websec run
+# Set default configuration path
+Environment=WEBSEC_CONFIG=/etc/websec/websec.toml
+# Restart automatically on failure
+Restart=always
+RestartSec=5
+
+# Security Hardening
+# Prevent gaining new privileges (e.g. via sudo)
+NoNewPrivileges=yes
+# Mount /usr, /boot, and /etc as read-only
+ProtectSystem=full
+# Make /home, /root, /run/user inaccessible
+ProtectHome=yes
+# Create private /tmp directory
+PrivateTmp=yes
+# Make device nodes inaccessible (except /dev/null, /dev/zero, etc)
+PrivateDevices=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -4,11 +4,11 @@
 #
 # This script automates the complete deployment of WebSec with:
 # - Dependency checking and installation
-# - Rust toolchain setup
+# - Rust toolchain setup (if needed)
 # - System user creation
-# - Repository cloning and compilation
+# - Repository cloning and compilation OR Binary download (Future)
 # - Linux capabilities configuration
-# - Binary verification
+# - Systemd service installation
 #
 # Usage: sudo bash install.sh
 #
@@ -25,7 +25,9 @@ NC='\033[0m' # No Color
 # Configuration
 WEBSEC_USER="websec"
 INSTALL_DIR="/opt/websec"
-RUST_VERSION="stable"
+CONFIG_DIR="/etc/websec"
+LOG_DIR="/var/log/websec"
+DATA_DIR="/var/lib/websec"
 
 # Function to print colored messages
 print_info() {
@@ -61,473 +63,180 @@ ask_confirmation() {
     [[ "$response" =~ ^[Yy]$ ]]
 }
 
-# Function to check if command exists
-command_exists() {
-    command -v "$1" >/dev/null 2>&1
-}
+# Check root
+if [[ $EUID -ne 0 ]]; then
+    print_error "This script must be run as root (use sudo)"
+    exit 1
+fi
 
-# Function to check if running as root
-check_root() {
-    if [[ $EUID -ne 0 ]]; then
-        print_error "This script must be run as root (use sudo)"
-        exit 1
-    fi
-}
-
-# Function to detect package manager
+# Detect package manager
 detect_package_manager() {
-    if command_exists apt-get; then
-        echo "apt"
-    elif command_exists dnf; then
-        echo "dnf"
-    elif command_exists yum; then
-        echo "yum"
-    elif command_exists pacman; then
-        echo "pacman"
-    else
-        echo "unknown"
-    fi
+    if command -v apt-get >/dev/null; then echo "apt";
+    elif command -v dnf >/dev/null; then echo "dnf";
+    elif command -v yum >/dev/null; then echo "yum";
+    elif command -v pacman >/dev/null; then echo "pacman";
+    else echo "unknown"; fi
 }
 
-# Function to install dependencies
+# Install dependencies
 install_dependencies() {
-    local pkg_manager=$(detect_package_manager)
-    local missing_deps=()
-
     print_info "Checking system dependencies..."
+    local pkg_manager=$(detect_package_manager)
+    local deps=("git" "gcc" "pkg-config" "libssl-dev")
+    
+    # Redis is optional but recommended. We won't force install it here to keep it lightweight.
+    # The user can configure storage: memory or sled if they don't have redis.
 
-    # Check required packages
-    local required_packages=(
-        "git"
-        "gcc"
-        "pkg-config"
-        "libssl-dev"
-        "redis-server"
-    )
-
-    for pkg in "${required_packages[@]}"; do
-        case "$pkg_manager" in
-            apt)
-                if ! dpkg -l | grep -q "^ii  $pkg"; then
-                    missing_deps+=("$pkg")
-                fi
-                ;;
-            dnf|yum)
-                if [[ "$pkg" == "libssl-dev" ]]; then
-                    pkg="openssl-devel"
-                elif [[ "$pkg" == "redis-server" ]]; then
-                    pkg="redis"
-                fi
-                if ! rpm -qa | grep -q "$pkg"; then
-                    missing_deps+=("$pkg")
-                fi
-                ;;
-            pacman)
-                if [[ "$pkg" == "libssl-dev" ]]; then
-                    pkg="openssl"
-                elif [[ "$pkg" == "redis-server" ]]; then
-                    pkg="redis"
-                fi
-                if ! pacman -Q "$pkg" >/dev/null 2>&1; then
-                    missing_deps+=("$pkg")
-                fi
-                ;;
-        esac
-    done
-
-    if [[ ${#missing_deps[@]} -eq 0 ]]; then
-        print_success "All dependencies are already installed"
-        return 0
-    fi
-
-    print_warning "Missing dependencies: ${missing_deps[*]}"
-
-    # Generate install command
-    local install_cmd=""
     case "$pkg_manager" in
         apt)
-            install_cmd="apt-get update && apt-get install -y ${missing_deps[*]}"
-            ;;
-        dnf)
-            install_cmd="dnf install -y ${missing_deps[*]}"
-            ;;
-        yum)
-            install_cmd="yum install -y ${missing_deps[*]}"
-            ;;
+            apt-get update
+            apt-get install -y "${deps[@]}"
+            ;; 
+        dnf|yum)
+            # Map libssl-dev to openssl-devel
+            deps=("git" "gcc" "pkg-config" "openssl-devel")
+            $pkg_manager install -y "${deps[@]}"
+            ;; 
         pacman)
-            install_cmd="pacman -S --noconfirm ${missing_deps[*]}"
-            ;;
+            deps=("git" "gcc" "pkg-config" "openssl")
+            pacman -S --noconfirm "${deps[@]}"
+            ;; 
         *)
-            print_error "Unknown package manager. Please install manually: ${missing_deps[*]}"
-            exit 1
-            ;;
+            print_warning "Unknown package manager. Please ensure dependencies are installed manually: ${deps[*]}"
+            ;; 
     esac
-
-    echo -e "\nCommand to install dependencies:"
-    echo -e "${GREEN}$install_cmd${NC}\n"
-
-    if ask_confirmation "Do you want to install these dependencies now?"; then
-        print_info "Installing dependencies..."
-        eval "$install_cmd"
-        print_success "Dependencies installed successfully"
-    else
-        print_error "Cannot proceed without dependencies. Exiting."
-        exit 1
-    fi
+    print_success "Dependencies installed"
 }
 
-# Function to install Rust
+# Install Rust if missing
 install_rust() {
-    print_info "Checking Rust installation..."
-
-    # Check if running as root user (not just with sudo)
-    if [[ -n "$SUDO_USER" ]]; then
-        local real_user="$SUDO_USER"
-        local real_home=$(eval echo ~"$real_user")
-    else
-        local real_user="root"
-        local real_home="$HOME"
+    if command -v cargo >/dev/null; then
+        print_success "Rust is already installed"
+        return
     fi
 
-    # Check if Rust is installed for the real user
-    if sudo -u "$real_user" bash -c "command -v cargo >/dev/null 2>&1"; then
-        local rust_version=$(sudo -u "$real_user" bash -c "rustc --version 2>/dev/null || echo 'unknown'")
-        print_success "Rust is already installed: $rust_version"
-        return 0
-    fi
-
-    print_warning "Rust is not installed"
-    echo -e "\nCommand to install Rust:"
-    echo -e "${GREEN}curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y${NC}\n"
-
-    if ask_confirmation "Do you want to install Rust now?"; then
-        print_info "Installing Rust for user $real_user..."
-        sudo -u "$real_user" bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
-
-        # Source cargo env for this session
-        export PATH="$real_home/.cargo/bin:$PATH"
-
-        print_success "Rust installed successfully"
-        sudo -u "$real_user" bash -c "source $real_home/.cargo/env && rustc --version"
-    else
-        print_error "Cannot proceed without Rust. Exiting."
-        exit 1
-    fi
+    print_info "Installing Rust..."
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    source $HOME/.cargo/env
+    print_success "Rust installed successfully"
 }
 
-# Function to create websec user
-create_websec_user() {
-    print_info "Checking websec system user..."
+# Create websec user and directories
+setup_user_and_dirs() {
+    print_info "Setting up user and directories..."
 
-    if id "$WEBSEC_USER" &>/dev/null; then
+    # Create user
+    if ! id "$WEBSEC_USER" &>/dev/null; then
+        useradd -r -s /bin/false -d "$DATA_DIR" "$WEBSEC_USER"
+        print_success "User '$WEBSEC_USER' created"
+    else
         print_success "User '$WEBSEC_USER' already exists"
-        return 0
     fi
 
-    print_warning "User '$WEBSEC_USER' does not exist"
-    echo -e "\nCommand to create user:"
-    echo -e "${GREEN}useradd -r -s /bin/false -d $INSTALL_DIR $WEBSEC_USER${NC}\n"
-
-    if ask_confirmation "Do you want to create the websec user now?" "y"; then
-        useradd -r -s /bin/false -d "$INSTALL_DIR" "$WEBSEC_USER"
-        print_success "User '$WEBSEC_USER' created successfully"
-    else
-        print_error "Cannot proceed without websec user. Exiting."
-        exit 1
-    fi
+    # Create directories
+    mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$LOG_DIR" "$DATA_DIR"
+    
+    # Set permissions
+    chown -R "$WEBSEC_USER:$WEBSEC_USER" "$INSTALL_DIR" "$LOG_DIR" "$DATA_DIR"
+    # Config dir owned by root, readable by websec
+    chown root:"$WEBSEC_USER" "$CONFIG_DIR"
+    chmod 750 "$CONFIG_DIR"
+    
+    print_success "Directories created and permissions set"
 }
 
-# Function to clone repository
-clone_repository() {
-    print_info "Checking WebSec repository..."
+# Clone and Compile
+install_websec() {
+    print_info "Installing WebSec..."
 
+    # Clone or pull
     if [[ -d "$INSTALL_DIR/.git" ]]; then
-        print_success "Repository already exists at $INSTALL_DIR"
-
-        if ask_confirmation "Do you want to update the repository?"; then
-            print_info "Updating repository..."
-            cd "$INSTALL_DIR"
-            git pull
-            print_success "Repository updated"
-        fi
-        return 0
-    fi
-
-    if [[ -d "$INSTALL_DIR" ]] && [[ -n "$(ls -A "$INSTALL_DIR")" ]]; then
-        print_warning "Directory $INSTALL_DIR exists but is not a git repository"
-        if ! ask_confirmation "Do you want to remove it and clone fresh?"; then
-            print_error "Cannot proceed. Exiting."
-            exit 1
-        fi
-        rm -rf "$INSTALL_DIR"
-    fi
-
-    print_info "Cloning WebSec repository to $INSTALL_DIR..."
-
-    # Get the current repository URL
-    local current_dir=$(pwd)
-    local repo_url=""
-
-    if git rev-parse --git-dir > /dev/null 2>&1; then
-        repo_url=$(git config --get remote.origin.url)
-        print_info "Using repository URL: $repo_url"
+        print_info "Updating repository..."
+        cd "$INSTALL_DIR"
+        sudo -u "$WEBSEC_USER" git pull
     else
-        print_warning "Not in a git repository. Using default GitHub URL."
-        repo_url="https://github.com/yrbane/websec.git"
+        print_info "Cloning repository..."
+        # Ensure empty dir before clone
+        if [[ -d "$INSTALL_DIR" ]]; then rm -rf "$INSTALL_DIR"; mkdir -p "$INSTALL_DIR"; chown "$WEBSEC_USER:$WEBSEC_USER" "$INSTALL_DIR"; fi
+        sudo -u "$WEBSEC_USER" git clone https://github.com/yrbane/websec.git "$INSTALL_DIR"
     fi
 
-    git clone "$repo_url" "$INSTALL_DIR"
-    print_success "Repository cloned successfully"
-}
-
-# Function to compile WebSec
-compile_websec() {
-    print_info "Compiling WebSec..."
-
+    # Compile
+    print_info "Compiling (this may take a few minutes)..."
     cd "$INSTALL_DIR"
+    # We need to run cargo as the user who has rust installed (root in this context usually if run via sudo install.sh)
+    # Or if rust was installed for a specific user, we might need that.
+    # Assuming root has cargo in path from install_rust
+    source $HOME/.cargo/env 2>/dev/null || true
+    
+    cargo build --release --features tls
+    
+    # Install binary to system path
+    cp "$INSTALL_DIR/target/release/websec" /usr/local/bin/websec
+    chmod 755 /usr/local/bin/websec
+    
+    # Set capabilities
+    setcap 'cap_net_bind_service=+ep' /usr/local/bin/websec
+    
+    print_success "WebSec compiled and installed to /usr/local/bin/websec"
+}
 
-    # Determine which user should compile
-    if [[ -n "$SUDO_USER" ]]; then
-        local build_user="$SUDO_USER"
-        local real_home=$(eval echo ~"$build_user")
+# Configure
+configure_websec() {
+    print_info "Configuring WebSec..."
+    
+    local config_file="$CONFIG_DIR/websec.toml"
+    
+    if [[ ! -f "$config_file" ]]; then
+        cp "$INSTALL_DIR/config/websec.toml.example" "$config_file"
+        chown root:"$WEBSEC_USER" "$config_file"
+        chmod 640 "$config_file"
+        
+        # Customize for systemd path
+        # Use sled by default for easy install
+        sed -i 's|type = "redis"|type = "sled"|' "$config_file"
+        sed -i 's|# path = "websec.db"|path = "/var/lib/websec/websec.db"|' "$config_file"
+        
+        print_success "Default configuration installed at $config_file"
+        print_info "Default storage set to Sled (embedded DB) at $DATA_DIR/websec.db"
     else
-        local build_user="root"
-        local real_home="$HOME"
-    fi
-
-    print_info "Compiling as user: $build_user"
-
-    # Source cargo environment and build
-    sudo -u "$build_user" bash -c "
-        source $real_home/.cargo/env
-        cd $INSTALL_DIR
-        cargo build --release --features tls
-    "
-
-    if [[ -f "$INSTALL_DIR/target/release/websec" ]]; then
-        print_success "WebSec compiled successfully"
-    else
-        print_error "Compilation failed - binary not found"
-        exit 1
+        print_info "Configuration already exists, skipping overwrite"
     fi
 }
 
-# Function to apply ownership and capabilities
-apply_permissions() {
-    print_info "Applying ownership and capabilities..."
+# Install Systemd Service
+install_systemd() {
+    print_info "Installing Systemd service..."
+    
+    cat > /etc/systemd/system/websec.service <<EOF
+[Unit]
+Description=WebSec Security Proxy
+After=network.target syslog.target
 
-    cd "$INSTALL_DIR"
+[Service]
+Type=simple
+User=$WEBSEC_USER
+Group=$WEBSEC_USER
+ExecStart=/usr/local/bin/websec run
+Environment=WEBSEC_CONFIG=$CONFIG_DIR/websec.toml
+Restart=always
+RestartSec=5
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
 
-    # Change ownership
-    print_info "Setting ownership to $WEBSEC_USER:$WEBSEC_USER..."
-    chown -R "$WEBSEC_USER:$WEBSEC_USER" "$INSTALL_DIR"
-    print_success "Ownership applied"
+[Install]
+WantedBy=multi-user.target
+EOF
 
-    # Apply capability
-    print_info "Applying CAP_NET_BIND_SERVICE capability..."
-    setcap 'cap_net_bind_service=+ep' "$INSTALL_DIR/target/release/websec"
-    print_success "Capability applied"
+    systemctl daemon-reload
+    systemctl enable websec
+    print_success "Systemd service installed and enabled"
 }
 
-# Function to install default configuration
-install_default_config() {
-    print_info "Installing default configuration..."
-
-    local config_dir="/etc/websec"
-    local config_file="$config_dir/websec.toml"
-    local example_config="$INSTALL_DIR/config/websec.toml.example"
-
-    # Check if example config exists
-    if [[ ! -f "$example_config" ]]; then
-        print_warning "Configuration example not found at $example_config"
-        print_info "Skipping configuration installation"
-        return 0
-    fi
-
-    # Create config directory if it doesn't exist
-    if [[ ! -d "$config_dir" ]]; then
-        print_info "Creating configuration directory: $config_dir"
-        mkdir -p "$config_dir"
-    fi
-
-    # Check if config already exists
-    if [[ -f "$config_file" ]]; then
-        print_success "Configuration file already exists at $config_file"
-
-        if ask_confirmation "Do you want to backup and replace it with the default configuration?"; then
-            local backup_file="$config_file.backup.$(date +%Y%m%d-%H%M%S)"
-            print_info "Backing up existing config to $backup_file"
-            cp "$config_file" "$backup_file"
-        else
-            print_info "Keeping existing configuration"
-            return 0
-        fi
-    fi
-
-    # Copy configuration
-    print_info "Copying default configuration..."
-    cp "$example_config" "$config_file"
-
-    # Ask if user wants to customize key settings
-    echo -e "\n${BLUE}Configuration customization${NC}"
-    echo "The default configuration uses:"
-    echo "  - Listen: 0.0.0.0:8080"
-    echo "  - Backend: http://127.0.0.1:3000"
-    echo ""
-
-    if ask_confirmation "Do you want to customize the listen address and backend URL?"; then
-        # Ask for listen address
-        echo -ne "${BLUE}Enter listen address [0.0.0.0:80]: ${NC}"
-        read listen_address
-        listen_address=${listen_address:-"0.0.0.0:80"}
-
-        # Ask for backend URL
-        echo -ne "${BLUE}Enter backend URL [http://127.0.0.1:8080]: ${NC}"
-        read backend_url
-        backend_url=${backend_url:-"http://127.0.0.1:8080"}
-
-        # Update config file
-        sed -i "s|listen = \"0.0.0.0:8080\"|listen = \"$listen_address\"|g" "$config_file"
-        sed -i "s|backend = \"http://127.0.0.1:3000\"|backend = \"$backend_url\"|g" "$config_file"
-
-        print_success "Configuration customized with:"
-        echo "  - Listen: $listen_address"
-        echo "  - Backend: $backend_url"
-    else
-        print_info "Using default configuration values"
-    fi
-
-    # Apply correct permissions
-    print_info "Applying configuration permissions..."
-    chown root:$WEBSEC_USER "$config_dir"
-    chmod 750 "$config_dir"
-    chown root:$WEBSEC_USER "$config_file"
-    chmod 640 "$config_file"
-
-    print_success "Configuration installed at $config_file"
-
-    # Test configuration
-    print_info "Testing configuration..."
-    if sudo -u "$WEBSEC_USER" "$INSTALL_DIR/target/release/websec" --config "$config_file" run --dry-run >/dev/null 2>&1; then
-        print_success "Configuration is valid"
-    else
-        print_warning "Configuration validation failed (may need SSL certificates or Redis)"
-        print_info "You can test with: sudo -u $WEBSEC_USER $INSTALL_DIR/target/release/websec --config $config_file run --dry-run"
-    fi
-}
-
-# Function to verify installation
-verify_installation() {
-    print_info "Verifying installation..."
-
-    local binary="$INSTALL_DIR/target/release/websec"
-
-    # Check binary exists
-    if [[ ! -f "$binary" ]]; then
-        print_error "Binary not found at $binary"
-        return 1
-    fi
-    print_success "Binary exists: $binary"
-
-    # Check ownership
-    local owner=$(stat -c '%U:%G' "$binary")
-    if [[ "$owner" == "$WEBSEC_USER:$WEBSEC_USER" ]]; then
-        print_success "Ownership correct: $owner"
-    else
-        print_warning "Ownership is $owner (expected $WEBSEC_USER:$WEBSEC_USER)"
-    fi
-
-    # Check capability
-    local cap=$(getcap "$binary")
-    if echo "$cap" | grep -q "cap_net_bind_service"; then
-        print_success "Capability set: $cap"
-    else
-        print_error "Capability not set correctly"
-        return 1
-    fi
-
-    # Test binary execution
-    print_info "Testing binary version..."
-    if sudo -u "$WEBSEC_USER" "$binary" --version; then
-        print_success "Binary executes correctly"
-    else
-        print_error "Binary execution failed"
-        return 1
-    fi
-
-    print_success "Installation verification complete"
-}
-
-# Function to install to system path
-install_to_system_path() {
-    local source_binary="$INSTALL_DIR/target/release/websec"
-    local target_path="/usr/local/bin/websec"
-
-    print_info "System installation option"
-    echo -e "\nThis will copy the binary to $target_path"
-    echo -e "${YELLOW}Note: You will need to reapply the capability after each recompilation${NC}\n"
-
-    if ask_confirmation "Do you want to install websec to system path?"; then
-        # Copy binary
-        cp "$source_binary" "$target_path"
-
-        # Apply same capability to system binary
-        setcap 'cap_net_bind_service=+ep' "$target_path"
-
-        # Keep ownership as root for system binary
-        chown root:root "$target_path"
-        chmod 755 "$target_path"
-
-        print_success "WebSec installed to $target_path"
-        print_info "You can now run: websec --version"
-    else
-        print_info "Skipping system installation"
-        print_info "You can run websec from: $source_binary"
-    fi
-}
-
-# Function to display next steps
-display_next_steps() {
-    echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}✓ WebSec Installation Complete${NC}"
-    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
-
-    print_info "Next Steps:\n"
-
-    echo "1. Review and edit configuration (if needed):"
-    echo -e "   ${BLUE}sudo nano /etc/websec/websec.toml${NC}"
-    echo -e "   Configuration already installed with your settings\n"
-
-    echo "2. Configure SSL certificates (if using HTTPS):"
-    echo -e "   ${BLUE}sudo chmod 755 /etc/letsencrypt${NC}"
-    echo -e "   ${BLUE}sudo chmod 755 /etc/letsencrypt/live${NC}"
-    echo -e "   ${BLUE}sudo chmod 755 /etc/letsencrypt/archive${NC}"
-    echo -e "   ${BLUE}sudo chown root:$WEBSEC_USER /etc/letsencrypt/archive/your-domain.com${NC}"
-    echo -e "   ${BLUE}sudo chmod 750 /etc/letsencrypt/archive/your-domain.com${NC}"
-    echo -e "   ${BLUE}sudo chmod 640 /etc/letsencrypt/archive/your-domain.com/*.pem${NC}\n"
-
-    echo "3. Test configuration (dry-run):"
-    echo -e "   ${BLUE}sudo -u $WEBSEC_USER $INSTALL_DIR/target/release/websec --config /etc/websec/websec.toml run --dry-run${NC}\n"
-
-    echo "4. Create systemd service:"
-    echo -e "   ${BLUE}sudo cp $INSTALL_DIR/systemd/websec.service /etc/systemd/system/${NC}"
-    echo -e "   ${BLUE}sudo systemctl daemon-reload${NC}"
-    echo -e "   ${BLUE}sudo systemctl enable websec${NC}"
-    echo -e "   ${BLUE}sudo systemctl start websec${NC}\n"
-
-    echo "5. Check status and logs:"
-    echo -e "   ${BLUE}sudo systemctl status websec${NC}"
-    echo -e "   ${BLUE}sudo journalctl -u websec -f${NC}\n"
-
-    print_warning "Important: After recompiling WebSec, you MUST reapply the capability:"
-    echo -e "   ${YELLOW}sudo setcap 'cap_net_bind_service=+ep' $INSTALL_DIR/target/release/websec${NC}\n"
-
-    echo -e "For complete deployment instructions, see:"
-    echo -e "   ${BLUE}$INSTALL_DIR/docs/deployment-checklist.md${NC}"
-    echo -e "   ${BLUE}$INSTALL_DIR/docs/troubleshooting-guide.md${NC}\n"
-}
-
-# Main installation flow
+# Main execution
 main() {
     echo -e "${BLUE}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -535,41 +244,22 @@ main() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo -e "${NC}\n"
 
-    print_info "This script will install WebSec with Linux capabilities (non-root)\n"
-
-    # Step 1: Check root
-    check_root
-
-    # Step 2: Install dependencies
     install_dependencies
-
-    # Step 3: Install Rust
     install_rust
+    setup_user_and_dirs
+    install_websec
+    configure_websec
+    install_systemd
 
-    # Step 4: Create websec user
-    create_websec_user
-
-    # Step 5: Clone repository
-    clone_repository
-
-    # Step 6: Compile
-    compile_websec
-
-    # Step 7: Apply permissions and capabilities
-    apply_permissions
-
-    # Step 8: Install default configuration
-    install_default_config
-
-    # Step 9: Verify installation
-    verify_installation
-
-    # Step 10: Optional system path installation
-    install_to_system_path
-
-    # Step 11: Display next steps
-    display_next_steps
+    echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}✓ Installation Complete!${NC}"
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+    echo "You can now start WebSec with:"
+    echo -e "${BLUE}sudo systemctl start websec${NC}"
+    echo -e "Check status with:"
+    echo -e "${BLUE}sudo systemctl status websec${NC}"
+    echo -e "Check logs with:"
+    echo -e "${BLUE}sudo journalctl -u websec -f${NC}"
 }
 
-# Run main function
 main "$@"
