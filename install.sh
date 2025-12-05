@@ -272,12 +272,9 @@ setup_websec_ssh() {
             print_info "Copied SSH config to websec user"
         fi
         
-        # IMPORTANT: Do NOT overwrite existing key if it's already there!
-        # This avoids breaking keys generated on the server in previous runs.
-        if [[ -f "$target_key" ]]; then
-            print_info "Existing SSH key found, skipping copy."
-        else
-            # Copy 'websec' key specifically if it exists
+        # Copy key to websec_key (standardized name)
+        # ONLY if target_key does NOT exist yet.
+        if [[ ! -f "$target_key" ]]; then
             if [[ -f "$calling_home/.ssh/websec" ]]; then
                  cp "$calling_home/.ssh/websec" "$target_key"
                  print_info "Copied 'websec' key to websec user as websec_key"
@@ -285,6 +282,8 @@ setup_websec_ssh() {
                  cp "$calling_home/.ssh/id_rsa" "$target_key"
                  print_info "Copied 'id_rsa' key to websec user as websec_key"
             fi
+        else
+            print_info "SSH key $target_key already exists, skipping copy from local user."
         fi
         
         # Also known_hosts to avoid prompt
@@ -309,7 +308,8 @@ check_github_access() {
     
     # Ensure we trust GitHub host to avoid prompt
     mkdir -p "$websec_ssh"
-    if ! grep -q "github.com" "$websec_ssh/known_hosts" 2>/dev/null; then
+    if ! grep -q "github.com" "$websec_ssh/known_hosts" 2>/dev/null;
+        then
         print_info "Adding github.com to known_hosts..."
         ssh-keyscan github.com >> "$websec_ssh/known_hosts" 2>/dev/null
         chown "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh/known_hosts"
@@ -321,11 +321,11 @@ check_github_access() {
     chmod 700 "$websec_ssh"
     if [[ -f "$key_file" ]]; then
         chmod 600 "$key_file" 2>/dev/null || true
-        chown "$WEBSEC_USER:$WEBSEC_USER" "$key_file"
+        chown "$WEBSEC_USER:$WEBSEC_USER" "$key_file" "$pub_key_file"
     fi
 
     # Configure git command environment
-    export GIT_SSH_COMMAND="ssh -i $key_file -o UserKnownHostsFile=$websec_ssh/known_hosts -o StrictHostKeyChecking=no"
+    export GIT_SSH_COMMAND="ssh -vvv -i $key_file -o UserKnownHostsFile=$websec_ssh/known_hosts -o StrictHostKeyChecking=no"
 
     print_info "Testing GitHub connectivity..."
     
@@ -339,7 +339,7 @@ check_github_access() {
         # Test SSH connection to GitHub - capture output
         # We run this as websec user, EXPLICITLY passing the key file to ssh command
         # Also pass HOME env just in case
-        OUTPUT=$(sudo -u "$WEBSEC_USER" env HOME="$DATA_DIR" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" ssh -v -i "$key_file" -o UserKnownHostsFile="$websec_ssh/known_hosts" -o StrictHostKeyChecking=no -T git@github.com 2>&1)
+        OUTPUT=$(sudo -u "$WEBSEC_USER" env HOME="$DATA_DIR" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" ssh -vvv -i "$key_file" -o UserKnownHostsFile="$websec_ssh/known_hosts" -o StrictHostKeyChecking=no -T git@github.com 2>&1)
         
         # ssh -T returns 1 on success (authenticated but no shell access) but prints success msg
         if echo "$OUTPUT" | grep -q "successfully authenticated"; then
@@ -443,7 +443,7 @@ install_websec() {
         if [[ -d "$INSTALL_DIR" ]]; then rm -rf "$INSTALL_DIR"; mkdir -p "$INSTALL_DIR"; chown "$WEBSEC_USER:$WEBSEC_USER" "$INSTALL_DIR"; fi
         
         if ! sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" git clone "$target_url" "$INSTALL_DIR"; then
-             print_error "Clone failed. Please check permissions or token."
+             print_error "Clone failed."
              exit 1
         fi
         print_success "Repository cloned"
@@ -534,63 +534,103 @@ EOF
 setup_firewall() {
     print_info "Configuring firewall and whitelists..."
 
+    local ip_to_whitelist
+    local current_ip_detected=""
+
     # Get current IP
-    local current_ip=""
     if [[ -n "$SSH_CLIENT" ]]; then
-        current_ip=$(echo $SSH_CLIENT | awk '{print $1}')
+        current_ip_detected=$(echo $SSH_CLIENT | awk '{print $1}')
     elif [[ -n "$SSH_CONNECTION" ]]; then
-        current_ip=$(echo $SSH_CONNECTION | awk '{print $1}')
+        current_ip_detected=$(echo $SSH_CONNECTION | awk '{print $1}')
     fi
 
-    if [[ -z "$current_ip" ]]; then
-        print_warning "Could not detect your IP address from SSH session."
-        echo -ne "${BLUE}Enter your IP address to whitelist (or leave empty to skip): ${NC}"
-        read current_ip
+    if [[ -n "$current_ip_detected" ]]; then
+        print_info "Your current SSH IP detected: $current_ip_detected"
+        if ask_confirmation "Do you want to whitelist this IP ($current_ip_detected) automatically?" "y"; then
+            whitelist_ip_actions "$current_ip_detected"
+        fi
     fi
 
-    if [[ -n "$current_ip" ]]; then
-        print_info "Whitelisting IP: $current_ip"
+    print_info "You can now add additional IP addresses or CIDR ranges to whitelist (e.g., 192.168.1.0/24)."
+    print_info "Leave empty and press Enter to finish."
+    
+    while true; do
+        echo -ne "${BLUE}Enter IP address or CIDR to whitelist: ${NC}"
+        read ip_to_whitelist
+        ip_to_whitelist=$(echo "$ip_to_whitelist" | tr -d '[:space:]') # Trim whitespace
 
-        # Fail2Ban
-        if command -v fail2ban-client >/dev/null; then
-            print_info "Configuring Fail2Ban..."
-            local jail_local="/etc/fail2ban/jail.local"
-            if [[ ! -f "$jail_local" ]]; then
-                echo -e "[DEFAULT]\nignoreip = 127.0.0.1/8 ::1" > "$jail_local"
+        if [[ -z "$ip_to_whitelist" ]]; then
+            print_info "No more IPs to whitelist. Exiting IP whitelist configuration."
+            break
+        fi
+
+        # Basic IP/CIDR validation (optional, but good practice)
+        # Check for IPv4
+        if [[ ! "$ip_to_whitelist" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?$ ]]; then
+            # Check for IPv6
+            if [[ ! "$ip_to_whitelist" =~ ^([0-9a-fA-F]{1,4}:){1,7}[0-9a-fA-F]{1,4}(/[0-9]{1,3})?$ ]] && \
+               [[ ! "$ip_to_whitelist" =~ ^::([0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}(/[0-9]{1,3})?$ ]] && \
+               [[ ! "$ip_to_whitelist" =~ ^[0-9a-fA-F]{1,4}(:[0-9a-fA-F]{1,4}){0,6}::([0-9a-fA-F]{1,4}){1,7}(/[0-9]{1,3})?$ ]]; then
+                print_warning "Invalid IP or CIDR format: $ip_to_whitelist. Please try again."
+                continue
             fi
-            
-            if ! grep -q "$current_ip" "$jail_local"; then
-                sed -i "/^ignoreip/ s/$/ $current_ip/" "$jail_local"
-                fail2ban-client reload >/dev/null
-                print_success "Added $current_ip to Fail2Ban ignoreip"
-            else
-                print_success "IP already whitelisted in Fail2Ban"
-            fi
+        fi
+
+        whitelist_ip_actions "$ip_to_whitelist"
+    done
+}
+
+# Helper function to perform whitelist actions for a single IP
+whitelist_ip_actions() {
+    local ip="$1"
+    print_info "Whitelisting IP: $ip"
+
+    # Fail2Ban
+    if command -v fail2ban-client >/dev/null; then
+        print_info "Configuring Fail2Ban..."
+        local jail_local="/etc/fail2ban/jail.local"
+        if [[ ! -f "$jail_local" ]]; then
+            echo -e "[DEFAULT]\nignoreip = 127.0.0.1/8 ::1" > "$jail_local"
+            chown root:root "$jail_local"
+            chmod 644 "$jail_local"
+        fi
+        
+        # Check if already in ignoreip
+        if ! grep -q "$ip" "$jail_local"; then
+            # Use a temp file for sed to avoid issues with original file
+            sed "/^ignoreip/ s/$/ $ip/" "$jail_local" > "${jail_local}.tmp" && mv "${jail_local}.tmp" "$jail_local"
+            fail2ban-client reload >/dev/null
+            print_success "Added $ip to Fail2Ban ignoreip"
         else
-            print_warning "Fail2Ban not installed, skipping."
-        fi
-
-        # UFW
-        if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
-            print_info "Configuring UFW..."
-            ufw allow from "$current_ip" to any port ssh comment 'Allow SSH from admin IP'
-            ufw allow 80/tcp comment 'Allow HTTP'
-            ufw allow 443/tcp comment 'Allow HTTPS'
-            print_success "Allowed SSH, HTTP, HTTPS in UFW"
-        fi
-
-        # WebSec config
-        local config_file="$CONFIG_DIR/websec.toml"
-        if [[ -f "$config_file" ]]; then
-            if ! grep -q "\"$current_ip\"" "$config_file"; then
-                sed -i "/^whitelist = \[/ a \    \"$current_ip\"," "$config_file"
-                print_success "Added $current_ip to WebSec whitelist"
-            fi
+            print_success "IP $ip already whitelisted in Fail2Ban"
         fi
     else
-        print_warning "No IP provided, skipping whitelist configuration."
+        print_warning "Fail2Ban not installed, skipping for $ip."
+    fi
+
+    # UFW
+    if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
+        print_info "Configuring UFW..."
+        # Allow SSH (current port) from this IP
+        ufw allow from "$ip" to any port ssh comment "Allow SSH from $ip" || true
+        ufw allow from "$ip" to any port 80 comment "Allow HTTP from $ip" || true
+        ufw allow from "$ip" to any port 443 comment "Allow HTTPS from $ip" || true
+        print_success "Allowed SSH, HTTP, HTTPS in UFW for $ip"
+    fi
+
+    # WebSec config
+    local config_file="$CONFIG_DIR/websec.toml"
+    if [[ -f "$config_file" ]]; then
+        if ! grep -q "\"$ip\"" "$config_file"; then
+            # Add after "whitelist = [" line
+            sed -i "/^whitelist = \[/ a \    \"$ip\"," "$config_file"
+            print_success "Added $ip to WebSec whitelist"
+        else
+            print_success "IP $ip already whitelisted in WebSec config"
+        fi
     fi
 }
+
 
 # Main execution
 main() {
