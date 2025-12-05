@@ -280,6 +280,11 @@ setup_websec_ssh() {
              print_info "Copied 'id_rsa' key to websec user"
         fi
         
+        # Also known_hosts to avoid prompt
+        if [[ -f "$calling_home/.ssh/known_hosts" ]]; then
+             cp "$calling_home/.ssh/known_hosts" "$websec_ssh/"
+        fi
+        
         # Fix permissions
         chown -R "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh"
         chmod 600 "$websec_ssh"/* || true
@@ -306,7 +311,11 @@ check_github_access() {
     # Ensure permissions are correct
     chown -R "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh"
     chmod 700 "$websec_ssh"
-    
+    if [[ -f "$key_file" ]]; then
+        chmod 600 "$key_file" 2>/dev/null || true
+        chown "$WEBSEC_USER:$WEBSEC_USER" "$key_file"
+    fi
+
     # Configure git command environment
     export GIT_SSH_COMMAND="ssh -i $key_file -o UserKnownHostsFile=$websec_ssh/known_hosts -o StrictHostKeyChecking=no"
 
@@ -315,7 +324,9 @@ check_github_access() {
     while true; do
         # Test SSH connection to GitHub - capture output
         # We run this as websec user
-        OUTPUT=$(sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" ssh -T git@github.com 2>&1)
+        # Added -v for verbose output to see which key is offered
+        OUTPUT=$(sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" ssh -v -T git@github.com 2>&1)
+        
         # ssh -T returns 1 on success (authenticated but no shell access) but prints success msg
         if echo "$OUTPUT" | grep -q "successfully authenticated"; then
             print_success "GitHub authentication successful"
@@ -326,7 +337,8 @@ check_github_access() {
         print_warning "GitHub authentication failed."
         echo "----------------------------------------------------------------"
         echo "Last error details from SSH:"
-        echo "$OUTPUT" | grep -E "Permission denied|Authentication failed|timed out|Could not resolve|Connection refused" | head -n 5
+        # Filter for relevant errors, including key offer details
+        echo "$OUTPUT" | grep -E "Permission denied|Authentication failed|timed out|Could not resolve|Connection refused|Offering public key|Server accepted key" | tail -n 10
         echo "----------------------------------------------------------------"
         
         # Prompt to regenerate key
