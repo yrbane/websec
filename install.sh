@@ -280,20 +280,16 @@ setup_websec_ssh() {
              print_info "Copied 'id_rsa' key to websec user"
         fi
         
-        # Also known_hosts to avoid prompt
-        if [[ -f "$calling_home/.ssh/known_hosts" ]]; then
-             cp "$calling_home/.ssh/known_hosts" "$websec_ssh/"
-        fi
-        
         # Fix permissions
         chown -R "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh"
-        chmod 600 "$websec_ssh"/*
+        chmod 600 "$websec_ssh"/* || true
         chmod 700 "$websec_ssh"
     fi
 }
 
 # Check GitHub connectivity and loop until successful
 check_github_access() {
+    set +e  # Temporarily disable exit on error to handle SSH checks gracefully
     local websec_ssh="$DATA_DIR/.ssh"
     local key_file="$websec_ssh/websec_key" # New standardized key filename
     local pub_key_file="$key_file.pub"
@@ -310,8 +306,7 @@ check_github_access() {
     # Ensure permissions are correct
     chown -R "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh"
     chmod 700 "$websec_ssh"
-    chmod 600 "$key_file" 2>/dev/null || true
-
+    
     # Configure git command environment
     export GIT_SSH_COMMAND="ssh -i $key_file -o UserKnownHostsFile=$websec_ssh/known_hosts -o StrictHostKeyChecking=no"
 
@@ -320,18 +315,17 @@ check_github_access() {
     while true; do
         # Test SSH connection to GitHub - capture output
         # We run this as websec user
-        OUTPUT=$(sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" ssh -v -T git@github.com 2>&1)
-        EXIT_CODE=$?
-
-        # ssh -T returns 1 on success (authenticated but no shell access)
+        OUTPUT=$(sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" ssh -T git@github.com 2>&1)
+        # ssh -T returns 1 on success (authenticated but no shell access) but prints success msg
         if echo "$OUTPUT" | grep -q "successfully authenticated"; then
             print_success "GitHub authentication successful"
+            set -e # Re-enable exit on error
             return 0
         fi
 
         print_warning "GitHub authentication failed."
         echo "----------------------------------------------------------------"
-        echo "Error details from SSH:"
+        echo "Last error details from SSH:"
         echo "$OUTPUT" | grep -E "Permission denied|Authentication failed|timed out|Could not resolve|Connection refused" | head -n 5
         echo "----------------------------------------------------------------"
         
@@ -348,6 +342,7 @@ check_github_access() {
             local host_clean=$(hostname | tr -d '[:space:]')
             sudo -u "$WEBSEC_USER" ssh-keygen -t ed25519 -C "websec_user@$host_clean" -f "$key_file" -N "" -q
             chmod 600 "$key_file"
+            chown "$WEBSEC_USER:$WEBSEC_USER" "$key_file" "$pub_key_file"
         fi
 
         # Show public key for copy-paste
@@ -361,6 +356,7 @@ check_github_access() {
         
         read -p "Press Enter once you have added the key to GitHub to retry..."
     done
+    set -e # Re-enable exit on error
 }
 
 # Clone and Compile
