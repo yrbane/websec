@@ -43,18 +43,18 @@ if [[ $# -gt 0 ]]; then
     
     while [[ $# -gt 0 ]]; do
         case $1 in
-            -i|--identity) 
+            -i|--identity)
                 IDENTITY_ARGS="-i $2"
                 shift 2
-                ;; 
+                ;;
             -p|--port)
                 SSH_PORT="$2"
                 shift 2
-                ;; 
+                ;;
             *)
                 echo "Unknown option: $1"
                 exit 1
-                ;; 
+                ;;
         esac
     done
 
@@ -62,7 +62,8 @@ if [[ $# -gt 0 ]]; then
 
     # 1. Verify SSH connection
     echo -e "${BLUE}[INFO]${NC} Verifying SSH connection..."
-    if ssh $IDENTITY_ARGS -p $SSH_PORT -o BatchMode=yes -o ConnectTimeout=5 "$TARGET" "echo 'SSH OK'" &>/dev/null; then
+    # Removed BatchMode=yes to allow interaction (password/passphrase) and showing errors
+    if ssh $IDENTITY_ARGS -p $SSH_PORT -o ConnectTimeout=5 "$TARGET" "echo 'SSH OK'"; then
         echo -e "${GREEN}[✓]${NC} SSH connection established"
     else
         echo -e "${RED}[✗]${NC} Unable to connect to $TARGET"
@@ -131,19 +132,19 @@ install_dependencies() {
         apt)
             apt-get update
             apt-get install -y "${deps[@]}"
-            ;; 
+            ;;
         dnf|yum)
             # Map libssl-dev to openssl-devel
             deps=("git" "gcc" "pkg-config" "openssl-devel")
             $pkg_manager install -y "${deps[@]}"
-            ;; 
+            ;;
         pacman)
             deps=("git" "gcc" "pkg-config" "openssl")
             pacman -S --noconfirm "${deps[@]}"
-            ;; 
+            ;;
         *)
             print_warning "Unknown package manager. Please ensure dependencies are installed manually: ${deps[*]}"
-            ;; 
+            ;;
     esac
     print_success "Dependencies installed"
 }
