@@ -280,14 +280,9 @@ setup_websec_ssh() {
              print_info "Copied 'id_rsa' key to websec user"
         fi
         
-        # Also known_hosts to avoid prompt
-        if [[ -f "$calling_home/.ssh/known_hosts" ]]; then
-             cp "$calling_home/.ssh/known_hosts" "$websec_ssh/"
-        fi
-        
         # Fix permissions
         chown -R "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh"
-        chmod 600 "$websec_ssh"/*
+        chmod 600 "$websec_ssh"/* || true # Ignore error if no keys copied
         chmod 700 "$websec_ssh"
     fi
 }
@@ -295,7 +290,8 @@ setup_websec_ssh() {
 # Check GitHub connectivity and loop until successful
 check_github_access() {
     local websec_ssh="$DATA_DIR/.ssh"
-    local key_file="$websec_ssh/id_rsa"
+    local key_file="$websec_ssh/websec_key" # New standardized key filename
+    local pub_key_file="$key_file.pub"
     
     # Ensure we trust GitHub host to avoid prompt
     mkdir -p "$websec_ssh"
@@ -303,6 +299,7 @@ check_github_access() {
         print_info "Adding github.com to known_hosts..."
         ssh-keyscan github.com >> "$websec_ssh/known_hosts" 2>/dev/null
         chown "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh/known_hosts"
+        chmod 600 "$websec_ssh/known_hosts"
     fi
 
     # Configure git command environment
@@ -311,7 +308,7 @@ check_github_access() {
     print_info "Testing GitHub connectivity..."
     
     while true; do
-        # ssh -T returns 1 on success (authenticated but no shell access)
+        # Test SSH connection to GitHub
         if sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
             print_success "GitHub authentication successful"
             return 0
@@ -319,28 +316,26 @@ check_github_access() {
 
         print_warning "GitHub authentication failed."
         
-        # If key exists but fails, it might be the wrong one or not authorized
-        if [[ -f "$key_file" ]]; then
-            echo -e "Current key fingerprint: $(ssh-keygen -lf $key_file | awk '{print $2}')"
-            if ask_confirmation "Do you want to REGENERATE a new key? (This will delete the current one)"; then
-                rm -f "$key_file" "$key_file.pub"
-            fi
+        # Prompt to regenerate key
+        if ask_confirmation "Do you want to REGENERATE a new SSH key for deployment?"; then
+            print_info "Removing previous key and generating a new one..."
+            rm -f "$key_file" "$pub_key_file"
         fi
 
-        # Generate key if missing (or deleted above)
+        # Generate key if missing (or just removed)
         if [[ ! -f "$key_file" ]]; then
-            print_info "Generating new SSH key for websec user..."
+            print_info "Generating new SSH key: $key_file"
             mkdir -p "$websec_ssh"
             chown "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh"
             chmod 700 "$websec_ssh"
-            # Generate ed25519 key (standard, widely supported, cleaner format)
-            sudo -u "$WEBSEC_USER" ssh-keygen -t ed25519 -C "websec-deploy@$(hostname)" -f "$key_file" -N "" -q
+            sudo -u "$WEBSEC_USER" ssh-keygen -t ed25519 -C "websec_user@$(hostname)" -f "$key_file" -N "" -q
         fi
 
-        # Show public key
+        # Show public key for copy-paste
         print_warning "ACTION REQUIRED: Add this Deploy Key to your GitHub repository!"
+        print_info "Key file generated at: $pub_key_file"
         echo "----------------------------------------------------------------"
-        cat "$key_file.pub"
+        echo -e "${YELLOW}$(cat "$pub_key_file")${NC}" # Display in yellow/orange
         echo "----------------------------------------------------------------"
         echo "URL: https://github.com/yrbane/websec/settings/keys/new"
         echo ""
@@ -359,7 +354,7 @@ install_websec() {
     check_github_access
 
     # Determine the correct remote URL
-    local target_url="$REPO_URL_SSH"
+    local target_url="$REPO_URL_SSH" # Always use SSH now after check_github_access
     
     if [[ -d "$INSTALL_DIR/.git" ]]; then
         print_info "Updating repository..."
