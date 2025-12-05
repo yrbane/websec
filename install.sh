@@ -1,16 +1,17 @@
 #!/bin/bash
 #
-# WebSec Interactive Installation Script
+# WebSec Interactive Installation & Deployment Script
 #
-# This script automates the complete deployment of WebSec with:
-# - Dependency checking and installation
-# - Rust toolchain setup (if needed)
-# - System user creation
-# - Repository cloning and compilation OR Binary download (Future)
-# - Linux capabilities configuration
-# - Systemd service installation
+# This script automates the complete deployment of WebSec.
+# It can be run locally (sudo ./install.sh) or used to deploy to a remote server via SSH.
 #
-# Usage: sudo bash install.sh
+# Usage:
+#   Local install:  sudo bash install.sh
+#   Remote deploy:  ./install.sh <user@host> [options]
+#
+# Options (Remote deploy):
+#   -i <key_path>   Path to SSH private key
+#   -p <port>       SSH port (default: 22)
 #
 
 set -e
@@ -29,6 +30,62 @@ CONFIG_DIR="/etc/websec"
 LOG_DIR="/var/log/websec"
 DATA_DIR="/var/lib/websec"
 
+# --- Remote Deployment Logic ---
+
+# Check if running in remote deployment mode (argument provided and not running as root locally for install)
+if [[ $# -gt 0 ]]; then
+    TARGET="$1"
+    shift
+    
+    # Parse additional remote options
+    SSH_PORT=22
+    IDENTITY_ARGS=""
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -i|--identity) 
+                IDENTITY_ARGS="-i $2"
+                shift 2
+                ;; 
+            -p|--port)
+                SSH_PORT="$2"
+                shift 2
+                ;; 
+            *)
+                echo "Unknown option: $1"
+                exit 1
+                ;; 
+        esac
+    done
+
+    echo -e "${BLUE}[INFO]${NC} Preparing deployment to $TARGET..."
+
+    # 1. Verify SSH connection
+    echo -e "${BLUE}[INFO]${NC} Verifying SSH connection..."
+    if ssh $IDENTITY_ARGS -p $SSH_PORT -o BatchMode=yes -o ConnectTimeout=5 "$TARGET" "echo 'SSH OK'" &>/dev/null; then
+        echo -e "${GREEN}[✓]${NC} SSH connection established"
+    else
+        echo -e "${RED}[✗]${NC} Unable to connect to $TARGET"
+        echo "Check your credentials, SSH keys, or ~/.ssh/config"
+        exit 1
+    fi
+
+    # 2. Copy install script
+    echo -e "${BLUE}[INFO]${NC} Transferring installation script..."
+    scp $IDENTITY_ARGS -P $SSH_PORT "$0" "$TARGET:/tmp/websec-install.sh"
+
+    # 3. Execute remote install
+    echo -e "${BLUE}[INFO]${NC} Starting remote installation..."
+    echo "----------------------------------------------------------------"
+    ssh $IDENTITY_ARGS -p $SSH_PORT -t "$TARGET" "chmod +x /tmp/websec-install.sh && sudo /tmp/websec-install.sh"
+    echo "----------------------------------------------------------------"
+
+    echo -e "${GREEN}[✓]${NC} Remote deployment finished!"
+    exit 0
+fi
+
+# --- Local Installation Logic ---
+
 # Function to print colored messages
 print_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -44,23 +101,6 @@ print_warning() {
 
 print_error() {
     echo -e "${RED}[✗]${NC} $1"
-}
-
-# Function to ask user confirmation
-ask_confirmation() {
-    local prompt="$1"
-    local default="${2:-n}"
-
-    if [[ "$default" == "y" ]]; then
-        prompt="$prompt [Y/n]: "
-    else
-        prompt="$prompt [y/N]: "
-    fi
-
-    read -p "$prompt" response
-    response=${response:-$default}
-
-    [[ "$response" =~ ^[Yy]$ ]]
 }
 
 # Check root
