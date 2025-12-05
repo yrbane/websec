@@ -272,7 +272,7 @@ setup_websec_ssh() {
             print_info "Copied SSH config to websec user"
         fi
         
-        # Copy key to websec_key (standardized name)
+        # Copy 'websec' key specifically if it exists
         if [[ -f "$calling_home/.ssh/websec" ]]; then
              cp "$calling_home/.ssh/websec" "$target_key"
              print_info "Copied 'websec' key to websec user as websec_key"
@@ -299,6 +299,7 @@ check_github_access() {
     local websec_ssh="$DATA_DIR/.ssh"
     local key_file="$websec_ssh/websec_key" # New standardized key filename
     local pub_key_file="$key_file.pub"
+    local failed_attempts=0
     
     # Ensure we trust GitHub host to avoid prompt
     mkdir -p "$websec_ssh"
@@ -314,11 +315,11 @@ check_github_access() {
     chmod 700 "$websec_ssh"
     if [[ -f "$key_file" ]]; then
         chmod 600 "$key_file" 2>/dev/null || true
-        chown "$WEBSEC_USER:$WEBSEC_USER" "$key_file" "$pub_key_file"
+        chown "$WEBSEC_USER:$WEBSEC_USER" "$key_file"
     fi
 
     # Configure git command environment
-    export GIT_SSH_COMMAND="ssh -vvv -i $key_file -o UserKnownHostsFile=$websec_ssh/known_hosts -o StrictHostKeyChecking=no"
+    export GIT_SSH_COMMAND="ssh -i $key_file -o UserKnownHostsFile=$websec_ssh/known_hosts -o StrictHostKeyChecking=no"
 
     print_info "Testing GitHub connectivity..."
     
@@ -327,14 +328,14 @@ check_github_access() {
         echo "[DEBUG] User running test: $(whoami)"
         echo "[DEBUG] Target user: $WEBSEC_USER"
         echo "[DEBUG] Key file: $key_file"
-        ls -l "$websec_ssh" || echo "[DEBUG] .ssh dir missing"
-        echo "[DEBUG] GIT_SSH_COMMAND: $GIT_SSH_COMMAND"
-        echo "[DEBUG] Attempting to connect as $WEBSEC_USER to git@github.com using the generated key."
-
-        # Test SSH connection to GitHub - capture output
-        # We run this as websec user
-        OUTPUT=$(sudo -u "$WEBSEC_USER" env HOME="$DATA_DIR" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" ssh -v -T git@github.com 2>&1)
+        ls -l "$key_file" || echo "[DEBUG] Key file missing"
         
+        # Test SSH connection to GitHub - capture output
+        # We run this as websec user, EXPLICITLY passing the key file to ssh command
+        # Also pass HOME env just in case
+        OUTPUT=$(sudo -u "$WEBSEC_USER" env HOME="$DATA_DIR" ssh -v -i "$key_file" -o UserKnownHostsFile="$websec_ssh/known_hosts" -o StrictHostKeyChecking=no -T git@github.com 2>&1)
+        
+        # ssh -T returns 1 on success (authenticated but no shell access) but prints success msg
         if echo "$OUTPUT" | grep -q "successfully authenticated"; then
             print_success "GitHub authentication successful"
             set -e # Re-enable exit on error
@@ -342,6 +343,24 @@ check_github_access() {
         fi
 
         print_warning "GitHub authentication failed."
+        failed_attempts=$((failed_attempts + 1))
+
+        # Fallback to HTTPS Token after 2 attempts
+        if [[ $failed_attempts -ge 2 ]]; then
+            if ask_confirmation "SSH authentication keeps failing. Switch to HTTPS with Personal Access Token (PAT)?" "n"; then
+                echo -ne "${BLUE}Enter GitHub Username: ${NC}"
+                read gh_user
+                echo -ne "${BLUE}Enter Personal Access Token (PAT): ${NC}"
+                read gh_token
+                
+                # Construct HTTPS URL with token
+                export REPO_URL_TOKEN="https://${gh_user}:${gh_token}@github.com/yrbane/websec.git"
+                print_success "Switched to HTTPS with Token."
+                set -e
+                return 0
+            fi
+        fi
+
         echo "----------------------------------------------------------------"
         echo "SSH DEBUG OUTPUT (Last 40 lines):"
         echo "$OUTPUT" | tail -n 40
@@ -386,7 +405,12 @@ install_websec() {
     check_github_access
 
     # Determine the correct remote URL
-    local target_url="$REPO_URL_SSH" # Always use SSH now after check_github_access
+    local target_url="$REPO_URL_SSH" 
+    
+    # If HTTPS token was configured in check_github_access
+    if [[ -n "$REPO_URL_TOKEN" ]]; then
+        target_url="$REPO_URL_TOKEN"
+    fi
     
     if [[ -d "$INSTALL_DIR/.git" ]]; then
         print_info "Updating repository..."
@@ -415,7 +439,7 @@ install_websec() {
         if [[ -d "$INSTALL_DIR" ]]; then rm -rf "$INSTALL_DIR"; mkdir -p "$INSTALL_DIR"; chown "$WEBSEC_USER:$WEBSEC_USER" "$INSTALL_DIR"; fi
         
         if ! sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" git clone "$target_url" "$INSTALL_DIR"; then
-             print_error "Clone failed even with verified key. Please check permissions."
+             print_error "Clone failed. Please check permissions or token."
              exit 1
         fi
         print_success "Repository cloned"
