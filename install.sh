@@ -95,6 +95,9 @@ fi
 # --- Remote Deployment Logic ---
 
 if [[ "$REMOTE_MODE" == "true" ]]; then
+    # Enable debug output for the script itself
+    set -x
+    
     if [[ -z "$TARGET" ]]; then
         echo "Error: Remote mode detected but no target specified."
         echo "Usage: ./install.sh [options] <user@host_or_alias>"
@@ -106,22 +109,21 @@ if [[ "$REMOTE_MODE" == "true" ]]; then
     # 1. Verify SSH connection
     echo -e "${BLUE}[INFO]${NC} Verifying SSH connection..."
     # Attempt connection with user-provided args, otherwise rely on ~/.ssh/config
+    # ConnectTimeout is crucial to not hang indefinitely
     if ssh $IDENTITY_FILE_ARG $SSH_PORT_ARG -o ConnectTimeout=10 "$TARGET" "echo 'SSH OK'" 2>/dev/null; then
         echo -e "${GREEN}[✓]${NC} SSH connection established"
     else
         echo -e "${RED}[✗]${NC} Unable to connect to $TARGET"
         echo "-------------------------------------------------------"
-        echo "Debugging SSH connection to $TARGET..."
+        echo "Debugging SSH connection to $TARGET (verbose output):"
         # Try again in verbose mode to show the exact SSH error
-        # Use -G to show resolved config, but only if it matches a Host directly, otherwise it might just try to connect
-        # Best to just show -v output
         ssh -v $IDENTITY_FILE_ARG $SSH_PORT_ARG "$TARGET" "exit"
         echo "-------------------------------------------------------"
         echo "Please check:"
         echo "1. Your SSH key is added to the agent (ssh-add -l) or specified with -i"
         echo "2. The user@host or alias is correct (e.g., 'debian@nethttp.net' or 'nethttp')"
         echo "3. The specified port ($SSH_PORT_ARG if used) matches the remote SSH server port."
-        echo "4. Your local ~/.ssh/config for Host '$TARGET' or its domain."
+        echo "4. Your local ~/.ssh/config for Host '$TARGET' or its domain is correctly read."
         exit 1
     fi
 
@@ -140,6 +142,8 @@ if [[ "$REMOTE_MODE" == "true" ]]; then
     echo "----------------------------------------------------------------"
 
     echo -e "${GREEN}[✓]${NC} Remote deployment finished!"
+    # Disable debug output before exiting
+    set +x
     exit 0
 fi
 
