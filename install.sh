@@ -250,9 +250,47 @@ setup_user_and_dirs() {
     print_success "Directories created and permissions set"
 }
 
+# Share SSH keys with websec user if present
+setup_websec_ssh() {
+    local calling_user="${SUDO_USER:-$USER}"
+    local calling_home=$(eval echo ~"$calling_user")
+    local websec_home="$DATA_DIR"
+    local websec_ssh="$websec_home/.ssh"
+
+    # If there is an SSH config or keys in the calling user's home, we might need them
+    if [[ -d "$calling_home/.ssh" ]]; then
+        print_info "Checking for SSH keys to share with websec user..."
+        
+        mkdir -p "$websec_ssh"
+        chmod 700 "$websec_ssh"
+        
+        # Copy config if exists
+        if [[ -f "$calling_home/.ssh/config" ]]; then
+            cp "$calling_home/.ssh/config" "$websec_ssh/"
+            print_info "Copied SSH config to websec user"
+        fi
+        
+        # Copy any keys referenced in config or standard keys if we are cloning via SSH
+        # Simple approach: Copy all key-like files (id_*) that are not .pub
+        # Better approach: If we are using a private repo with a specific key, we assume it's there.
+        # Given the context: user has a specific key ~/.ssh/websec
+        if [[ -f "$calling_home/.ssh/websec" ]]; then
+             cp "$calling_home/.ssh/websec" "$websec_ssh/"
+             print_info "Copied 'websec' key to websec user"
+        fi
+        
+        # Fix permissions
+        chown -R "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh"
+        chmod 600 "$websec_ssh"/*
+    fi
+}
+
 # Clone and Compile
 install_websec() {
     print_info "Installing WebSec..."
+    
+    # Ensure websec user has SSH access if needed
+    setup_websec_ssh
 
     if [[ -d "$INSTALL_DIR/.git" ]]; then
         print_info "Updating repository..."
@@ -269,7 +307,20 @@ install_websec() {
     else
         print_info "Cloning repository..."
         if [[ -d "$INSTALL_DIR" ]]; then rm -rf "$INSTALL_DIR"; mkdir -p "$INSTALL_DIR"; chown "$WEBSEC_USER:$WEBSEC_USER" "$INSTALL_DIR"; fi
-        sudo -u "$WEBSEC_USER" git clone "$REPO_URL" "$INSTALL_DIR"
+        # Try SSH clone first if config exists, else HTTPS
+        if [[ -f "$DATA_DIR/.ssh/config" ]]; then
+             # Try cloning with the likely alias (adjust if known, or try generic)
+             # If we don't know the alias, fall back to HTTPS immediately for safety if SSH fails
+             if ! sudo -u "$WEBSEC_USER" git clone "$REPO_URL" "$INSTALL_DIR"; then
+                 print_warning "Standard clone failed, trying SSH alias 'websec'..."
+                 if ! sudo -u "$WEBSEC_USER" git clone "websec:yrbane/websec.git" "$INSTALL_DIR"; then
+                     print_error "Clone failed."
+                     exit 1
+                 fi
+             fi
+        else
+             sudo -u "$WEBSEC_USER" git clone "$REPO_URL" "$INSTALL_DIR"
+        fi
     fi
 
     print_info "Compiling (this may take a few minutes)..."
@@ -392,7 +443,7 @@ setup_firewall() {
             if ! grep -q "\"$current_ip\"" "$config_file"; then
                 # Simple sed replacement to insert IP into whitelist array
                 # Assumes standard formatting: whitelist = [ ... ]
-                sed -i "/^whitelist = \[/ a \    \"$current_ip\"," "$config_file"
+                sed -i "/^whitelist = \[ / a \    \"$current_ip\"," "$config_file"
                 print_success "Added $current_ip to WebSec whitelist"
             fi
         fi
@@ -422,6 +473,10 @@ main() {
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
     echo "You can now start WebSec with:"
     echo -e "${BLUE}sudo systemctl start websec${NC}"
+    echo -e "Check status with:"
+    echo -e "${BLUE}sudo systemctl status websec${NC}"
+    echo -e "Check logs with:"
+    echo -e "${BLUE}sudo journalctl -u websec -f${NC}"
 }
 
 main "$@"
