@@ -272,18 +272,24 @@ setup_websec_ssh() {
             print_info "Copied SSH config to websec user"
         fi
         
-        # Copy 'websec' key specifically if it exists
-        if [[ -f "$calling_home/.ssh/websec" ]]; then
-             cp "$calling_home/.ssh/websec" "$target_key"
-             print_info "Copied 'websec' key to websec user as websec_key"
-        elif [[ -f "$calling_home/.ssh/id_rsa" ]]; then
-             cp "$calling_home/.ssh/id_rsa" "$target_key"
-             print_info "Copied 'id_rsa' key to websec user as websec_key"
+        # IMPORTANT: Do NOT overwrite existing key if it's already there!
+        # This avoids breaking keys generated on the server in previous runs.
+        if [[ -f "$target_key" ]]; then
+            print_info "Existing SSH key found, skipping copy."
+        else
+            # Copy 'websec' key specifically if it exists
+            if [[ -f "$calling_home/.ssh/websec" ]]; then
+                 cp "$calling_home/.ssh/websec" "$target_key"
+                 print_info "Copied 'websec' key to websec user as websec_key"
+            elif [[ -f "$calling_home/.ssh/id_rsa" ]]; then
+                 cp "$calling_home/.ssh/id_rsa" "$target_key"
+                 print_info "Copied 'id_rsa' key to websec user as websec_key"
+            fi
         fi
         
         # Also known_hosts to avoid prompt
         if [[ -f "$calling_home/.ssh/known_hosts" ]]; then
-             cp "$calling_home/.ssh/known_hosts" "$websec_ssh/"
+             cp -n "$calling_home/.ssh/known_hosts" "$websec_ssh/" # -n to not overwrite
         fi
         
         # Fix permissions
@@ -324,10 +330,18 @@ check_github_access() {
     print_info "Testing GitHub connectivity..."
     
     while true; do
+        # DEBUG: Print environment and key details
+        echo "[DEBUG] User running test: $(whoami)"
+        echo "[DEBUG] Target user: $WEBSEC_USER"
+        echo "[DEBUG] Key file: $key_file"
+        ls -l "$key_file" 2>/dev/null || echo "[DEBUG] Key file missing"
+        
         # Test SSH connection to GitHub - capture output
         # We run this as websec user, EXPLICITLY passing the key file to ssh command
-        OUTPUT=$(sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" ssh -v -i "$key_file" -o UserKnownHostsFile="$websec_ssh/known_hosts" -o StrictHostKeyChecking=no -T git@github.com 2>&1)
+        # Also pass HOME env just in case
+        OUTPUT=$(sudo -u "$WEBSEC_USER" env HOME="$DATA_DIR" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" ssh -v -i "$key_file" -o UserKnownHostsFile="$websec_ssh/known_hosts" -o StrictHostKeyChecking=no -T git@github.com 2>&1)
         
+        # ssh -T returns 1 on success (authenticated but no shell access) but prints success msg
         if echo "$OUTPUT" | grep -q "successfully authenticated"; then
             print_success "GitHub authentication successful"
             set -e # Re-enable exit on error
@@ -359,7 +373,7 @@ check_github_access() {
         echo "----------------------------------------------------------------"
         
         # Prompt to regenerate key
-        if ask_confirmation "Do you want to REGENERATE a new SSH key for deployment?" "n"; then
+        if ask_confirmation "Do you want to REGENERATE a new SSH key for deployment?"; then
             print_info "Removing previous keys..."
             rm -f "$websec_ssh"/id_* "$websec_ssh"/websec_*
         fi
@@ -429,7 +443,7 @@ install_websec() {
         if [[ -d "$INSTALL_DIR" ]]; then rm -rf "$INSTALL_DIR"; mkdir -p "$INSTALL_DIR"; chown "$WEBSEC_USER:$WEBSEC_USER" "$INSTALL_DIR"; fi
         
         if ! sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" git clone "$target_url" "$INSTALL_DIR"; then
-             print_error "Clone failed."
+             print_error "Clone failed. Please check permissions or token."
              exit 1
         fi
         print_success "Repository cloned"
