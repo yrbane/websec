@@ -1,3 +1,9 @@
+      __         __                 
+  __ / /_  ___  / /_  ____ ______ __
+ /_// __ \/ _ \/ __ \/ __ `/ ___// _
+  // / / /  __/ /_/ / /_/ / /   /_/ 
+ /_//_/ /_/\___/_.___/\__,_/_/      
+                                     
 # WebSec 🛡️
 
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org/)
@@ -128,7 +134,8 @@ threshold_block = 20        # Bloquer en dessous de 20/100
 threshold_challenge = 40    # Challenge entre 20 et 40
 
 [storage]
-type = "memory"             # ou "redis" pour la production
+type = "memory"             # ou "redis" pour la production, "sled" pour la persistance locale
+path = "websec.db"          # Chemin pour le stockage Sled
 ```
 
 Voir [config/websec.toml.example](config/websec.toml.example) pour toutes les options commentées en français.
