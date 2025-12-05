@@ -7,7 +7,7 @@
 #
 # Usage:
 #   Local install:  sudo bash install.sh
-#   Remote deploy:  ./install.sh <user@host> [options]
+#   Remote deploy:  ./install.sh [options] <user@host>
 #
 # Options (Remote deploy):
 #   -i <key_path>   Path to SSH private key
@@ -30,63 +30,6 @@ CONFIG_DIR="/etc/websec"
 LOG_DIR="/var/log/websec"
 DATA_DIR="/var/lib/websec"
 
-# --- Remote Deployment Logic ---
-
-# Check if running in remote deployment mode (argument provided and not running as root locally for install)
-if [[ $# -gt 0 ]]; then
-    TARGET="$1"
-    shift
-    
-    # Parse additional remote options
-    SSH_PORT=22
-    IDENTITY_ARGS=""
-    
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            -i|--identity)
-                IDENTITY_ARGS="-i $2"
-                shift 2
-                ;;
-            -p|--port)
-                SSH_PORT="$2"
-                shift 2
-                ;;
-            *)
-                echo "Unknown option: $1"
-                exit 1
-                ;;
-        esac
-    done
-
-    echo -e "${BLUE}[INFO]${NC} Preparing deployment to $TARGET..."
-
-    # 1. Verify SSH connection
-    echo -e "${BLUE}[INFO]${NC} Verifying SSH connection..."
-    # Removed BatchMode=yes to allow interaction (password/passphrase) and showing errors
-    if ssh $IDENTITY_ARGS -p $SSH_PORT -o ConnectTimeout=5 "$TARGET" "echo 'SSH OK'"; then
-        echo -e "${GREEN}[✓]${NC} SSH connection established"
-    else
-        echo -e "${RED}[✗]${NC} Unable to connect to $TARGET"
-        echo "Check your credentials, SSH keys, or ~/.ssh/config"
-        exit 1
-    fi
-
-    # 2. Copy install script
-    echo -e "${BLUE}[INFO]${NC} Transferring installation script..."
-    scp $IDENTITY_ARGS -P $SSH_PORT "$0" "$TARGET:/tmp/websec-install.sh"
-
-    # 3. Execute remote install
-    echo -e "${BLUE}[INFO]${NC} Starting remote installation..."
-    echo "----------------------------------------------------------------"
-    ssh $IDENTITY_ARGS -p $SSH_PORT -t "$TARGET" "chmod +x /tmp/websec-install.sh && sudo /tmp/websec-install.sh"
-    echo "----------------------------------------------------------------"
-
-    echo -e "${GREEN}[✓]${NC} Remote deployment finished!"
-    exit 0
-fi
-
-# --- Local Installation Logic ---
-
 # Function to print colored messages
 print_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -104,9 +47,105 @@ print_error() {
     echo -e "${RED}[✗]${NC} $1"
 }
 
+# Parse Arguments
+TARGET=""
+REMOTE_MODE=false
+SSH_PORT=22
+IDENTITY_ARGS=""
+
+# We assume remote mode if any arguments are passed (flags or target)
+if [[ $# -gt 0 ]]; then
+    REMOTE_MODE=true
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -i|--identity)
+                if [[ -z "$2" ]]; then
+                    echo "Error: Option $1 requires an argument"
+                    exit 1
+                fi
+                IDENTITY_ARGS="-i $2"
+                shift 2
+                ;; 
+            -p|--port)
+                if [[ -z "$2" ]]; then
+                    echo "Error: Option $1 requires an argument"
+                    exit 1
+                fi
+                SSH_PORT="$2"
+                shift 2
+                ;; 
+            -*)
+                echo "Unknown option: $1"
+                exit 1
+                ;; 
+            *)
+                if [[ -z "$TARGET" ]]; then
+                    TARGET="$1"
+                else
+                    echo "Error: Too many arguments provided (Target already set to '$TARGET', unexpected '$1')"
+                    exit 1
+                fi
+                shift
+                ;; 
+        esac
+    done
+fi
+
+# --- Remote Deployment Logic ---
+
+if [[ "$REMOTE_MODE" == "true" ]]; then
+    if [[ -z "$TARGET" ]]; then
+        echo "Error: Remote mode detected but no target specified."
+        echo "Usage: ./install.sh [options] <user@host>"
+        exit 1
+    fi
+
+    echo -e "${BLUE}[INFO]${NC} Preparing deployment to $TARGET..."
+
+    # 1. Verify SSH connection
+    echo -e "${BLUE}[INFO]${NC} Verifying SSH connection..."
+    # Use ConnectTimeout to fail fast if unreachable
+    # Allow interactive authentication (no BatchMode=yes)
+    if ssh $IDENTITY_ARGS -p $SSH_PORT -o ConnectTimeout=5 "$TARGET" "echo 'SSH OK'" 2>/dev/null; then
+        echo -e "${GREEN}[✓]${NC} SSH connection established"
+    else
+        echo -e "${RED}[✗]${NC} Unable to connect to $TARGET"
+        echo "-------------------------------------------------------"
+        echo "Trying again in verbose mode to show the error:"
+        ssh -v $IDENTITY_ARGS -p $SSH_PORT -o ConnectTimeout=5 "$TARGET" "exit"
+        echo "-------------------------------------------------------"
+        echo "Please check:"
+        echo "1. Your SSH key is added to the agent (ssh-add -l) or specified with -i"
+        echo "2. The user/host is correct"
+        echo "3. You can connect manually: ssh $TARGET"
+        exit 1
+    fi
+
+    # 2. Copy install script
+    echo -e "${BLUE}[INFO]${NC} Transferring installation script..."
+    if ! scp $IDENTITY_ARGS -P $SSH_PORT "$0" "$TARGET:/tmp/websec-install.sh"; then
+        print_error "Failed to copy script to remote server."
+        exit 1
+    fi
+
+    # 3. Execute remote install
+    echo -e "${BLUE}[INFO]${NC} Starting remote installation..."
+    echo "----------------------------------------------------------------"
+    # -t forces pseudo-tty allocation for sudo password prompt if needed
+    ssh $IDENTITY_ARGS -p $SSH_PORT -t "$TARGET" "chmod +x /tmp/websec-install.sh && sudo /tmp/websec-install.sh"
+    echo "----------------------------------------------------------------"
+
+    echo -e "${GREEN}[✓]${NC} Remote deployment finished!"
+    exit 0
+fi
+
+# --- Local Installation Logic ---
+
 # Check root
 if [[ $EUID -ne 0 ]]; then
-    print_error "This script must be run as root (use sudo)"
+    print_error "Local installation must be run as root (use sudo)"
+    echo "Usage: sudo ./install.sh"
     exit 1
 fi
 
@@ -125,26 +164,23 @@ install_dependencies() {
     local pkg_manager=$(detect_package_manager)
     local deps=("git" "gcc" "pkg-config" "libssl-dev")
     
-    # Redis is optional but recommended. We won't force install it here to keep it lightweight.
-    # The user can configure storage: memory or sled if they don't have redis.
-
     case "$pkg_manager" in
         apt)
             apt-get update
             apt-get install -y "${deps[@]}"
-            ;;
+            ;; 
         dnf|yum)
             # Map libssl-dev to openssl-devel
             deps=("git" "gcc" "pkg-config" "openssl-devel")
             $pkg_manager install -y "${deps[@]}"
-            ;;
+            ;; 
         pacman)
             deps=("git" "gcc" "pkg-config" "openssl")
             pacman -S --noconfirm "${deps[@]}"
-            ;;
+            ;; 
         *)
             print_warning "Unknown package manager. Please ensure dependencies are installed manually: ${deps[*]}"
-            ;;
+            ;; 
     esac
     print_success "Dependencies installed"
 }
@@ -205,9 +241,7 @@ install_websec() {
     # Compile
     print_info "Compiling (this may take a few minutes)..."
     cd "$INSTALL_DIR"
-    # We need to run cargo as the user who has rust installed (root in this context usually if run via sudo install.sh)
-    # Or if rust was installed for a specific user, we might need that.
-    # Assuming root has cargo in path from install_rust
+    # Source cargo env if needed
     source $HOME/.cargo/env 2>/dev/null || true
     
     cargo build --release --features tls
