@@ -280,11 +280,6 @@ setup_websec_ssh() {
              print_info "Copied 'id_rsa' key to websec user"
         fi
         
-        # Also known_hosts to avoid prompt
-        if [[ -f "$calling_home/.ssh/known_hosts" ]]; then
-             cp "$calling_home/.ssh/known_hosts" "$websec_ssh/"
-        fi
-        
         # Fix permissions
         chown -R "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh"
         chmod 600 "$websec_ssh"/*
@@ -292,49 +287,60 @@ setup_websec_ssh() {
     fi
 }
 
-# Check GitHub connectivity and generate key if needed
+# Check GitHub connectivity and loop until successful
 check_github_access() {
     local websec_ssh="$DATA_DIR/.ssh"
     local key_file="$websec_ssh/id_rsa"
     
+    # Ensure we trust GitHub host to avoid prompt
+    mkdir -p "$websec_ssh"
+    if ! grep -q "github.com" "$websec_ssh/known_hosts" 2>/dev/null; then
+        print_info "Adding github.com to known_hosts..."
+        ssh-keyscan github.com >> "$websec_ssh/known_hosts" 2>/dev/null
+        chown "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh/known_hosts"
+    fi
+
     # Configure git command environment
-    export GIT_SSH_COMMAND="ssh -i $key_file -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+    export GIT_SSH_COMMAND="ssh -i $key_file -o UserKnownHostsFile=$websec_ssh/known_hosts"
 
     print_info "Testing GitHub connectivity..."
     
-    # ssh -T returns 1 on success (authenticated but no shell access)
-    if sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
-        print_success "GitHub authentication successful"
-        return 0
-    fi
+    while true; do
+        # ssh -T returns 1 on success (authenticated but no shell access)
+        if sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+            print_success "GitHub authentication successful"
+            return 0
+        fi
 
-    print_warning "GitHub authentication failed or key missing."
-    
-    # Generate key if not exists
-    if [[ ! -f "$key_file" ]]; then
-        print_info "Generating new SSH key for websec user..."
-        mkdir -p "$websec_ssh"
-        chown "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh"
-        chmod 700 "$websec_ssh"
-        sudo -u "$WEBSEC_USER" ssh-keygen -t ed25519 -C "websec-deploy@$(hostname)" -f "$key_file" -N ""
-    fi
+        print_warning "GitHub authentication failed."
+        
+        # If key exists but fails, it might be the wrong one
+        if [[ -f "$key_file" ]]; then
+            echo -e "Current key fingerprint: $(ssh-keygen -lf $key_file | awk '{print $2}')"
+            if ask_confirmation "Do you want to REGENERATE a new key? (This will delete the current one)"; then
+                rm -f "$key_file" "$key_file.pub"
+            fi
+        fi
 
-    # Show public key
-    print_warning "Action required: Add this Deploy Key to your GitHub repository!"
-    echo "----------------------------------------------------------------"
-    cat "$key_file.pub"
-    echo "----------------------------------------------------------------"
-    echo "URL: https://github.com/yrbane/websec/settings/keys/new"
-    echo ""
-    
-    read -p "Press Enter once you have added the key to GitHub..."
-    
-    # Verify again
-    if sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
-        print_success "GitHub authentication confirmed!"
-    else
-        print_error "Still unable to authenticate. Continuing with HTTPS fallback (may fail for private repos)..."
-    fi
+        # Generate key if missing (or deleted above)
+        if [[ ! -f "$key_file" ]]; then
+            print_info "Generating new SSH key for websec user..."
+            mkdir -p "$websec_ssh"
+            chown "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh"
+            chmod 700 "$websec_ssh"
+            sudo -u "$WEBSEC_USER" ssh-keygen -t ed25519 -C "websec-deploy@$(hostname)" -f "$key_file" -N ""
+        fi
+
+        # Show public key
+        print_warning "ACTION REQUIRED: Add this Deploy Key to your GitHub repository!"
+        echo "----------------------------------------------------------------"
+        cat "$key_file.pub"
+        echo "----------------------------------------------------------------"
+        echo "URL: https://github.com/yrbane/websec/settings/keys/new"
+        echo ""
+        
+        read -p "Press Enter once you have added the key to GitHub to retry..."
+    done
 }
 
 # Clone and Compile
@@ -343,7 +349,7 @@ install_websec() {
     
     setup_websec_ssh
     
-    # Check connectivity and pause if needed
+    # Check connectivity loop
     check_github_access
 
     # Determine the correct remote URL
@@ -376,8 +382,8 @@ install_websec() {
         if [[ -d "$INSTALL_DIR" ]]; then rm -rf "$INSTALL_DIR"; mkdir -p "$INSTALL_DIR"; chown "$WEBSEC_USER:$WEBSEC_USER" "$INSTALL_DIR"; fi
         
         if ! sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" git clone "$target_url" "$INSTALL_DIR"; then
-             print_warning "Clone via SSH failed. Trying HTTPS fallback..."
-             sudo -u "$WEBSEC_USER" git clone "$REPO_URL_HTTPS" "$INSTALL_DIR"
+             print_error "Clone failed even with verified key. Please check permissions."
+             exit 1
         fi
         print_success "Repository cloned"
     fi
