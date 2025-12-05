@@ -335,6 +335,72 @@ EOF
     print_success "Systemd service installed and enabled"
 }
 
+# Configure UFW and Fail2Ban whitelists
+setup_firewall() {
+    print_info "Configuring firewall and whitelists..."
+
+    # Get current IP
+    local current_ip=""
+    if [[ -n "$SSH_CLIENT" ]]; then
+        current_ip=$(echo $SSH_CLIENT | awk '{print $1}')
+    elif [[ -n "$SSH_CONNECTION" ]]; then
+        current_ip=$(echo $SSH_CONNECTION | awk '{print $1}')
+    fi
+
+    if [[ -z "$current_ip" ]]; then
+        print_warning "Could not detect your IP address from SSH session."
+        echo -ne "${BLUE}Enter your IP address to whitelist (or leave empty to skip): ${NC}"
+        read current_ip
+    fi
+
+    if [[ -n "$current_ip" ]]; then
+        print_info "Whitelisting IP: $current_ip"
+
+        # Fail2Ban
+        if command -v fail2ban-client >/dev/null; then
+            print_info "Configuring Fail2Ban..."
+            # Add to ignoreip in jail.local if not present
+            local jail_local="/etc/fail2ban/jail.local"
+            if [[ ! -f "$jail_local" ]]; then
+                # Create if not exists, importing defaults
+                echo -e "[DEFAULT]\nignoreip = 127.0.0.1/8 ::1" > "$jail_local"
+            fi
+            
+            if ! grep -q "$current_ip" "$jail_local"; then
+                sed -i "/^ignoreip/ s/$/ $current_ip/" "$jail_local"
+                fail2ban-client reload >/dev/null
+                print_success "Added $current_ip to Fail2Ban ignoreip"
+            else
+                print_success "IP already whitelisted in Fail2Ban"
+            fi
+        else
+            print_warning "Fail2Ban not installed, skipping."
+        fi
+
+        # UFW
+        if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
+            print_info "Configuring UFW..."
+            ufw allow from "$current_ip" to any port ssh comment 'Allow SSH from admin IP'
+            ufw allow 80/tcp comment 'Allow HTTP'
+            ufw allow 443/tcp comment 'Allow HTTPS'
+            print_success "Allowed SSH, HTTP, HTTPS in UFW"
+        fi
+
+        # WebSec config
+        local config_file="$CONFIG_DIR/websec.toml"
+        if [[ -f "$config_file" ]]; then
+            if ! grep -q "\"$current_ip\"" "$config_file"; then
+                # Simple sed replacement to insert IP into whitelist array
+                # Assumes standard formatting: whitelist = [ ... ]
+                sed -i "/^whitelist = \[/ a \    \"$current_ip\"," "$config_file"
+                print_success "Added $current_ip to WebSec whitelist"
+            fi
+        fi
+    else
+        print_warning "No IP provided, skipping whitelist configuration."
+    fi
+}
+
 # Main execution
 main() {
     echo -e "${BLUE}"
@@ -349,6 +415,7 @@ main() {
     install_websec
     configure_websec
     install_systemd
+    setup_firewall
 
     echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${GREEN}✓ Installation Complete!${NC}"
