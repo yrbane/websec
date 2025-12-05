@@ -8,7 +8,7 @@ WebSec est un reverse proxy de sécurité intelligent qui protège vos applicati
 
 ### Prérequis
 
-- Rust 1.70 ou supérieur
+- Rust 1.75 ou supérieur
 - Git
 - Tokio runtime (inclus automatiquement)
 
@@ -16,11 +16,11 @@ WebSec est un reverse proxy de sécurité intelligent qui protège vos applicati
 
 ```bash
 # Cloner le dépôt
-git clone https://github.com/votre-org/websec.git
+git clone https://github.com/yrbane/websec.git
 cd websec
 
 # Compiler en mode release
-cargo build --release
+cargo build --release --features tls
 
 # Le binaire est disponible dans target/release/websec
 ./target/release/websec --version
@@ -33,7 +33,7 @@ cargo build --release
 WebSec utilise un fichier TOML pour la configuration. Copiez l'exemple fourni:
 
 ```bash
-cp config/websec.toml.example config/websec.toml
+cp config/websec.toml.example websec.toml
 ```
 
 ### Configuration minimale
@@ -48,12 +48,16 @@ workers = 4                        # Nombre de workers (CPU cores recommandé)
 base_score = 100                   # Score initial pour les nouvelles IPs
 threshold_allow = 70               # Seuil pour ALLOW (forward)
 threshold_ratelimit = 40           # Seuil pour RATE_LIMIT
-threshold_challenge = 20           # Seuil pour CHALLENGE (CAPTCHA)
+threshold_challenge = 20           # Seuil pour CHALLENGE (Captcha)
 threshold_block = 0                # Seuil pour BLOCK
 
 [logging]
 level = "info"                     # debug, info, warn, error
 format = "json"                    # json ou pretty
+
+[storage]
+type = "redis"
+redis_url = "redis://127.0.0.1:6379"
 ```
 
 ## Lancement
@@ -61,23 +65,24 @@ format = "json"                    # json ou pretty
 ### Mode simple
 
 ```bash
-# Utilise config/websec.toml par défaut
-./websec
+# Utilise websec.toml par défaut si défini dans la variable d'environnement
+export WEBSEC_CONFIG=websec.toml
+./target/release/websec run
 
-# Avec une config custom
-./websec --config /path/to/custom.toml
+# Avec une config spécifique
+./target/release/websec run --config /path/to/custom.toml
 ```
 
 ### Afficher la configuration
 
 ```bash
-./websec --show-config
+./target/release/websec show-config --config websec.toml
 ```
 
-### Mode verbose
+### Mode validation (dry-run)
 
 ```bash
-./websec --verbose
+./target/release/websec run --dry-run --config websec.toml
 ```
 
 ## Architecture de base
@@ -98,20 +103,20 @@ Client HTTP → WebSec Proxy → Détecteurs → Moteur de Décision → Backend
 6. **Action**:
    - **ALLOW**: Forward au backend
    - **RATE_LIMIT**: HTTP 429 (Too Many Requests)
-   - **CHALLENGE**: Afficher CAPTCHA mathématique
+   - **CHALLENGE**: Afficher CAPTCHA mathématique (à venir)
    - **BLOCK**: HTTP 403 (Forbidden)
 
 ## Détecteurs disponibles
 
-WebSec intègre 9 détecteurs de menaces:
+WebSec intègre 12 détecteurs de menaces organisés en stratégies:
 
-1. **BotDetector**: Détecte les bots malveillants (User-Agent suspects)
-2. **BruteForceDetector**: Tentatives de force brute sur login
-3. **FloodDetector**: Flooding et attaques DDoS
-4. **InjectionDetector**: SQL injection, XSS, Command injection
-5. **ScanDetector**: Scans de vulnérabilités
-6. **HeaderDetector**: Manipulation de headers HTTP
-7. **GeoDetector**: Filtrage géographique (pays à risque)
+1. **BotDetector**: Détecte les bots malveillants (User-Agent suspects, comportement)
+2. **BruteForceDetector**: Tentatives de force brute sur login et credential stuffing
+3. **FloodDetector**: Flooding et attaques DDoS (bursts)
+4. **InjectionDetector**: SQL injection, XSS, Command injection, Path traversal
+5. **ScanDetector**: Scans de vulnérabilités (404 bursts, fichiers sensibles)
+6. **HeaderDetector**: Manipulation de headers HTTP (Host, CRLF)
+7. **GeoDetector**: Filtrage géographique (pays à risque, impossible travel)
 8. **ProtocolDetector**: Violations de protocole HTTP
 9. **SessionDetector**: Hijacking et anomalies de session
 
@@ -128,13 +133,13 @@ Chaque IP a un score de 0 à 100:
 
 ### Decay temporel
 
-Les signaux de menace s'affaiblissent avec le temps:
+Les signaux de menace s'affaiblissent avec le temps (demi-vie configurable):
 - **half_life**: 24 heures par défaut
 - **Formule**: `poids_actuel = poids_initial * 0.5^(age/half_life)`
 
 ### Corrélation
 
-Si plusieurs types d'attaques sont détectés simultanément, un bonus de pénalité est appliqué (par défaut +10).
+Si plusieurs types d'attaques sont détectés simultanément (ex: SQLi + Scan), un bonus de pénalité est appliqué (par défaut +10).
 
 ## Exemples d'utilisation
 
@@ -151,7 +156,7 @@ threshold_challenge = 30
 ```
 
 ```bash
-./websec --config api.toml
+./target/release/websec run --config api.toml
 ```
 
 ### Protéger un site web avec authentification
@@ -164,7 +169,7 @@ backend = "http://localhost:8000"
 [reputation]
 base_score = 100
 threshold_allow = 70
-threshold_challenge = 25           # CAPTCHA pour IPs suspectes
+threshold_challenge = 25
 ```
 
 ### Mode développement
@@ -184,7 +189,7 @@ threshold_block = 10
 
 ### Headers de réponse
 
-WebSec ajoute des headers à chaque réponse:
+WebSec ajoute des headers à chaque réponse (sauf si bloqué):
 
 ```http
 X-WebSec-Decision: ALLOW
@@ -193,12 +198,13 @@ X-WebSec-Score: 85
 
 ### Métriques Prometheus
 
-Les métriques sont exposées via `MetricsRegistry::export_prometheus()`:
+Les métriques sont exposées sur un port dédié (défaut 9090):
 
 - `websec_requests_total`: Compteur total de requêtes
 - `websec_decisions{decision="allow|block|challenge|rate_limit"}`: Décisions par type
 - `websec_latency_seconds`: Histogramme de latence
 - `websec_reputation_score{ip}`: Score de réputation par IP
+- `websec_signals_total{signal_type="..."}`: Compteur par type de menace
 
 ### Logs structurés
 
@@ -224,13 +230,14 @@ Format JSON pour intégration avec ELK, Splunk, etc.:
 # Vérifier que le port n'est pas déjà utilisé
 sudo netstat -tulpn | grep 8080
 
-# Vérifier les permissions
-sudo ./websec  # Si besoin de bind sur port < 1024
+# Vérifier les permissions (ports < 1024)
+sudo setcap 'cap_net_bind_service=+ep' ./target/release/websec
+./target/release/websec run
 ```
 
 ### Trop de faux positifs
 
-Augmentez les seuils dans la configuration:
+Augmentez les seuils dans la configuration ou réduisez les poids des signaux spécifiques.
 
 ```toml
 [reputation]
@@ -245,19 +252,16 @@ threshold_challenge = 15   # Au lieu de 20
 [server]
 workers = 8  # Nombre de CPU cores
 
-# Vérifier les benchmarks
-cargo bench
+# Vérifier la santé du stockage
+./target/release/websec check-storage
 ```
 
 ## Prochaines étapes
 
 - [Configuration avancée](configuration.md)
-- [Architecture détaillée](architecture.md)
 - [Guide de déploiement](deployment.md)
-- [API de développement](api.md)
+- [Architecture détaillée](architecture.md)
 
 ## Support
 
-- Issues: https://github.com/votre-org/websec/issues
-- Documentation complète: https://websec.readthedocs.io
-- Chat: Discord/Slack (à créer)
+- Issues: https://github.com/yrbane/websec/issues
