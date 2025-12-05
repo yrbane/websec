@@ -12,6 +12,8 @@
 # Options (Remote deploy):
 #   -i <key_path>   Path to SSH private key. Overrides IdentityFile from ~/.ssh/config.
 #   -p <port>       SSH port. Overrides Port from ~/.ssh/config.
+#   --force-deploy  Skip SSH connection verification and force deployment attempt.
+#   --debug         Enable verbose script execution (set -x).
 #
 
 set -e
@@ -53,6 +55,8 @@ TARGET=""
 REMOTE_MODE=false
 SSH_PORT_ARG=""       # Will be "-p <port>" if user specified
 IDENTITY_FILE_ARG=""  # Will be "-i <key>" if user specified
+FORCE_DEPLOY=false
+DEBUG_MODE=false
 
 # We assume remote mode if any arguments are passed (flags or target)
 if [[ $# -gt 0 ]]; then
@@ -76,6 +80,14 @@ if [[ $# -gt 0 ]]; then
                 SSH_PORT_ARG="-p $2"
                 shift 2
                 ;; 
+            --force-deploy)
+                FORCE_DEPLOY=true
+                shift
+                ;; 
+            --debug)
+                DEBUG_MODE=true
+                shift
+                ;; 
             -*)
                 echo "Unknown option: $1"
                 exit 1
@@ -93,12 +105,13 @@ if [[ $# -gt 0 ]]; then
     done
 fi
 
+if [[ "$DEBUG_MODE" == "true" ]]; then
+    set -x
+fi
+
 # --- Remote Deployment Logic ---
 
 if [[ "$REMOTE_MODE" == "true" ]]; then
-    # Enable debug output for the script itself
-    set -x
-    
     if [[ -z "$TARGET" ]]; then
         echo "Error: Remote mode detected but no target specified."
         echo "Usage: ./install.sh [options] <user@host_or_alias>"
@@ -107,20 +120,22 @@ if [[ "$REMOTE_MODE" == "true" ]]; then
 
     echo -e "${BLUE}[INFO]${NC} Preparing deployment on $TARGET..."
 
-    # 1. Verify SSH connection
-    echo -e "${BLUE}[INFO]${NC} Verifying SSH connection..."
-    # Attempt connection with user-provided args, otherwise rely on ~/.ssh/config
-    # ConnectTimeout is crucial to not hang indefinitely
-    if ssh $IDENTITY_FILE_ARG $SSH_PORT_ARG -o ConnectTimeout=10 "$TARGET" "echo 'SSH OK'" 2>/dev/null; then
-        echo -e "${GREEN}[✓]${NC} SSH connection established"
+    # 1. Verify SSH connection (unless forced)
+    if [[ "$FORCE_DEPLOY" == "false" ]]; then
+        echo -e "${BLUE}[INFO]${NC} Verifying SSH connection..."
+        if ssh $IDENTITY_FILE_ARG $SSH_PORT_ARG -o ConnectTimeout=10 "$TARGET" "echo 'SSH OK'" 2>/dev/null; then
+            echo -e "${GREEN}[✓]${NC} SSH connection established"
+        else
+            echo -e "${RED}[✗]${NC} Unable to connect to $TARGET"
+            echo "-------------------------------------------------------"
+            echo "Debugging SSH connection to $TARGET (verbose output):"
+            ssh -v $IDENTITY_FILE_ARG $SSH_PORT_ARG "$TARGET" "exit" || true
+            echo "-------------------------------------------------------"
+            echo "Use --force-deploy to skip this check if you know what you are doing."
+            exit 1
+        fi
     else
-        echo -e "${RED}[✗]${NC} Unable to connect to $TARGET"
-        echo "-------------------------------------------------------"
-        echo "Debugging SSH connection to $TARGET (verbose output):"
-        # Try again in verbose mode to show the exact SSH error
-        ssh -v $IDENTITY_FILE_ARG $SSH_PORT_ARG "$TARGET" "exit"
-        echo "-------------------------------------------------------"
-        exit 1
+        print_warning "Skipping SSH verification (--force-deploy used)"
     fi
 
     # 2. Copy install script
@@ -133,13 +148,11 @@ if [[ "$REMOTE_MODE" == "true" ]]; then
     # 3. Execute remote install
     echo -e "${BLUE}[INFO]${NC} Starting remote installation..."
     echo "----------------------------------------------------------------"
-    # -t forces pseudo-tty allocation for sudo password prompt if needed
     ssh $IDENTITY_FILE_ARG $SSH_PORT_ARG -t "$TARGET" "chmod +x /tmp/websec-install.sh && sudo /tmp/websec-install.sh"
     echo "----------------------------------------------------------------"
 
     echo -e "${GREEN}[✓]${NC} Remote deployment finished!"
-    # Disable debug output before exiting
-    set +x
+    if [[ "$DEBUG_MODE" == "true" ]]; then set +x; fi
     exit 0
 fi
 
@@ -191,7 +204,6 @@ install_dependencies() {
             apt-get install -y "${deps[@]}"
             ;; 
         dnf|yum)
-            # Map libssl-dev to openssl-devel
             deps=("git" "gcc" "pkg-config" "openssl-devel")
             $pkg_manager install -y "${deps[@]}"
             ;; 
@@ -223,7 +235,6 @@ install_rust() {
 setup_user_and_dirs() {
     print_info "Setting up user and directories..."
 
-    # Create user
     if ! id "$WEBSEC_USER" &>/dev/null; then
         useradd -r -s /bin/false -d "$DATA_DIR" "$WEBSEC_USER"
         print_success "User '$WEBSEC_USER' created"
@@ -231,12 +242,8 @@ setup_user_and_dirs() {
         print_success "User '$WEBSEC_USER' already exists"
     fi
 
-    # Create directories
     mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$LOG_DIR" "$DATA_DIR"
-    
-    # Set permissions
     chown -R "$WEBSEC_USER:$WEBSEC_USER" "$INSTALL_DIR" "$LOG_DIR" "$DATA_DIR"
-    # Config dir owned by root, readable by websec
     chown root:"$WEBSEC_USER" "$CONFIG_DIR"
     chmod 750 "$CONFIG_DIR"
     
@@ -247,14 +254,13 @@ setup_user_and_dirs() {
 install_websec() {
     print_info "Installing WebSec..."
 
-    # Clone or pull
     if [[ -d "$INSTALL_DIR/.git" ]]; then
         print_info "Updating repository..."
         cd "$INSTALL_DIR"
+        
         # Ensure correct ownership for git operations
         if ! sudo -u "$WEBSEC_USER" git pull; then
-            print_warning "Git pull failed (SSH issue?). Falling back to HTTPS reset..."
-            # Force HTTPS remote to avoid SSH key issues on server
+            print_warning "Git pull failed. Falling back to HTTPS reset..."
             sudo -u "$WEBSEC_USER" git remote set-url origin "$REPO_URL"
             sudo -u "$WEBSEC_USER" git fetch origin
             sudo -u "$WEBSEC_USER" git reset --hard origin/main
@@ -262,24 +268,18 @@ install_websec() {
         fi
     else
         print_info "Cloning repository..."
-        # Ensure empty dir before clone
         if [[ -d "$INSTALL_DIR" ]]; then rm -rf "$INSTALL_DIR"; mkdir -p "$INSTALL_DIR"; chown "$WEBSEC_USER:$WEBSEC_USER" "$INSTALL_DIR"; fi
         sudo -u "$WEBSEC_USER" git clone "$REPO_URL" "$INSTALL_DIR"
     fi
 
-    # Compile
     print_info "Compiling (this may take a few minutes)..."
     cd "$INSTALL_DIR"
-    # Source cargo env if needed
     source $HOME/.cargo/env 2>/dev/null || true
     
     cargo build --release --features tls
     
-    # Install binary to system path
     cp "$INSTALL_DIR/target/release/websec" /usr/local/bin/websec
     chmod 755 /usr/local/bin/websec
-    
-    # Set capabilities
     setcap 'cap_net_bind_service=+ep' /usr/local/bin/websec
     
     print_success "WebSec compiled and installed to /usr/local/bin/websec"
@@ -288,23 +288,17 @@ install_websec() {
 # Configure
 configure_websec() {
     print_info "Configuring WebSec..."
-    
     local config_file="$CONFIG_DIR/websec.toml"
     
     if [[ ! -f "$config_file" ]]; then
         cp "$INSTALL_DIR/config/websec.toml.example" "$config_file"
-        chown root:"$WEBSEC_USER" "$CONFIG_DIR"
-        chmod 750 "$CONFIG_DIR"
         chown root:"$WEBSEC_USER" "$config_file"
         chmod 640 "$config_file"
         
-        # Customize for systemd path
-        # Use sled by default for easy install
         sed -i 's|type = "redis"|type = "sled"|' "$config_file"
         sed -i 's|# path = "websec.db"|path = "/var/lib/websec/websec.db"|' "$config_file"
         
         print_success "Default configuration installed at $config_file"
-        print_info "Default storage set to Sled (embedded DB) at $DATA_DIR/websec.db"
     else
         print_info "Configuration already exists, skipping overwrite"
     fi
@@ -327,7 +321,6 @@ ExecStart=/usr/local/bin/websec run
 Environment=WEBSEC_CONFIG=$CONFIG_DIR/websec.toml
 Restart=always
 RestartSec=5
-# Security hardening
 NoNewPrivileges=yes
 ProtectSystem=full
 ProtectHome=yes
@@ -362,10 +355,6 @@ main() {
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
     echo "You can now start WebSec with:"
     echo -e "${BLUE}sudo systemctl start websec${NC}"
-    echo -e "Check status with:"
-    echo -e "${BLUE}sudo systemctl status websec${NC}"
-    echo -e "Check logs with:"
-    echo -e "${BLUE}sudo journalctl -u websec -f${NC}"
 }
 
 main "$@"
