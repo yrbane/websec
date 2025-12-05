@@ -280,6 +280,11 @@ setup_websec_ssh() {
              print_info "Copied 'id_rsa' key to websec user"
         fi
         
+        # Also known_hosts to avoid prompt
+        if [[ -f "$calling_home/.ssh/known_hosts" ]]; then
+             cp "$calling_home/.ssh/known_hosts" "$websec_ssh/"
+        fi
+        
         # Fix permissions
         chown -R "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh"
         chmod 600 "$websec_ssh"/*
@@ -314,7 +319,7 @@ check_github_access() {
 
         print_warning "GitHub authentication failed."
         
-        # If key exists but fails, it might be the wrong one
+        # If key exists but fails, it might be the wrong one or not authorized
         if [[ -f "$key_file" ]]; then
             echo -e "Current key fingerprint: $(ssh-keygen -lf $key_file | awk '{print $2}')"
             if ask_confirmation "Do you want to REGENERATE a new key? (This will delete the current one)"; then
@@ -328,7 +333,8 @@ check_github_access() {
             mkdir -p "$websec_ssh"
             chown "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh"
             chmod 700 "$websec_ssh"
-            sudo -u "$WEBSEC_USER" ssh-keygen -t ed25519 -C "websec-deploy@$(hostname)" -f "$key_file" -N ""
+            # Generate ed25519 key (standard, widely supported, cleaner format)
+            sudo -u "$WEBSEC_USER" ssh-keygen -t ed25519 -C "websec-deploy@$(hostname)" -f "$key_file" -N "" -q
         fi
 
         # Show public key
