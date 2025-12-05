@@ -257,6 +257,7 @@ setup_websec_ssh() {
     local calling_home=$(eval echo ~"$calling_user")
     local websec_home="$DATA_DIR"
     local websec_ssh="$websec_home/.ssh"
+    local target_key="$websec_ssh/websec_key" # Standardize on websec_key
 
     # If there is an SSH config or keys in the calling user's home, we might need them
     if [[ -d "$calling_home/.ssh" ]]; then
@@ -271,13 +272,13 @@ setup_websec_ssh() {
             print_info "Copied SSH config to websec user"
         fi
         
-        # Copy 'websec' key specifically if it exists
+        # Copy key to websec_key (standardized name)
         if [[ -f "$calling_home/.ssh/websec" ]]; then
-             cp "$calling_home/.ssh/websec" "$websec_ssh/id_rsa"
-             print_info "Copied 'websec' key to websec user as id_rsa"
+             cp "$calling_home/.ssh/websec" "$target_key"
+             print_info "Copied 'websec' key to websec user as websec_key"
         elif [[ -f "$calling_home/.ssh/id_rsa" ]]; then
-             cp "$calling_home/.ssh/id_rsa" "$websec_ssh/id_rsa"
-             print_info "Copied 'id_rsa' key to websec user"
+             cp "$calling_home/.ssh/id_rsa" "$target_key"
+             print_info "Copied 'id_rsa' key to websec user as websec_key"
         fi
         
         # Also known_hosts to avoid prompt
@@ -296,7 +297,7 @@ setup_websec_ssh() {
 check_github_access() {
     set +e  # Temporarily disable exit on error to handle SSH checks gracefully
     local websec_ssh="$DATA_DIR/.ssh"
-    local key_file="$websec_ssh/websec_key" # New standardized key filename
+    local key_file="$websec_ssh/websec_key" # Consistent key file path
     local pub_key_file="$key_file.pub"
     
     # Ensure we trust GitHub host to avoid prompt
@@ -308,7 +309,7 @@ check_github_access() {
         chmod 600 "$websec_ssh/known_hosts"
     fi
 
-    # Ensure permissions are correct
+    # Ensure permissions are correct for the key we want to use
     chown -R "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh"
     chmod 700 "$websec_ssh"
     if [[ -f "$key_file" ]]; then
@@ -317,6 +318,7 @@ check_github_access() {
     fi
 
     # Configure git command environment
+    # Explicitly point to websec_key
     export GIT_SSH_COMMAND="ssh -i $key_file -o UserKnownHostsFile=$websec_ssh/known_hosts -o StrictHostKeyChecking=no"
 
     print_info "Testing GitHub connectivity..."
@@ -324,7 +326,6 @@ check_github_access() {
     while true; do
         # Test SSH connection to GitHub - capture output
         # We run this as websec user
-        # Added -v for verbose output to see which key is offered
         OUTPUT=$(sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" ssh -v -T git@github.com 2>&1)
         
         # ssh -T returns 1 on success (authenticated but no shell access) but prints success msg
@@ -337,14 +338,14 @@ check_github_access() {
         print_warning "GitHub authentication failed."
         echo "----------------------------------------------------------------"
         echo "Last error details from SSH:"
-        # Filter for relevant errors, including key offer details
         echo "$OUTPUT" | grep -E "Permission denied|Authentication failed|timed out|Could not resolve|Connection refused|Offering public key|Server accepted key" | tail -n 10
         echo "----------------------------------------------------------------"
         
         # Prompt to regenerate key
         if ask_confirmation "Do you want to REGENERATE a new SSH key for deployment?"; then
-            print_info "Removing previous key and generating a new one..."
-            rm -f "$key_file" "$pub_key_file"
+            print_info "Removing previous keys..."
+            # Remove ALL keys to avoid confusion (id_rsa, websec_key, etc)
+            rm -f "$websec_ssh"/id_* "$websec_ssh"/websec_*
         fi
 
         # Generate key if missing (or just removed)
