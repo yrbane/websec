@@ -257,7 +257,7 @@ setup_websec_ssh() {
     local calling_home=$(eval echo ~"$calling_user")
     local websec_home="$DATA_DIR"
     local websec_ssh="$websec_home/.ssh"
-    local target_key="$websec_ssh/websec_key" # Standardize on websec_key
+    local target_key="$websec_ssh/websec_key"
 
     # If there is an SSH config or keys in the calling user's home, we might need them
     if [[ -d "$calling_home/.ssh" ]]; then
@@ -297,7 +297,7 @@ setup_websec_ssh() {
 check_github_access() {
     set +e  # Temporarily disable exit on error to handle SSH checks gracefully
     local websec_ssh="$DATA_DIR/.ssh"
-    local key_file="$websec_ssh/websec_key" # Consistent key file path
+    local key_file="$websec_ssh/websec_key"
     local pub_key_file="$key_file.pub"
     
     # Ensure we trust GitHub host to avoid prompt
@@ -309,7 +309,7 @@ check_github_access() {
         chmod 600 "$websec_ssh/known_hosts"
     fi
 
-    # Ensure permissions are correct for the key we want to use
+    # Ensure permissions are correct
     chown -R "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh"
     chmod 700 "$websec_ssh"
     if [[ -f "$key_file" ]]; then
@@ -318,17 +318,22 @@ check_github_access() {
     fi
 
     # Configure git command environment
-    # Explicitly point to websec_key
     export GIT_SSH_COMMAND="ssh -i $key_file -o UserKnownHostsFile=$websec_ssh/known_hosts -o StrictHostKeyChecking=no"
 
     print_info "Testing GitHub connectivity..."
     
     while true; do
+        # DEBUG: Print environment and key details
+        echo "[DEBUG] User: $(whoami)"
+        echo "[DEBUG] Target user: $WEBSEC_USER"
+        echo "[DEBUG] Key file: $key_file"
+        ls -l "$key_file" || echo "[DEBUG] Key file missing"
+        echo "[DEBUG] GIT_SSH_COMMAND: $GIT_SSH_COMMAND"
+
         # Test SSH connection to GitHub - capture output
-        # We run this as websec user
+        # Enable detailed SSH debugging
         OUTPUT=$(sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" ssh -v -T git@github.com 2>&1)
         
-        # ssh -T returns 1 on success (authenticated but no shell access) but prints success msg
         if echo "$OUTPUT" | grep -q "successfully authenticated"; then
             print_success "GitHub authentication successful"
             set -e # Re-enable exit on error
@@ -337,21 +342,19 @@ check_github_access() {
 
         print_warning "GitHub authentication failed."
         echo "----------------------------------------------------------------"
-        echo "Last error details from SSH:"
-        echo "$OUTPUT" | grep -E "Permission denied|Authentication failed|timed out|Could not resolve|Connection refused|Offering public key|Server accepted key" | tail -n 10
+        echo "SSH DEBUG OUTPUT (Last 20 lines):"
+        echo "$OUTPUT" | tail -n 20
         echo "----------------------------------------------------------------"
         
         # Prompt to regenerate key
         if ask_confirmation "Do you want to REGENERATE a new SSH key for deployment?"; then
             print_info "Removing previous keys..."
-            # Remove ALL keys to avoid confusion (id_rsa, websec_key, etc)
             rm -f "$websec_ssh"/id_* "$websec_ssh"/websec_*
         fi
 
         # Generate key if missing (or just removed)
         if [[ ! -f "$key_file" ]]; then
             print_info "Generating new SSH key: $key_file"
-            # Remove spaces from hostname just in case
             local host_clean=$(hostname | tr -d '[:space:]')
             sudo -u "$WEBSEC_USER" ssh-keygen -t ed25519 -C "websec_user@$host_clean" -f "$key_file" -N "" -q
             chmod 600 "$key_file"
