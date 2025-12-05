@@ -272,7 +272,7 @@ setup_websec_ssh() {
             print_info "Copied SSH config to websec user"
         fi
         
-        # Copy key to websec_key (standardized name)
+        # Copy 'websec' key specifically if it exists
         if [[ -f "$calling_home/.ssh/websec" ]]; then
              cp "$calling_home/.ssh/websec" "$target_key"
              print_info "Copied 'websec' key to websec user as websec_key"
@@ -297,7 +297,7 @@ setup_websec_ssh() {
 check_github_access() {
     set +e  # Temporarily disable exit on error to handle SSH checks gracefully
     local websec_ssh="$DATA_DIR/.ssh"
-    local key_file="$websec_ssh/websec_key"
+    local key_file="$websec_ssh/websec_key" # New standardized key filename
     local pub_key_file="$key_file.pub"
     
     # Ensure we trust GitHub host to avoid prompt
@@ -318,22 +318,18 @@ check_github_access() {
     fi
 
     # Configure git command environment
+    # Explicitly point to websec_key
     export GIT_SSH_COMMAND="ssh -i $key_file -o UserKnownHostsFile=$websec_ssh/known_hosts -o StrictHostKeyChecking=no"
 
     print_info "Testing GitHub connectivity..."
     
     while true; do
-        # DEBUG: Print environment and key details
-        echo "[DEBUG] User: $(whoami)"
-        echo "[DEBUG] Target user: $WEBSEC_USER"
-        echo "[DEBUG] Key file: $key_file"
-        ls -l "$key_file" || echo "[DEBUG] Key file missing"
-        echo "[DEBUG] GIT_SSH_COMMAND: $GIT_SSH_COMMAND"
-
         # Test SSH connection to GitHub - capture output
-        # Enable detailed SSH debugging
-        OUTPUT=$(sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" ssh -v -T git@github.com 2>&1)
+        # We run this as websec user, EXPLICITLY passing the key file to ssh command as well
+        # GIT_SSH_COMMAND is ignored by raw ssh command
+        OUTPUT=$(sudo -u "$WEBSEC_USER" ssh -v -i "$key_file" -o UserKnownHostsFile="$websec_ssh/known_hosts" -o StrictHostKeyChecking=no -T git@github.com 2>&1)
         
+        # ssh -T returns 1 on success (authenticated but no shell access) but prints success msg
         if echo "$OUTPUT" | grep -q "successfully authenticated"; then
             print_success "GitHub authentication successful"
             set -e # Re-enable exit on error
@@ -342,8 +338,8 @@ check_github_access() {
 
         print_warning "GitHub authentication failed."
         echo "----------------------------------------------------------------"
-        echo "SSH DEBUG OUTPUT (Last 20 lines):"
-        echo "$OUTPUT" | tail -n 20
+        echo "Last error details from SSH:"
+        echo "$OUTPUT" | grep -E "Permission denied|Authentication failed|timed out|Could not resolve|Connection refused|Offering public key|Server accepted key" | tail -n 10
         echo "----------------------------------------------------------------"
         
         # Prompt to regenerate key
