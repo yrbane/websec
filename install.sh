@@ -32,7 +32,6 @@ CONFIG_DIR="/etc/websec"
 LOG_DIR="/var/log/websec"
 DATA_DIR="/var/lib/websec"
 REPO_URL_HTTPS="https://github.com/yrbane/websec.git"
-# Try to detect if a custom alias 'websec' is likely to be used, otherwise standard SSH URL
 REPO_URL_SSH="git@github.com:yrbane/websec.git"
 
 # Function to print colored messages
@@ -266,16 +265,13 @@ setup_websec_ssh() {
         mkdir -p "$websec_ssh"
         chmod 700 "$websec_ssh"
         
-        # Copy config if exists
-        if [[ -f "$calling_home/.ssh/config" ]]; then
-            cp "$calling_home/.ssh/config" "$websec_ssh/"
-            print_info "Copied SSH config to websec user"
-        fi
-        
-        # Copy 'websec' key specifically if it exists (as per user setup)
+        # Copy 'websec' key specifically if it exists
         if [[ -f "$calling_home/.ssh/websec" ]]; then
-             cp "$calling_home/.ssh/websec" "$websec_ssh/"
-             print_info "Copied 'websec' key to websec user"
+             cp "$calling_home/.ssh/websec" "$websec_ssh/id_rsa"
+             print_info "Copied 'websec' key to websec user as id_rsa"
+        elif [[ -f "$calling_home/.ssh/id_rsa" ]]; then
+             cp "$calling_home/.ssh/id_rsa" "$websec_ssh/id_rsa"
+             print_info "Copied 'id_rsa' key to websec user"
         fi
         
         # Also known_hosts to avoid prompt
@@ -297,12 +293,13 @@ install_websec() {
     setup_websec_ssh
 
     # Determine the correct remote URL
-    # If we have SSH keys/config, we prefer SSH alias 'websec' or git@github.com
+    # Fallback to standard SSH URL if alias fails
     local target_url="$REPO_URL_HTTPS"
-    if [[ -f "$DATA_DIR/.ssh/websec" ]]; then
-        # If specific key 'websec' exists, assume alias 'websec' in config or use it
-        target_url="websec:yrbane/websec.git"
-        print_info "Using SSH URL with key: $target_url"
+    
+    # Check if we have a key
+    if [[ -f "$DATA_DIR/.ssh/id_rsa" ]]; then
+        target_url="$REPO_URL_SSH"
+        print_info "Using Standard SSH URL: $target_url"
     fi
 
     if [[ -d "$INSTALL_DIR/.git" ]]; then
@@ -317,12 +314,16 @@ install_websec() {
              sudo -u "$WEBSEC_USER" git remote set-url origin "$target_url"
         fi
         
+        # Config git to use the key without StrictHostKeyChecking issue for github
+        export GIT_SSH_COMMAND="ssh -i $DATA_DIR/.ssh/id_rsa -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+        
         # Ensure correct ownership for git operations
-        if ! sudo -u "$WEBSEC_USER" git pull; then
+        # Pass the env var to sudo
+        if ! sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" git pull; then
             print_warning "Git pull failed."
             print_info "Attempting hard reset..."
-            sudo -u "$WEBSEC_USER" git fetch origin
-            sudo -u "$WEBSEC_USER" git reset --hard origin/main
+            sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" git fetch origin
+            sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" git reset --hard origin/main
             print_success "Repository updated (reset)"
         else
             print_success "Repository updated"
@@ -331,7 +332,9 @@ install_websec() {
         print_info "Cloning repository..."
         if [[ -d "$INSTALL_DIR" ]]; then rm -rf "$INSTALL_DIR"; mkdir -p "$INSTALL_DIR"; chown "$WEBSEC_USER:$WEBSEC_USER" "$INSTALL_DIR"; fi
         
-        if ! sudo -u "$WEBSEC_USER" git clone "$target_url" "$INSTALL_DIR"; then
+        export GIT_SSH_COMMAND="ssh -i $DATA_DIR/.ssh/id_rsa -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+        
+        if ! sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" git clone "$target_url" "$INSTALL_DIR"; then
              print_warning "Clone with $target_url failed. Trying HTTPS fallback..."
              sudo -u "$WEBSEC_USER" git clone "$REPO_URL_HTTPS" "$INSTALL_DIR"
         fi
