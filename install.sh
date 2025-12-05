@@ -7,11 +7,11 @@
 #
 # Usage:
 #   Local install:  sudo bash install.sh
-#   Remote deploy:  ./install.sh [options] <user@host>
+#   Remote deploy:  ./install.sh [options] <user@host_or_alias>
 #
 # Options (Remote deploy):
-#   -i <key_path>   Path to SSH private key
-#   -p <port>       SSH port (default: 22)
+#   -i <key_path>   Path to SSH private key. Overrides IdentityFile from ~/.ssh/config.
+#   -p <port>       SSH port. Overrides Port from ~/.ssh/config.
 #
 
 set -e
@@ -50,8 +50,8 @@ print_error() {
 # Parse Arguments
 TARGET=""
 REMOTE_MODE=false
-SSH_PORT=22
-IDENTITY_ARGS=""
+SSH_PORT_ARG=""       # Will be "-p <port>" if user specified
+IDENTITY_FILE_ARG=""  # Will be "-i <key>" if user specified
 
 # We assume remote mode if any arguments are passed (flags or target)
 if [[ $# -gt 0 ]]; then
@@ -64,7 +64,7 @@ if [[ $# -gt 0 ]]; then
                     echo "Error: Option $1 requires an argument"
                     exit 1
                 fi
-                IDENTITY_ARGS="-i $2"
+                IDENTITY_FILE_ARG="-i $2"
                 shift 2
                 ;; 
             -p|--port)
@@ -72,7 +72,7 @@ if [[ $# -gt 0 ]]; then
                     echo "Error: Option $1 requires an argument"
                     exit 1
                 fi
-                SSH_PORT="$2"
+                SSH_PORT_ARG="-p $2"
                 shift 2
                 ;; 
             -*)
@@ -97,34 +97,37 @@ fi
 if [[ "$REMOTE_MODE" == "true" ]]; then
     if [[ -z "$TARGET" ]]; then
         echo "Error: Remote mode detected but no target specified."
-        echo "Usage: ./install.sh [options] <user@host>"
+        echo "Usage: ./install.sh [options] <user@host_or_alias>"
         exit 1
     fi
 
-    echo -e "${BLUE}[INFO]${NC} Preparing deployment to $TARGET..."
+    echo -e "${BLUE}[INFO]${NC} Preparing deployment on $TARGET..."
 
     # 1. Verify SSH connection
     echo -e "${BLUE}[INFO]${NC} Verifying SSH connection..."
-    # Use ConnectTimeout to fail fast if unreachable
-    # Allow interactive authentication (no BatchMode=yes)
-    if ssh $IDENTITY_ARGS -p $SSH_PORT -o ConnectTimeout=5 "$TARGET" "echo 'SSH OK'" 2>/dev/null; then
+    # Attempt connection with user-provided args, otherwise rely on ~/.ssh/config
+    if ssh $IDENTITY_FILE_ARG $SSH_PORT_ARG -o ConnectTimeout=10 "$TARGET" "echo 'SSH OK'" 2>/dev/null; then
         echo -e "${GREEN}[✓]${NC} SSH connection established"
     else
         echo -e "${RED}[✗]${NC} Unable to connect to $TARGET"
         echo "-------------------------------------------------------"
-        echo "Trying again in verbose mode to show the error:"
-        ssh -v $IDENTITY_ARGS -p $SSH_PORT -o ConnectTimeout=5 "$TARGET" "exit"
+        echo "Debugging SSH connection to $TARGET..."
+        # Try again in verbose mode to show the exact SSH error
+        # Use -G to show resolved config, but only if it matches a Host directly, otherwise it might just try to connect
+        # Best to just show -v output
+        ssh -v $IDENTITY_FILE_ARG $SSH_PORT_ARG "$TARGET" "exit"
         echo "-------------------------------------------------------"
         echo "Please check:"
         echo "1. Your SSH key is added to the agent (ssh-add -l) or specified with -i"
-        echo "2. The user/host is correct"
-        echo "3. You can connect manually: ssh $TARGET"
+        echo "2. The user@host or alias is correct (e.g., 'debian@nethttp.net' or 'nethttp')"
+        echo "3. The specified port ($SSH_PORT_ARG if used) matches the remote SSH server port."
+        echo "4. Your local ~/.ssh/config for Host '$TARGET' or its domain."
         exit 1
     fi
 
     # 2. Copy install script
     echo -e "${BLUE}[INFO]${NC} Transferring installation script..."
-    if ! scp $IDENTITY_ARGS -P $SSH_PORT "$0" "$TARGET:/tmp/websec-install.sh"; then
+    if ! scp $IDENTITY_FILE_ARG $SSH_PORT_ARG "$0" "$TARGET:/tmp/websec-install.sh"; then
         print_error "Failed to copy script to remote server."
         exit 1
     fi
@@ -133,7 +136,7 @@ if [[ "$REMOTE_MODE" == "true" ]]; then
     echo -e "${BLUE}[INFO]${NC} Starting remote installation..."
     echo "----------------------------------------------------------------"
     # -t forces pseudo-tty allocation for sudo password prompt if needed
-    ssh $IDENTITY_ARGS -p $SSH_PORT -t "$TARGET" "chmod +x /tmp/websec-install.sh && sudo /tmp/websec-install.sh"
+    ssh $IDENTITY_FILE_ARG $SSH_PORT_ARG -t "$TARGET" "chmod +x /tmp/websec-install.sh && sudo /tmp/websec-install.sh"
     echo "----------------------------------------------------------------"
 
     echo -e "${GREEN}[✓]${NC} Remote deployment finished!"
@@ -157,6 +160,24 @@ detect_package_manager() {
     elif command -v pacman >/dev/null; then echo "pacman";
     else echo "unknown"; fi
 }
+
+# Function to ask user confirmation
+ask_confirmation() {
+    local prompt="$1"
+    local default="${2:-n}"
+
+    if [[ "$default" == "y" ]]; then
+        prompt="$prompt [Y/n]: "
+    else
+        prompt="$prompt [y/N]: "
+    fi
+
+    read -p "$prompt" response
+    response=${response:-$default}
+
+    [[ "$response" =~ ^[Yy]$ ]]
+}
+
 
 # Install dependencies
 install_dependencies() {
@@ -264,6 +285,8 @@ configure_websec() {
     
     if [[ ! -f "$config_file" ]]; then
         cp "$INSTALL_DIR/config/websec.toml.example" "$config_file"
+        chown root:"$WEBSEC_USER" "$CONFIG_DIR"
+        chmod 750 "$CONFIG_DIR"
         chown root:"$WEBSEC_USER" "$config_file"
         chmod 640 "$config_file"
         
