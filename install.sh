@@ -299,6 +299,7 @@ check_github_access() {
     local websec_ssh="$DATA_DIR/.ssh"
     local key_file="$websec_ssh/websec_key" # New standardized key filename
     local pub_key_file="$key_file.pub"
+    local failed_attempts=0
     
     # Ensure we trust GitHub host to avoid prompt
     mkdir -p "$websec_ssh"
@@ -333,6 +334,24 @@ check_github_access() {
         fi
 
         print_warning "GitHub authentication failed."
+        failed_attempts=$((failed_attempts + 1))
+
+        # Fallback to HTTPS Token after 2 attempts
+        if [[ $failed_attempts -ge 2 ]]; then
+            if ask_confirmation "SSH authentication keeps failing. Switch to HTTPS with Personal Access Token (PAT)?" "y"; then
+                echo -ne "${BLUE}Enter GitHub Username: ${NC}"
+                read gh_user
+                echo -ne "${BLUE}Enter Personal Access Token (PAT): ${NC}"
+                read gh_token
+                
+                # Construct HTTPS URL with token
+                export REPO_URL_TOKEN="https://${gh_user}:${gh_token}@github.com/yrbane/websec.git"
+                print_success "Switched to HTTPS with Token."
+                set -e
+                return 0
+            fi
+        fi
+
         echo "----------------------------------------------------------------"
         echo "Last error details from SSH:"
         echo "$OUTPUT" | grep -E "Permission denied|Authentication failed|timed out|Could not resolve|Connection refused|Offering public key|Server accepted key" | tail -n 10
@@ -373,11 +392,16 @@ install_websec() {
     
     setup_websec_ssh
     
-    # Check connectivity loop
+    # Check connectivity loop (may switch to HTTPS token)
     check_github_access
 
     # Determine the correct remote URL
-    local target_url="$REPO_URL_SSH" # Always use SSH now after check_github_access
+    local target_url="$REPO_URL_SSH" 
+    
+    # If HTTPS token was configured in check_github_access
+    if [[ -n "$REPO_URL_TOKEN" ]]; then
+        target_url="$REPO_URL_TOKEN"
+    fi
     
     if [[ -d "$INSTALL_DIR/.git" ]]; then
         print_info "Updating repository..."
@@ -392,6 +416,7 @@ install_websec() {
         fi
         
         # Ensure correct ownership for git operations
+        # If using Token, we don't need GIT_SSH_COMMAND, but it doesn't hurt
         if ! sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" git pull; then
             print_warning "Git pull failed."
             print_info "Attempting hard reset..."
@@ -406,7 +431,7 @@ install_websec() {
         if [[ -d "$INSTALL_DIR" ]]; then rm -rf "$INSTALL_DIR"; mkdir -p "$INSTALL_DIR"; chown "$WEBSEC_USER:$WEBSEC_USER" "$INSTALL_DIR"; fi
         
         if ! sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" git clone "$target_url" "$INSTALL_DIR"; then
-             print_error "Clone failed even with verified key. Please check permissions."
+             print_error "Clone failed. Please check permissions or token."
              exit 1
         fi
         print_success "Repository cloned"
