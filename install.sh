@@ -318,18 +318,14 @@ check_github_access() {
     fi
 
     # Configure git command environment
-    # Explicitly point to websec_key
     export GIT_SSH_COMMAND="ssh -i $key_file -o UserKnownHostsFile=$websec_ssh/known_hosts -o StrictHostKeyChecking=no"
 
     print_info "Testing GitHub connectivity..."
     
     while true; do
         # Test SSH connection to GitHub - capture output
-        # We run this as websec user, EXPLICITLY passing the key file to ssh command as well
-        # GIT_SSH_COMMAND is ignored by raw ssh command
-        OUTPUT=$(sudo -u "$WEBSEC_USER" ssh -v -i "$key_file" -o UserKnownHostsFile="$websec_ssh/known_hosts" -o StrictHostKeyChecking=no -T git@github.com 2>&1)
+        OUTPUT=$(sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" ssh -v -i "$key_file" -o UserKnownHostsFile="$websec_ssh/known_hosts" -o StrictHostKeyChecking=no -T git@github.com 2>&1)
         
-        # ssh -T returns 1 on success (authenticated but no shell access) but prints success msg
         if echo "$OUTPUT" | grep -q "successfully authenticated"; then
             print_success "GitHub authentication successful"
             set -e # Re-enable exit on error
@@ -418,6 +414,17 @@ install_websec() {
 
     print_info "Compiling (this may take a few minutes)..."
     cd "$INSTALL_DIR"
+    
+    # Check if Cargo.toml exists
+    if [[ ! -f "Cargo.toml" ]]; then
+        print_error "Cargo.toml not found in $INSTALL_DIR!"
+        echo "Contents of $INSTALL_DIR:"
+        ls -la
+        echo "Git status:"
+        sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" git status
+        exit 1
+    fi
+
     source $HOME/.cargo/env 2>/dev/null || true
     
     cargo build --release --features tls
