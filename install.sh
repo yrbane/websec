@@ -280,9 +280,14 @@ setup_websec_ssh() {
              print_info "Copied 'id_rsa' key to websec user"
         fi
         
+        # Also known_hosts to avoid prompt
+        if [[ -f "$calling_home/.ssh/known_hosts" ]]; then
+             cp "$calling_home/.ssh/known_hosts" "$websec_ssh/"
+        fi
+        
         # Fix permissions
         chown -R "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh"
-        chmod 600 "$websec_ssh"/* || true # Ignore error if no keys copied
+        chmod 600 "$websec_ssh"/*
         chmod 700 "$websec_ssh"
     fi
 }
@@ -302,19 +307,33 @@ check_github_access() {
         chmod 600 "$websec_ssh/known_hosts"
     fi
 
+    # Ensure permissions are correct
+    chown -R "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh"
+    chmod 700 "$websec_ssh"
+    chmod 600 "$key_file" 2>/dev/null || true
+
     # Configure git command environment
-    export GIT_SSH_COMMAND="ssh -i $key_file -o UserKnownHostsFile=$websec_ssh/known_hosts"
+    export GIT_SSH_COMMAND="ssh -i $key_file -o UserKnownHostsFile=$websec_ssh/known_hosts -o StrictHostKeyChecking=no"
 
     print_info "Testing GitHub connectivity..."
     
     while true; do
-        # Test SSH connection to GitHub
-        if sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+        # Test SSH connection to GitHub - capture output
+        # We run this as websec user
+        OUTPUT=$(sudo -u "$WEBSEC_USER" GIT_SSH_COMMAND="$GIT_SSH_COMMAND" ssh -v -T git@github.com 2>&1)
+        EXIT_CODE=$?
+
+        # ssh -T returns 1 on success (authenticated but no shell access)
+        if echo "$OUTPUT" | grep -q "successfully authenticated"; then
             print_success "GitHub authentication successful"
             return 0
         fi
 
         print_warning "GitHub authentication failed."
+        echo "----------------------------------------------------------------"
+        echo "Error details from SSH:"
+        echo "$OUTPUT" | grep -E "Permission denied|Authentication failed|timed out|Could not resolve|Connection refused" | head -n 5
+        echo "----------------------------------------------------------------"
         
         # Prompt to regenerate key
         if ask_confirmation "Do you want to REGENERATE a new SSH key for deployment?"; then
@@ -325,10 +344,10 @@ check_github_access() {
         # Generate key if missing (or just removed)
         if [[ ! -f "$key_file" ]]; then
             print_info "Generating new SSH key: $key_file"
-            mkdir -p "$websec_ssh"
-            chown "$WEBSEC_USER:$WEBSEC_USER" "$websec_ssh"
-            chmod 700 "$websec_ssh"
-            sudo -u "$WEBSEC_USER" ssh-keygen -t ed25519 -C "websec_user@$(hostname)" -f "$key_file" -N "" -q
+            # Remove spaces from hostname just in case
+            local host_clean=$(hostname | tr -d '[:space:]')
+            sudo -u "$WEBSEC_USER" ssh-keygen -t ed25519 -C "websec_user@$host_clean" -f "$key_file" -N "" -q
+            chmod 600 "$key_file"
         fi
 
         # Show public key for copy-paste
