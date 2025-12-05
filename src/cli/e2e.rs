@@ -31,7 +31,7 @@ pub async fn run_e2e(config_path: &Path, backend_port: u16, proxy_port: u16) -> 
     if settings.server.listeners.is_empty() {
         settings.server.backend = format!("http://127.0.0.1:{backend_port}");
     }
-    let proxy = ProxyServer::new(&settings)?;
+    let proxy = ProxyServer::new(&settings).await?;
     let proxy_infos = proxy.listener_infos().to_vec();
     for info in &proxy_infos {
         println!(

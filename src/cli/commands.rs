@@ -1,7 +1,7 @@
 //! CLI commands implementation
 
 use crate::config::load_from_file;
-use crate::storage::{InMemoryRepository, RedisRepository, ReputationRepository};
+use crate::storage::{InMemoryRepository, RedisRepository, ReputationRepository, SledRepository};
 use crate::{Error, Result};
 use std::path::Path;
 use std::time::Duration;
@@ -50,7 +50,7 @@ pub async fn run_server(config_path: &Path, dry_run: bool) -> Result<()> {
 
     // Normal run
     println!("🔧 Initializing WebSec...");
-    let server = crate::proxy::server::ProxyServer::new(&settings)?;
+    let server = crate::proxy::server::ProxyServer::new(&settings).await?;
 
     println!("✅ WebSec initialized successfully");
     let listeners = server.listener_infos().to_vec();
@@ -134,6 +134,9 @@ pub fn show_config(config_path: &Path) -> Result<()> {
     println!("  Type: {}", settings.storage.storage_type);
     if let Some(redis_url) = &settings.storage.redis_url {
         println!("  Redis URL: {redis_url}");
+    }
+    if let Some(path) = &settings.storage.path {
+        println!("  Path: {path}");
     }
     println!("  Cache size: {}", settings.storage.cache_size);
 
@@ -221,6 +224,34 @@ pub async fn check_storage(config_path: &Path) -> Result<()> {
                 }
                 Err(e) => {
                     println!("❌ Failed to connect to Redis: {e}");
+                    return Err(e);
+                }
+            }
+        }
+        "sled" => {
+            let path = settings.storage.path.as_deref().unwrap_or("websec.db");
+            println!("Database path: {path}");
+            
+            match SledRepository::new(path) {
+                Ok(repo) => {
+                    println!("✅ Opened Sled database successfully");
+                    match repo.health_check().await {
+                        Ok(true) => {
+                            println!("✅ Sled health check: PASS");
+                             match repo.count().await {
+                                Ok(count) => {
+                                    println!("📊 Tracked IPs: {count}");
+                                }
+                                Err(e) => {
+                                    println!("⚠️  Failed to get count: {e}");
+                                }
+                            }
+                        },
+                        _ => println!("❌ Sled health check: FAIL"),
+                    }
+                },
+                Err(e) => {
+                    println!("❌ Failed to open Sled database: {e}");
                     return Err(e);
                 }
             }

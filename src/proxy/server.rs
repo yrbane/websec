@@ -19,7 +19,7 @@
 //!
 //! # async fn example() -> websec::Result<()> {
 //! let settings = load_from_file("config/websec.toml")?;
-//! let server = ProxyServer::new(&settings)?;
+//! let server = ProxyServer::new(&settings).await?;
 //!
 //! // Démarre le serveur (bloque jusqu'à interruption)
 //! server.run().await?;
@@ -38,7 +38,7 @@ use crate::proxy::middleware::{
     metrics_standalone_handler, proxy_handler, ProxyState, ProxyStateConfig,
 };
 use crate::reputation::decision::{DecisionEngine, DecisionEngineConfig};
-use crate::storage::InMemoryRepository;
+use crate::storage::{InMemoryRepository, RedisRepository};
 use crate::{Error, Result};
 use axum::{routing::get, Router};
 #[cfg(feature = "tls")]
@@ -85,7 +85,7 @@ impl ProxyServer {
     ///
     /// Initialise tous les composants :
     /// - Logging structuré
-    /// - Storage (`InMemoryRepository`)
+    /// - Storage (`InMemoryRepository`, `SledRepository`, `RedisRepository`)
     /// - Détecteurs (registry avec tous les détecteurs)
     /// - `DecisionEngine`
     /// - `BackendClient`
@@ -109,13 +109,13 @@ impl ProxyServer {
     /// use websec::proxy::server::ProxyServer;
     /// use websec::config::load_from_file;
     ///
-    /// # fn example() -> websec::Result<()> {
+    /// # async fn example() -> websec::Result<()> {
     /// let settings = load_from_file("config/websec.toml")?;
-    /// let server = ProxyServer::new(&settings)?;
+    /// let server = ProxyServer::new(&settings).await?;
     /// # Ok(())
     /// # }
     /// ```
-    pub fn new(settings: &Settings) -> Result<Self> {
+    pub async fn new(settings: &Settings) -> Result<Self> {
         // 1. Initialiser le logging
         let log_format = match settings.logging.format.as_str() {
             "json" => LogFormat::Json,
@@ -130,25 +130,11 @@ impl ProxyServer {
 
         tracing::info!("Initializing WebSec proxy server");
 
-        // 2. Créer le storage (InMemoryRepository pour MVP)
-        let repository = Arc::new(InMemoryRepository::new());
-        tracing::info!("Repository initialized: InMemoryRepository");
+        // 2. Créer le storage
+        let repository = Self::init_repository(settings).await?;
 
-        // 3. Créer le registry de détecteurs avec tous les détecteurs
-        let mut detector_registry = DetectorRegistry::new();
-
-        // Ajouter tous les détecteurs disponibles
-        detector_registry.register(Arc::new(crate::detectors::BotDetector::new()));
-        detector_registry.register(Arc::new(crate::detectors::BruteForceDetector::new()));
-        detector_registry.register(Arc::new(crate::detectors::FloodDetector::new()));
-        detector_registry.register(Arc::new(crate::detectors::InjectionDetector::new()));
-        detector_registry.register(Arc::new(crate::detectors::ScanDetector::new()));
-        detector_registry.register(Arc::new(crate::detectors::HeaderDetector::new()));
-        detector_registry.register(Arc::new(crate::detectors::GeoDetector::new()));
-        detector_registry.register(Arc::new(crate::detectors::ProtocolDetector::new()));
-        detector_registry.register(Arc::new(crate::detectors::SessionDetector::new()));
-
-        let detectors = Arc::new(detector_registry);
+        // 3. Créer le registry de détecteurs
+        let detectors = Self::init_detectors();
         tracing::info!("Detectors registered: {}", detectors.count());
 
         // 4. Créer la configuration du DecisionEngine
@@ -183,27 +169,9 @@ impl ProxyServer {
         tracing::info!("MetricsRegistry initialized");
 
         // Parser les trusted proxies
-        let trusted_proxies: Vec<IpAddr> = settings
-            .server
-            .trusted_proxies
-            .iter()
-            .filter_map(|s| {
-                s.parse::<IpAddr>().ok().or_else(|| {
-                    tracing::warn!("Invalid IP in trusted_proxies: {}", s);
-                    None
-                })
-            })
-            .collect();
+        let trusted_proxies = Self::init_trusted_proxies(settings);
 
-        if trusted_proxies.is_empty() {
-            tracing::info!("No trusted proxies configured (direct client connections)");
-        } else {
-            tracing::info!("Trusted proxies configured: {} IPs", trusted_proxies.len());
-        }
-
-        let trusted_proxies = Arc::new(trusted_proxies);
         let max_body_size = settings.server.max_body_size;
-
         if max_body_size > 0 {
             tracing::info!(
                 "Request body size limit: {} bytes ({} MB)",
@@ -283,6 +251,73 @@ impl ProxyServer {
         })
     }
 
+    async fn init_repository(
+        settings: &Settings,
+    ) -> Result<Arc<dyn crate::storage::ReputationRepository>> {
+        match settings.storage.storage_type.as_str() {
+            "redis" => {
+                let url = settings.storage.redis_url.as_ref().ok_or_else(|| {
+                    Error::Config("Redis URL required for 'redis' storage".to_string())
+                })?;
+                let repo = RedisRepository::new(url).await?;
+                tracing::info!("Repository initialized: RedisRepository at {}", url);
+                Ok(Arc::new(repo))
+            }
+            "sled" => {
+                let path = settings.storage.path.as_deref().unwrap_or("websec.db");
+                let repo = crate::storage::SledRepository::new(path)?;
+                tracing::info!("Repository initialized: SledRepository at {}", path);
+                Ok(Arc::new(repo))
+            }
+            "memory" => {
+                tracing::info!("Repository initialized: InMemoryRepository");
+                Ok(Arc::new(InMemoryRepository::new()))
+            }
+            _ => {
+                tracing::warn!("Unknown storage type, defaulting to memory");
+                Ok(Arc::new(InMemoryRepository::new()))
+            }
+        }
+    }
+
+    fn init_detectors() -> Arc<DetectorRegistry> {
+        let mut detector_registry = DetectorRegistry::new();
+
+        detector_registry.register(Arc::new(crate::detectors::BotDetector::new()));
+        detector_registry.register(Arc::new(crate::detectors::BruteForceDetector::new()));
+        detector_registry.register(Arc::new(crate::detectors::FloodDetector::new()));
+        detector_registry.register(Arc::new(crate::detectors::InjectionDetector::new()));
+        detector_registry.register(Arc::new(crate::detectors::ScanDetector::new()));
+        detector_registry.register(Arc::new(crate::detectors::HeaderDetector::new()));
+        detector_registry.register(Arc::new(crate::detectors::GeoDetector::new()));
+        detector_registry.register(Arc::new(crate::detectors::ProtocolDetector::new()));
+        detector_registry.register(Arc::new(crate::detectors::SessionDetector::new()));
+
+        Arc::new(detector_registry)
+    }
+
+    fn init_trusted_proxies(settings: &Settings) -> Arc<Vec<IpAddr>> {
+        let trusted_proxies: Vec<IpAddr> = settings
+            .server
+            .trusted_proxies
+            .iter()
+            .filter_map(|s| {
+                s.parse::<IpAddr>().ok().or_else(|| {
+                    tracing::warn!("Invalid IP in trusted_proxies: {}", s);
+                    None
+                })
+            })
+            .collect();
+
+        if trusted_proxies.is_empty() {
+            tracing::info!("No trusted proxies configured (direct client connections)");
+        } else {
+            tracing::info!("Trusted proxies configured: {} IPs", trusted_proxies.len());
+        }
+
+        Arc::new(trusted_proxies)
+    }
+
     /// Démarre le serveur proxy
     ///
     /// Cette méthode bloque jusqu'à ce que le serveur soit arrêté (Ctrl+C).
@@ -303,7 +338,7 @@ impl ProxyServer {
     ///
     /// # async fn example() -> websec::Result<()> {
     /// let settings = load_from_file("config/websec.toml")?;
-    /// let server = ProxyServer::new(&settings)?;
+    /// let server = ProxyServer::new(&settings).await?;
     ///
     /// // Démarre le serveur (bloque jusqu'à Ctrl+C)
     /// server.run().await?;
@@ -482,6 +517,7 @@ mod tests {
             storage: StorageConfig {
                 storage_type: "memory".to_string(),
                 redis_url: None,
+                path: None,
                 cache_size: 10000,
             },
             geolocation: GeolocationConfig {
@@ -509,10 +545,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_server_creation() {
+    #[tokio::test]
+    async fn test_server_creation() {
         let settings = create_test_settings();
-        let server = ProxyServer::new(&settings).unwrap();
+        let server = ProxyServer::new(&settings).await.unwrap();
 
         let infos = server.listener_infos();
         assert_eq!(infos.len(), 1);
@@ -520,17 +556,17 @@ mod tests {
         assert!(!infos[0].tls);
     }
 
-    #[test]
-    fn test_invalid_listen_address() {
+    #[tokio::test]
+    async fn test_invalid_listen_address() {
         let mut settings = create_test_settings();
         settings.server.listen = "invalid_address".to_string();
 
-        let result = ProxyServer::new(&settings);
+        let result = ProxyServer::new(&settings).await;
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_multiple_listeners_configuration() {
+    #[tokio::test]
+    async fn test_multiple_listeners_configuration() {
         let mut settings = create_test_settings();
         settings.server.listeners = vec![
             ListenerConfig {
@@ -545,10 +581,7 @@ mod tests {
             },
         ];
 
-        let server = ProxyServer::new(&settings).unwrap();
+        let server = ProxyServer::new(&settings).await.unwrap();
         assert_eq!(server.listener_infos().len(), 2);
     }
-
-    // Note: Les tests end-to-end avec vraies requêtes HTTP seront dans
-    // tests/proxy_e2e_test.rs pour tester le serveur complet en action
 }

@@ -111,11 +111,13 @@ pub struct ReputationConfig {
 /// Storage backend configuration
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StorageConfig {
-    /// Storage type: "redis" or "memory"
+    /// Storage type: "redis", "sled", or "memory"
     #[serde(rename = "type")]
     pub storage_type: String,
     /// Redis connection URL
     pub redis_url: Option<String>,
+    /// File path for file-based storage (sled)
+    pub path: Option<String>,
     /// L1 cache size (number of IPs)
     #[serde(default = "default_cache_size")]
     pub cache_size: usize,

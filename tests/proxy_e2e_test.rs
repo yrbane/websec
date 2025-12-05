@@ -72,6 +72,7 @@ fn create_test_settings(proxy_port: u16, backend_port: u16, metrics_port: u16) -
         storage: StorageConfig {
             storage_type: "memory".to_string(),
             redis_url: None,
+            path: None,
             cache_size: 10000,
         },
         geolocation: GeolocationConfig {
@@ -124,7 +125,7 @@ async fn test_proxy_forwards_to_backend() {
 
     // 2. Démarrer le proxy sur port 18001, metrics sur 19001
     let settings = create_test_settings(18001, 13001, 19001);
-    let proxy = ProxyServer::new(&settings).unwrap();
+    let proxy = ProxyServer::new(&settings).await.unwrap();
 
     let proxy_handle = tokio::spawn(async move {
         proxy.run().await.unwrap();
@@ -152,7 +153,7 @@ async fn test_proxy_forwards_to_backend() {
 async fn test_proxy_server_creation() {
     // Test de création du serveur sans le démarrer
     let settings = create_test_settings(18002, 13002, 19002);
-    let proxy = ProxyServer::new(&settings);
+    let proxy = ProxyServer::new(&settings).await;
 
     assert!(proxy.is_ok(), "ProxyServer should initialize successfully");
 }
@@ -165,7 +166,7 @@ async fn test_proxy_adds_websec_headers() {
 
     // 2. Démarrer le proxy sur port 18003, metrics sur 19003
     let settings = create_test_settings(18003, 13003, 19003);
-    let proxy = ProxyServer::new(&settings).unwrap();
+    let proxy = ProxyServer::new(&settings).await.unwrap();
 
     let proxy_handle = tokio::spawn(async move {
         proxy.run().await.unwrap();
@@ -199,7 +200,7 @@ async fn test_proxy_extracts_client_ip() {
 
     // 2. Démarrer le proxy sur port 18004, metrics sur 19004
     let settings = create_test_settings(18004, 13004, 19004);
-    let proxy = ProxyServer::new(&settings).unwrap();
+    let proxy = ProxyServer::new(&settings).await.unwrap();
 
     let proxy_handle = tokio::spawn(async move {
         proxy.run().await.unwrap();
@@ -236,7 +237,7 @@ async fn test_metrics_endpoint() {
 
     // 2. Démarrer le proxy sur port 18005, metrics sur 19005
     let settings = create_test_settings(18005, 13005, 19005);
-    let proxy = ProxyServer::new(&settings).unwrap();
+    let proxy = ProxyServer::new(&settings).await.unwrap();
 
     let proxy_handle = tokio::spawn(async move {
         proxy.run().await.unwrap();

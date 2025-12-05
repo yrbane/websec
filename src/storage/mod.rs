@@ -27,8 +27,10 @@ pub mod cached;
 pub mod memory;
 pub mod redis;
 pub mod repository;
+pub mod sled;
 
 pub use cached::{CacheStats, CachedRepository};
 pub use memory::InMemoryRepository;
+pub use self::sled::SledRepository;
 pub use redis::RedisRepository;
 pub use repository::ReputationRepository;
