@@ -87,6 +87,14 @@ harness = false
 name = "reputation_benchmarks"
 harness = false
 
+[[bench]]
+name = "middleware_benchmarks"
+harness = false
+
+[[bench]]
+name = "pipeline_benchmarks"
+harness = false
+
 [features]
 default = []
 tls = ["rustls", "tokio-rustls", "rustls-pemfile", "axum-server"]
