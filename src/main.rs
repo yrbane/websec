@@ -89,9 +89,9 @@ enum Commands {
 
     /// Display live statistics (requires running WebSec instance)
     Stats {
-        /// Metrics endpoint URL
-        #[arg(short, long, default_value = "http://localhost:8080/metrics")]
-        url: String,
+        /// Metrics endpoint URL (default: derived from config metrics.port)
+        #[arg(short, long)]
+        url: Option<String>,
 
         /// Refresh interval in seconds
         #[arg(short, long, default_value = "5")]
@@ -150,7 +150,17 @@ async fn main() -> websec::Result<()> {
             handle_lists(dir.as_deref(), &command)?;
         }
         Some(Commands::Stats { url, interval }) => {
-            cli::show_stats(&url, interval).await?;
+            let metrics_url = match url {
+                Some(u) => u,
+                None => {
+                    // Derive from config metrics.port
+                    let port = websec::config::load_from_file(&args.config)
+                        .map(|s| s.metrics.port)
+                        .unwrap_or(9090);
+                    format!("http://localhost:{port}/metrics")
+                }
+            };
+            cli::show_stats(&metrics_url, interval).await?;
         }
         None => {
             // Default: run server

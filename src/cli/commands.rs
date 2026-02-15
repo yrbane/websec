@@ -330,6 +330,7 @@ fn display_metrics(metrics_text: &str) {
 
     let mut allowed = 0;
     let mut blocked = 0;
+    let mut challenged = 0;
     let mut rate_limited = 0;
     let mut tracked_ips = 0;
     let mut signals: Vec<(String, u64)> = Vec::new();
@@ -339,23 +340,27 @@ fn display_metrics(metrics_text: &str) {
             continue;
         }
 
-        if line.contains("requests_total{decision=\"allow\"}") {
+        if line.contains("decisions_by_type{decision=\"allow\"}") {
             allowed = parse_metric_value(line);
-        } else if line.contains("requests_total{decision=\"block\"}") {
+        } else if line.contains("decisions_by_type{decision=\"block\"}") {
             blocked = parse_metric_value(line);
-        } else if line.contains("requests_total{decision=\"rate_limit\"}") {
+        } else if line.contains("decisions_by_type{decision=\"rate_limit\"}") {
             rate_limited = parse_metric_value(line);
-        } else if line.contains("tracked_ips_total") {
-            tracked_ips = parse_metric_value(line);
-        } else if line.contains("signals_total{signal_type=") {
-            if let Some(signal_name) = extract_signal_type(line) {
+        } else if line.contains("decisions_by_type{decision=\"challenge\"}") {
+            challenged = parse_metric_value(line);
+        } else if line.starts_with("reputation_by_ip{") {
+            tracked_ips += 1;
+        } else if line.contains("detections_by_detector{detector=") {
+            if let Some(detector_name) = extract_label_value(line, "detector") {
                 let count = parse_metric_value(line);
-                signals.push((signal_name, count));
+                if count > 0 {
+                    signals.push((detector_name, count));
+                }
             }
         }
     }
 
-    let total_requests = allowed + blocked + rate_limited;
+    let total_requests = allowed + blocked + challenged + rate_limited;
 
     // Display requests
     println!("📊 Requests:");
@@ -369,6 +374,11 @@ fn display_metrics(metrics_text: &str) {
         "  ❌ Blocked:    {} ({:.1}%)",
         blocked,
         percentage(blocked, total_requests)
+    );
+    println!(
+        "  🔒 Challenged: {} ({:.1}%)",
+        challenged,
+        percentage(challenged, total_requests)
     );
     println!(
         "  ⏱️  Rate Limited: {} ({:.1}%)",
@@ -400,9 +410,10 @@ fn parse_metric_value(line: &str) -> u64 {
         .unwrap_or(0)
 }
 
-fn extract_signal_type(line: &str) -> Option<String> {
-    if let Some(start) = line.find("signal_type=\"") {
-        let after_start = &line[start + 13..];
+fn extract_label_value(line: &str, label: &str) -> Option<String> {
+    let prefix = format!("{label}=\"");
+    if let Some(start) = line.find(&prefix) {
+        let after_start = &line[start + prefix.len()..];
         if let Some(end) = after_start.find('"') {
             return Some(after_start[..end].to_string());
         }
