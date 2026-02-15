@@ -16,4 +16,4 @@ pub mod lists;
 pub mod setup;
 
 pub use commands::{check_storage, run_server, show_config, show_stats};
-pub use setup::run_setup;
+pub use setup::{run_setup, run_setup_noninteractive, run_restore};

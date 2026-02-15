@@ -46,7 +46,14 @@ enum Commands {
     CheckStorage,
 
     /// Interactive setup assistant (Apache integration)
-    Setup,
+    Setup {
+        /// Run in non-interactive mode (auto-accept defaults, use ports 8081/8443)
+        #[arg(long)]
+        noninteractive: bool,
+    },
+
+    /// Restore web server config and disable WebSec
+    Restore,
 
     /// Docker utilities (build/test)
     Docker {
@@ -112,8 +119,15 @@ async fn main() -> websec::Result<()> {
         Some(Commands::CheckStorage) => {
             cli::check_storage(&args.config).await?;
         }
-        Some(Commands::Setup) => {
-            cli::run_setup(&args.config)?;
+        Some(Commands::Setup { noninteractive }) => {
+            if noninteractive {
+                cli::run_setup_noninteractive(&args.config)?;
+            } else {
+                cli::run_setup(&args.config)?;
+            }
+        }
+        Some(Commands::Restore) => {
+            cli::run_restore(&args.config)?;
         }
         Some(Commands::Docker { command }) => match command {
             DockerCommands::Build => {

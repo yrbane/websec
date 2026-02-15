@@ -497,6 +497,283 @@ pub fn run_setup(config_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Run the non-interactive setup (for scripted installation).
+///
+/// Automatically detects the web server, selects ALL virtual hosts on ports
+/// 80 and 443, migrates them to internal ports (8081/8443), and updates
+/// the WebSec configuration — all without user prompts.
+pub fn run_setup_noninteractive(config_path: &Path) -> Result<()> {
+    println!("WebSec setup (non-interactive mode)");
+
+    // Detect web server (prefer Apache)
+    let detected_servers = WebServer::detect_all();
+    if detected_servers.is_empty() {
+        return Err(Error::Config(
+            "Aucun serveur web detecte (Apache ou Nginx). Installez Apache2 ou Nginx d'abord."
+                .to_string(),
+        ));
+    }
+    let web_server = detected_servers[0].clone();
+    println!("Serveur web detecte : {}", web_server.name());
+
+    // Scan virtual hosts
+    let virtual_hosts = scan_virtual_hosts_for_server(&web_server)?;
+    if virtual_hosts.is_empty() {
+        println!("Aucun VirtualHost detecte — rien a migrer.");
+        return Ok(());
+    }
+
+    // Build migrations for port 80 and 443 — select ALL virtual hosts
+    let mut migrations: Vec<PortMigration> = Vec::new();
+
+    let http_hosts: Vec<VirtualHostSelection> = virtual_hosts
+        .iter()
+        .filter(|vh| vh.supports_port(80))
+        .map(|vh| VirtualHostSelection {
+            file_path: vh.file_path.clone(),
+            line_index: vh.line_index,
+        })
+        .collect();
+
+    if !http_hosts.is_empty() {
+        println!(
+            "Migration HTTP : {} VirtualHost(s) vers port {}",
+            http_hosts.len(),
+            DEFAULT_INTERNAL_HTTP_PORT
+        );
+        migrations.push(PortMigration {
+            original_port: 80,
+            internal_port: DEFAULT_INTERNAL_HTTP_PORT,
+            selections: http_hosts,
+        });
+    }
+
+    let https_hosts: Vec<VirtualHostSelection> = virtual_hosts
+        .iter()
+        .filter(|vh| vh.supports_port(443))
+        .map(|vh| VirtualHostSelection {
+            file_path: vh.file_path.clone(),
+            line_index: vh.line_index,
+        })
+        .collect();
+
+    if !https_hosts.is_empty() {
+        println!(
+            "Migration HTTPS : {} VirtualHost(s) vers port {}",
+            https_hosts.len(),
+            DEFAULT_INTERNAL_HTTPS_PORT
+        );
+        migrations.push(PortMigration {
+            original_port: 443,
+            internal_port: DEFAULT_INTERNAL_HTTPS_PORT,
+            selections: https_hosts,
+        });
+    }
+
+    if migrations.is_empty() {
+        println!("Aucun VirtualHost sur les ports 80/443. Rien a migrer.");
+        return Ok(());
+    }
+
+    // Apply changes and finalize
+    apply_web_server_changes(&web_server, &migrations)?;
+    finalize_setup(config_path, &migrations, &virtual_hosts)?;
+    print_setup_summary(&web_server, &migrations);
+
+    Ok(())
+}
+
+/// Restore web server configuration from WebSec backups and disable WebSec.
+///
+/// Scans for `.websec.bak.*` files in Apache/Nginx config directories,
+/// restores the most recent backup for each original file, reloads the
+/// web server, and stops/disables the WebSec service.
+pub fn run_restore(config_path: &Path) -> Result<()> {
+    println!("Restauration de la configuration originale...");
+    let _ = config_path; // acknowledge param; may be used later for websec.toml cleanup
+
+    let detected_servers = WebServer::detect_all();
+    if detected_servers.is_empty() {
+        return Err(Error::Config(
+            "Aucun serveur web detecte.".to_string(),
+        ));
+    }
+    let web_server = detected_servers[0].clone();
+
+    match &web_server {
+        WebServer::Apache => restore_apache_backups()?,
+        WebServer::Nginx => restore_nginx_backups()?,
+    }
+
+    // Reload web server
+    reload_web_server(&web_server)?;
+
+    // Stop WebSec service
+    stop_websec_service();
+
+    println!("Configuration {} restauree.", web_server.name());
+    println!("WebSec desactive. Pour reactiver : websec setup");
+
+    Ok(())
+}
+
+/// Restore Apache config files from `.websec.bak.*` backups.
+fn restore_apache_backups() -> Result<()> {
+    let mut restored = 0;
+
+    // Directories to scan for backups
+    let dirs_to_scan = vec![
+        apache_sites_enabled_path(),
+        apache_ports_conf_path()
+            .parent()
+            .unwrap_or_else(|| Path::new("/etc/apache2"))
+            .to_path_buf(),
+    ];
+
+    for dir in &dirs_to_scan {
+        if !dir.exists() {
+            continue;
+        }
+
+        // Group backups by their original file name
+        let mut backup_groups: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
+
+        let entries = fs::read_dir(dir).map_err(Error::Io)?;
+        for entry in entries.filter_map(std::result::Result::ok) {
+            let path = entry.path();
+            let file_name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+
+            // Match pattern: <original>.websec.bak.<timestamp>
+            if let Some(pos) = file_name.find(".websec.bak.") {
+                let original_name = &file_name[..pos];
+                let original_path = dir.join(original_name);
+                backup_groups
+                    .entry(original_path)
+                    .or_default()
+                    .push(path);
+            }
+        }
+
+        // For each original file, restore from the most recent backup
+        for (original, mut backups) in backup_groups {
+            // Sort by name descending (timestamp in name = most recent last alphabetically)
+            backups.sort();
+            if let Some(most_recent) = backups.last() {
+                println!(
+                    "Restauration: {} <- {}",
+                    original.display(),
+                    most_recent.display()
+                );
+                fs::copy(most_recent, &original).map_err(Error::Io)?;
+                restored += 1;
+            }
+        }
+    }
+
+    if restored == 0 {
+        println!("Aucun backup .websec.bak.* trouve.");
+    } else {
+        println!("{restored} fichier(s) restaure(s).");
+    }
+
+    Ok(())
+}
+
+/// Restore Nginx config files from `.websec.bak.*` backups.
+fn restore_nginx_backups() -> Result<()> {
+    let mut restored = 0;
+    let dir = nginx_sites_enabled_path();
+
+    if !dir.exists() {
+        println!("Repertoire Nginx introuvable.");
+        return Ok(());
+    }
+
+    let mut backup_groups: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
+
+    let entries = fs::read_dir(&dir).map_err(Error::Io)?;
+    for entry in entries.filter_map(std::result::Result::ok) {
+        let path = entry.path();
+        let file_name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        if let Some(pos) = file_name.find(".websec.bak.") {
+            let original_name = &file_name[..pos];
+            let original_path = dir.join(original_name);
+            backup_groups
+                .entry(original_path)
+                .or_default()
+                .push(path);
+        }
+    }
+
+    for (original, mut backups) in backup_groups {
+        backups.sort();
+        if let Some(most_recent) = backups.last() {
+            println!(
+                "Restauration: {} <- {}",
+                original.display(),
+                most_recent.display()
+            );
+            fs::copy(most_recent, &original).map_err(Error::Io)?;
+            restored += 1;
+        }
+    }
+
+    if restored == 0 {
+        println!("Aucun backup .websec.bak.* trouve.");
+    } else {
+        println!("{restored} fichier(s) restaure(s).");
+    }
+
+    Ok(())
+}
+
+/// Reload the web server after config restore.
+fn reload_web_server(web_server: &WebServer) -> Result<()> {
+    let service = match web_server {
+        WebServer::Apache => "apache2",
+        WebServer::Nginx => "nginx",
+    };
+
+    println!("Rechargement de {}...", web_server.name());
+    let output = Command::new("systemctl")
+        .args(["reload", service])
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            println!("{} recharge.", web_server.name());
+        }
+        _ => {
+            println!(
+                "Impossible de recharger {}. Verifiez manuellement: systemctl reload {}",
+                web_server.name(),
+                service
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Stop and disable the WebSec systemd service.
+fn stop_websec_service() {
+    println!("Arret du service WebSec...");
+    let _ = Command::new("systemctl")
+        .args(["stop", "websec"])
+        .output();
+    let _ = Command::new("systemctl")
+        .args(["disable", "websec"])
+        .output();
+    println!("Service WebSec arrete et desactive.");
+}
+
 /// Helper representing the Apache installation on the host.
 struct ApacheEnvironment {
     sites_enabled: PathBuf,
