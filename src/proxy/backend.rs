@@ -219,6 +219,8 @@ impl BackendClient {
 
                     let mut req = Request::from_parts(parts_clone, Full::new(body_clone));
                     *req.uri_mut() = uri;
+                    // Force HTTP/1.1 for backend (Apache doesn't support h2c)
+                    *req.version_mut() = http::Version::HTTP_11;
 
                     // Send request
                     match client_clone.request(req).await {

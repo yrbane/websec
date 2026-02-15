@@ -94,6 +94,12 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> websec::Result<()> {
+    // Install ring as the default CryptoProvider for rustls (required since rustls 0.23)
+    #[cfg(feature = "tls")]
+    {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
+
     let args = Args::parse();
 
     match args.command {

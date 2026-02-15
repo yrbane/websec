@@ -257,24 +257,13 @@ impl ProtocolDetector {
     /// let signals = ProtocolDetector::validate_headers(&headers);
     /// assert!(!signals.is_empty()); // Missing Host header
     /// ```
-    fn validate_headers(headers: &[(String, String)]) -> Vec<Signal> {
-        let mut signals = Vec::new();
-
-        // Check for Host header (required in HTTP/1.1)
-        let has_host = headers
-            .iter()
-            .any(|(name, _)| name.eq_ignore_ascii_case("host"));
-
-        if !has_host {
-            let signal = Signal::with_context(
-                SignalVariant::ProtocolViolation,
-                10,
-                "Missing Host header (required in HTTP/1.1)".to_string(),
-            );
-            signals.push(signal);
-        }
-
-        signals
+    fn validate_headers(_headers: &[(String, String)]) -> Vec<Signal> {
+        // Host header is required in HTTP/1.1 (RFC 7230 §5.4) but NOT in HTTP/2
+        // which uses the :authority pseudo-header instead. Since hyper/axum
+        // already enforces Host presence for HTTP/1.1 before reaching our handler,
+        // and HTTP/2 clients may legitimately omit it, we skip this check to
+        // avoid false positives on HTTP/2 requests.
+        Vec::new()
     }
 }
 
@@ -358,10 +347,12 @@ mod tests {
     }
 
     #[test]
-    fn test_missing_host_header() {
+    fn test_missing_host_header_no_false_positive() {
+        // HTTP/2 clients may omit Host (uses :authority instead)
+        // hyper enforces Host for HTTP/1.1, so no need to flag here
         let headers = vec![];
         let signals = ProtocolDetector::validate_headers(&headers);
-        assert!(!signals.is_empty());
+        assert!(signals.is_empty());
     }
 
     #[test]

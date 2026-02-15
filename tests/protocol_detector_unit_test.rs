@@ -120,14 +120,14 @@ async fn test_oversized_path() {
 async fn test_missing_host_header_http11() {
     let detector = ProtocolDetector::new();
 
-    // HTTP/1.1 requires Host header
+    // Host header check is now skipped to avoid HTTP/2 false positives.
+    // hyper/axum already enforces Host for HTTP/1.1 before reaching detectors.
     let context = create_context("192.168.1.1", "GET", "/", vec![]);
     let result = detector.analyze(&context).await;
 
-    // Should flag missing Host header
     assert!(
-        result.suspicious,
-        "HTTP/1.1 without Host header should be flagged"
+        !result.suspicious,
+        "Missing Host should not be flagged (handled by hyper, HTTP/2 compatible)"
     );
 }
 

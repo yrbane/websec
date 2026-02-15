@@ -2,18 +2,29 @@
 # Copy to websec.toml and customize for your environment
 
 [server]
-# Listen address and port
-listen = "0.0.0.0:8080"
+# Fallback listen address (used when listeners array is empty)
+listen = "0.0.0.0:80"
 
-# Backend web server URL
-backend = "http://127.0.0.1:3000"
+# Fallback backend URL (used when listeners array is empty)
+backend = "http://127.0.0.1:8080"
 
 # Number of worker threads (default: CPU cores)
 workers = 4
 
+# Multi-listener configuration: HTTP on :80, HTTPS on :443
+[[server.listeners]]
+listen = "0.0.0.0:80"
+backend = "http://127.0.0.1:8080"
+
+[[server.listeners]]
+listen = "0.0.0.0:443"
+backend = "http://127.0.0.1:8080"
+[server.listeners.tls]
+cert_file = "/etc/letsencrypt/live/nethttp.net/fullchain.pem"
+key_file = "/etc/letsencrypt/live/nethttp.net/privkey.pem"
+
 # Trusted proxies/load balancers (X-Forwarded-For/X-Real-IP headers only trusted from these IPs)
 # Leave empty if WebSec is directly exposed to clients (prevents IP spoofing)
-# Example: trusted_proxies = ["10.0.0.1", "10.0.0.2", "2001:db8::1"]
 trusted_proxies = []
 
 # Maximum request body size in bytes (0 = unlimited, NOT recommended)

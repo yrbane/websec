@@ -209,6 +209,7 @@ impl ProxyServer {
                 metrics: metrics.clone(),
                 trusted_proxies: trusted_proxies.clone(),
                 max_body_size,
+                is_tls: listener.tls.is_some(),
             }));
             let app = build_router(proxy_state);
 

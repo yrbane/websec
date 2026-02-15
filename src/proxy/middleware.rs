@@ -72,6 +72,8 @@ pub struct ProxyState {
     pub trusted_proxies: Arc<Vec<IpAddr>>,
     /// Taille maximale du corps de requête en bytes
     pub max_body_size: usize,
+    /// Whether this listener terminates TLS (for X-Forwarded-Proto)
+    pub is_tls: bool,
 }
 
 /// Parameters for creating a `ProxyState`
@@ -88,6 +90,8 @@ pub struct ProxyStateConfig {
     pub trusted_proxies: Arc<Vec<IpAddr>>,
     /// Maximum request body size in bytes
     pub max_body_size: usize,
+    /// Whether this listener terminates TLS
+    pub is_tls: bool,
 }
 
 impl ProxyState {
@@ -101,6 +105,7 @@ impl ProxyState {
             metrics: config.metrics,
             trusted_proxies: config.trusted_proxies,
             max_body_size: config.max_body_size,
+            is_tls: config.is_tls,
         }
     }
 }
@@ -484,16 +489,39 @@ fn sanitize_request_headers(
         parts.headers.remove("host");
     }
 
-    // Fixer le Host header vers le backend (empêche Host header poisoning)
-    if let Some(backend_host) = extract_host_from_url(state.backend_client.backend_url()) {
-        parts.headers.insert(
-            "host",
-            backend_host.parse().unwrap_or_else(|_| {
-                tracing::warn!("Failed to parse backend host, using default");
-                "localhost".parse().expect("localhost is a valid header value")
-            }),
-        );
+    // Preserve original Host header for backend VHost routing.
+    // The backend URI is already set correctly by BackendClient::forward().
+    // Save original Host as X-Forwarded-Host before any modification.
+    //
+    // For HTTP/2 requests, there is no Host header — the authority is in the URI
+    // via the :authority pseudo-header. Synthesize Host from URI authority so
+    // Apache can match the correct VHost when receiving the HTTP/1.1 forward.
+    let original_host = parts
+        .headers
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .map(String::from)
+        .or_else(|| parts.uri.authority().map(|a| a.to_string()));
+
+    if let Some(host_str) = original_host {
+        if let Ok(val) = host_str.parse() {
+            parts.headers.insert("x-forwarded-host", val);
+        }
+        // Ensure Host header exists (required for HTTP/1.1 backend)
+        if !parts.headers.contains_key("host") {
+            if let Ok(val) = host_str.parse() {
+                parts.headers.insert("host", val);
+            }
+        }
     }
+
+    // Set X-Forwarded-Proto based on listener TLS status
+    parts.headers.insert(
+        "x-forwarded-proto",
+        if state.is_tls { "https" } else { "http" }
+            .parse()
+            .expect("http/https is a valid header value"),
+    );
 
     // Ajouter/remplacer X-Forwarded-For avec l'IP réelle du client
     // (pas celle potentiellement spoofée)
@@ -538,15 +566,6 @@ fn sanitize_request_headers(
     }
 
     parts
-}
-
-/// Extrait le hostname d'une URL backend (simple parsing)
-fn extract_host_from_url(url: &str) -> Option<String> {
-    // Simple parsing: http://host:port/path -> host:port
-    url.strip_prefix("http://")
-        .or_else(|| url.strip_prefix("https://"))
-        .and_then(|rest| rest.split('/').next())
-        .map(std::string::ToString::to_string)
 }
 
 /// Forward la requête au backend avec sanitization des headers

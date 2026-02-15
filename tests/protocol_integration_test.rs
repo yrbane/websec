@@ -109,8 +109,9 @@ async fn test_missing_host_header() {
     let context = create_context("192.168.1.3", "GET", "/", vec![]);
     let result = engine.process_request(&context).await.unwrap();
 
-    // HTTP/1.1 requires Host header
-    assert!(result.detection.suspicious);
+    // Host header check is now skipped to avoid HTTP/2 false positives
+    // (hyper enforces Host for HTTP/1.1 before reaching detectors)
+    assert!(!result.detection.suspicious);
 }
 
 #[tokio::test]
