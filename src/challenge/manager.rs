@@ -1,10 +1,14 @@
 //! Gestionnaire de challenges thread-safe
 
 use super::types::{Challenge, ChallengeType};
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+type HmacSha256 = Hmac<Sha256>;
 
 /// Gestionnaire de challenges thread-safe
 ///
@@ -45,6 +49,12 @@ pub struct ChallengeManager {
     challenges: Arc<Mutex<HashMap<IpAddr, Challenge>>>,
     /// Durée de validité d'un challenge
     timeout: Duration,
+    /// PoW difficulty (leading zero bits)
+    pow_difficulty: u8,
+    /// HMAC key for signing cookies (random, generated at startup)
+    hmac_key: [u8; 32],
+    /// Duration of the PoW cookie in seconds
+    cookie_ttl_secs: u64,
 }
 
 impl ChallengeManager {
@@ -64,9 +74,23 @@ impl ChallengeManager {
     /// ```
     #[must_use]
     pub fn new(timeout: Duration) -> Self {
+        Self::with_pow_config(timeout, 20, 3600)
+    }
+
+    /// Crée un nouveau gestionnaire avec configuration PoW complète
+    #[must_use]
+    pub fn with_pow_config(timeout: Duration, pow_difficulty: u8, cookie_ttl_secs: u64) -> Self {
+        let mut hmac_key = [0u8; 32];
+        let mut rng = rand::rng();
+        for b in &mut hmac_key {
+            *b = rand::Rng::random(&mut rng);
+        }
         Self {
             challenges: Arc::new(Mutex::new(HashMap::new())),
             timeout,
+            pow_difficulty,
+            hmac_key,
+            cookie_ttl_secs,
         }
     }
 
@@ -103,6 +127,7 @@ impl ChallengeManager {
     pub fn create_challenge(&self, ip: IpAddr, challenge_type: ChallengeType) -> Option<Challenge> {
         let challenge = match challenge_type {
             ChallengeType::SimpleMath => Challenge::new_simple_math(),
+            ChallengeType::ProofOfWork => Challenge::new_proof_of_work(self.pow_difficulty),
         };
 
         let mut challenges = self.challenges.lock().ok()?;
@@ -177,8 +202,16 @@ impl ChallengeManager {
             return false;
         }
 
-        // Vérifier la réponse
-        if challenge.answer.trim() == answer.trim() {
+        // Vérifier la réponse selon le type de challenge
+        let valid = match challenge.challenge_type {
+            ChallengeType::SimpleMath => challenge.answer.trim() == answer.trim(),
+            ChallengeType::ProofOfWork => {
+                let difficulty: u8 = challenge.answer.parse().unwrap_or(20);
+                verify_pow(&challenge.question, answer.trim(), difficulty)
+            }
+        };
+
+        if valid {
             // Réponse correcte : supprimer le challenge (usage unique)
             challenges.remove(&ip);
             true
@@ -229,6 +262,78 @@ impl ChallengeManager {
         initial_count - challenges.len()
     }
 
+    /// Returns the configured PoW difficulty
+    #[must_use]
+    pub fn pow_difficulty(&self) -> u8 {
+        self.pow_difficulty
+    }
+
+    /// Génère un cookie PoW signé HMAC-SHA256 pour une IP validée
+    ///
+    /// Format: `ip|expiry_timestamp|hmac_hex`
+    #[must_use]
+    pub fn generate_pow_cookie(&self, ip: IpAddr) -> String {
+        let expiry = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + self.cookie_ttl_secs;
+        let payload = format!("{}|{}", ip, expiry);
+        let mut mac =
+            HmacSha256::new_from_slice(&self.hmac_key).expect("HMAC accepts any key size");
+        mac.update(payload.as_bytes());
+        let signature = hex::encode(mac.finalize().into_bytes());
+        format!("{}|{}", payload, signature)
+    }
+
+    /// Returns the configured cookie TTL in seconds
+    #[must_use]
+    pub fn cookie_ttl_secs(&self) -> u64 {
+        self.cookie_ttl_secs
+    }
+
+    /// Vérifie un cookie PoW signé
+    ///
+    /// Vérifie que l'IP correspond, que le cookie n'est pas expiré,
+    /// et que la signature HMAC est valide.
+    #[must_use]
+    pub fn verify_pow_cookie(&self, cookie_value: &str, client_ip: IpAddr) -> bool {
+        // Format attendu: ip|expiry|signature
+        let parts: Vec<&str> = cookie_value.splitn(3, '|').collect();
+        if parts.len() != 3 {
+            return false;
+        }
+
+        let cookie_ip = parts[0];
+        let expiry_str = parts[1];
+        let signature = parts[2];
+
+        // Vérifier que l'IP correspond
+        if cookie_ip != client_ip.to_string() {
+            return false;
+        }
+
+        // Vérifier l'expiration
+        let Ok(expiry) = expiry_str.parse::<u64>() else {
+            return false;
+        };
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        if now > expiry {
+            return false;
+        }
+
+        // Vérifier la signature HMAC
+        let payload = format!("{}|{}", cookie_ip, expiry_str);
+        let mut mac =
+            HmacSha256::new_from_slice(&self.hmac_key).expect("HMAC accepts any key size");
+        mac.update(payload.as_bytes());
+        let expected = hex::encode(mac.finalize().into_bytes());
+        signature == expected
+    }
+
     /// Récupère le challenge actif pour une IP (usage interne)
     ///
     /// # Arguments
@@ -249,4 +354,29 @@ impl Default for ChallengeManager {
     fn default() -> Self {
         Self::new(Duration::from_secs(300))
     }
+}
+
+/// Vérifie un Proof of Work SHA-256
+///
+/// Retourne `true` si `SHA-256(challenge + nonce)` commence par au moins
+/// `difficulty` bits à zéro.
+fn verify_pow(challenge: &str, nonce: &str, difficulty: u8) -> bool {
+    use sha2::Digest;
+    let hash = Sha256::digest(format!("{challenge}{nonce}"));
+    count_leading_zero_bits(&hash) >= difficulty
+}
+
+/// Compte le nombre de bits à zéro en tête d'un tableau d'octets
+fn count_leading_zero_bits(data: &[u8]) -> u8 {
+    let mut bits: u8 = 0;
+    for &byte in data {
+        if byte == 0 {
+            bits += 8;
+        } else {
+            // Count leading zeros in this byte
+            bits += byte.leading_zeros() as u8;
+            break;
+        }
+    }
+    bits
 }

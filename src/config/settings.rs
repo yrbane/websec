@@ -22,6 +22,9 @@ pub struct Settings {
     pub logging: LoggingConfig,
     /// Metrics configuration
     pub metrics: MetricsConfig,
+    /// Challenge configuration (PoW / CAPTCHA)
+    #[serde(default)]
+    pub challenge: ChallengeConfig,
 }
 
 /// HTTP server configuration
@@ -182,6 +185,50 @@ pub struct MetricsConfig {
     /// Metrics HTTP port
     #[serde(default = "default_metrics_port")]
     pub port: u16,
+}
+
+/// Challenge / Proof-of-Work configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ChallengeConfig {
+    /// Challenge type: "pow" (Proof of Work) or "math" (simple math CAPTCHA)
+    #[serde(default = "default_challenge_type")]
+    pub challenge_type: String,
+    /// PoW difficulty: number of leading zero bits required (default: 20 ≈ 2-5s)
+    #[serde(default = "default_pow_difficulty")]
+    pub pow_difficulty: u8,
+    /// Challenge token expiration in seconds (default: 300)
+    #[serde(default = "default_challenge_timeout")]
+    pub timeout_secs: u64,
+    /// Duration of the PoW cookie in seconds (default: 3600)
+    #[serde(default = "default_cookie_ttl")]
+    pub cookie_ttl_secs: u64,
+}
+
+impl Default for ChallengeConfig {
+    fn default() -> Self {
+        Self {
+            challenge_type: default_challenge_type(),
+            pow_difficulty: default_pow_difficulty(),
+            timeout_secs: default_challenge_timeout(),
+            cookie_ttl_secs: default_cookie_ttl(),
+        }
+    }
+}
+
+fn default_challenge_type() -> String {
+    "pow".to_string()
+}
+
+fn default_pow_difficulty() -> u8 {
+    20
+}
+
+fn default_challenge_timeout() -> u64 {
+    300
+}
+
+fn default_cookie_ttl() -> u64 {
+    3600
 }
 
 // Default value functions

@@ -19,7 +19,7 @@ use crate::reputation::decision::DecisionEngine;
 use crate::reputation::score::ProxyDecision;
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{Request, Response, StatusCode};
+use axum::http::{Method, Request, Response, StatusCode};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -176,6 +176,14 @@ pub async fn proxy_handler(
         }
     };
 
+    // 2b. Intercepter POST /challenge/verify AVANT le decision engine
+    if parts.method == Method::POST && parts.uri.path() == "/challenge/verify" {
+        return handle_challenge_verify(&state, &parts, &body_bytes, client_ip);
+    }
+
+    // 2c. Vérifier cookie PoW (bypass challenge pour clients prouvés)
+    let has_valid_pow_cookie = check_pow_cookie(&parts, &state.challenge_manager, client_ip);
+
     // 3. Construire le contexte HTTP pour les détecteurs
     let context = build_http_context(client_ip, &parts, &body_bytes);
 
@@ -227,16 +235,26 @@ pub async fn proxy_handler(
             )
         }
         ProxyDecision::Challenge => {
+            // Si le client a un cookie PoW valide, on le laisse passer
+            if has_valid_pow_cookie {
+                tracing::info!(
+                    ip = %client_ip,
+                    score = decision_result.score,
+                    "Challenge bypassed (valid PoW cookie)"
+                );
+                return forward_to_backend(state.clone(), parts, body_bytes, client_ip).await;
+            }
+
             tracing::info!(
                 ip = %client_ip,
                 score = decision_result.score,
                 "Challenge required"
             );
 
-            // Générer un challenge CAPTCHA
+            // Générer un challenge Proof of Work
             if let Some(challenge) = state
                 .challenge_manager
-                .create_challenge(client_ip, crate::challenge::ChallengeType::SimpleMath)
+                .create_challenge(client_ip, crate::challenge::ChallengeType::ProofOfWork)
             {
                 let html = challenge.to_html();
                 error_response_with_headers(
@@ -306,6 +324,115 @@ pub async fn metrics_standalone_handler(
         .header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
         .body(axum::body::Body::from(metrics_text))
         .expect("metrics response construction")
+}
+
+/// Gère POST /challenge/verify : valide la réponse PoW et pose un cookie signé
+fn handle_challenge_verify(
+    state: &Arc<ProxyState>,
+    parts: &http::request::Parts,
+    body_bytes: &Bytes,
+    client_ip: IpAddr,
+) -> Response<Body> {
+    // Parser le body form-urlencoded
+    let body_str = String::from_utf8_lossy(body_bytes);
+    let mut token = String::new();
+    let mut answer = String::new();
+
+    for pair in body_str.split('&') {
+        if let Some((key, value)) = pair.split_once('=') {
+            let decoded_value = urlencoding::decode(value).unwrap_or_default().into_owned();
+            match key {
+                "token" => token = decoded_value,
+                "answer" => answer = decoded_value,
+                _ => {}
+            }
+        }
+    }
+
+    if token.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "Missing challenge token");
+    }
+
+    // Valider la réponse
+    if state.challenge_manager.validate(client_ip, &token, &answer) {
+        // Succès : générer cookie signé et rediriger
+        let cookie_value = state.challenge_manager.generate_pow_cookie(client_ip);
+        let cookie_ttl = state.challenge_manager.cookie_ttl_secs();
+
+        // Récupérer l'URL d'origine depuis le Referer ou rediriger vers /
+        let redirect_to = parts
+            .headers
+            .get("referer")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("/");
+
+        // Extraire juste le path du Referer (éviter open redirect)
+        let redirect_path = if let Ok(url) = redirect_to.parse::<http::Uri>() {
+            url.path().to_string()
+        } else {
+            "/".to_string()
+        };
+
+        tracing::info!(ip = %client_ip, "PoW challenge passed, setting cookie");
+
+        Response::builder()
+            .status(StatusCode::SEE_OTHER)
+            .header("Location", &redirect_path)
+            .header(
+                "Set-Cookie",
+                format!(
+                    "websec_pow={}; Path=/; Max-Age={}; HttpOnly; SameSite=Strict",
+                    cookie_value, cookie_ttl
+                ),
+            )
+            .header("X-WebSec-Decision", "CHALLENGE_PASSED")
+            .body(Body::from("Challenge passed. Redirecting..."))
+            .expect("redirect response construction")
+    } else {
+        tracing::warn!(ip = %client_ip, "PoW challenge failed, regenerating");
+
+        // Échec : régénérer un nouveau challenge
+        if let Some(challenge) = state
+            .challenge_manager
+            .create_challenge(client_ip, crate::challenge::ChallengeType::ProofOfWork)
+        {
+            let html = challenge.to_html();
+            error_response_with_headers(
+                StatusCode::FORBIDDEN,
+                &[
+                    ("Content-Type", "text/html; charset=utf-8".to_string()),
+                    ("X-WebSec-Decision", "CHALLENGE_RETRY".to_string()),
+                ],
+                html,
+            )
+        } else {
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, "Failed to generate challenge")
+        }
+    }
+}
+
+/// Vérifie si la requête contient un cookie PoW valide
+fn check_pow_cookie(
+    parts: &http::request::Parts,
+    challenge_manager: &ChallengeManager,
+    client_ip: IpAddr,
+) -> bool {
+    let Some(cookie_header) = parts.headers.get("cookie") else {
+        return false;
+    };
+    let Ok(cookie_str) = cookie_header.to_str() else {
+        return false;
+    };
+
+    // Chercher le cookie websec_pow dans le header Cookie
+    for cookie in cookie_str.split(';') {
+        let cookie = cookie.trim();
+        if let Some(value) = cookie.strip_prefix("websec_pow=") {
+            return challenge_manager.verify_pow_cookie(value, client_ip);
+        }
+    }
+
+    false
 }
 
 /// Extrait l'IP du client depuis les headers ou la socket
