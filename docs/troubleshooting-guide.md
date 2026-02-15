@@ -123,27 +123,41 @@ sudo -u websec cat /etc/letsencrypt/live/example.com/fullchain.pem | head -5
 **Symptôme** :
 ```
 WebSec démarre mais ne peut pas bind sur port 80/443
+Error: Permission denied (os error 13)
 ```
 
 **Cause** : Les capabilities sont des **attributs de fichier étendus (xattr)** qui ne survivent pas au remplacement du binaire.
 
-**Solution** :
+**Solution recommandée** (systemd `AmbientCapabilities`) :
+
+Si le service systemd utilise `NoNewPrivileges=yes`, `setcap` ne fonctionne **pas**. Utilisez plutôt un drop-in systemd :
+
+```bash
+sudo mkdir -p /etc/systemd/system/websec.service.d
+sudo tee /etc/systemd/system/websec.service.d/capabilities.conf > /dev/null << 'EOF'
+[Service]
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart websec
+```
+
+**Solution alternative** (setcap — uniquement si `NoNewPrivileges=no`) :
 ```bash
 # Après CHAQUE recompilation
-sudo setcap 'cap_net_bind_service=+ep' /opt/websec/target/release/websec
+sudo setcap 'cap_net_bind_service=+ep' /usr/local/bin/websec
 
 # Vérifier
-getcap /opt/websec/target/release/websec
-# Attendu: /opt/websec/target/release/websec cap_net_bind_service=ep
+getcap /usr/local/bin/websec
 ```
 
 **Script de déploiement** :
 ```bash
 #!/bin/bash
 cargo build --release --features tls
-sudo chown -R websec:websec /opt/websec
-sudo setcap 'cap_net_bind_service=+ep' ./target/release/websec
-sudo systemctl restart websec
+sudo systemctl stop websec
+sudo cp target/release/websec /usr/local/bin/websec
+sudo systemctl start websec
 ```
 
 ---
@@ -346,6 +360,44 @@ let client = Client::builder(TokioExecutor::new())
 - WebSec gère HTTP/2 sur le **frontend** (ports 80/443 publics)
 - Backend (Apache en localhost:8080) reste en HTTP/1.1
 - Pas besoin de HTTP/2 pour communication localhost
+
+---
+
+### Erreur : HTTP/2 requests get 301 redirect loop
+
+**Symptôme** : HTTP/1.1 via HTTPS fonctionne (200 OK) mais HTTP/2 via HTTPS renvoie une 301 en boucle.
+
+**Cause** : HTTP/2 utilise le pseudo-header `:authority` au lieu de `Host`. Si WebSec ne synthétise pas le `Host` depuis `:authority`, Apache ne peut pas matcher le VHost et utilise un VHost par défaut qui redirige.
+
+**Solution** : **Corrigé dans v0.2.1** (commit c6aae58)
+
+WebSec synthétise automatiquement le header `Host` depuis `:authority` pour les requêtes HTTP/2 avant de forwarder en HTTP/1.1 au backend.
+
+Si vous avez une ancienne version, mettez à jour :
+```bash
+cd /opt/websec
+cargo build --release --features tls
+sudo systemctl stop websec
+sudo cp target/release/websec /usr/local/bin/websec
+sudo systemctl start websec
+```
+
+---
+
+### Erreur : X-Forwarded-Proto redirect loop
+
+**Symptôme** : Apache redirige en boucle HTTP → HTTPS même quand la requête arrive en HTTPS via WebSec.
+
+**Cause** : WebSec ne définissait pas le header `X-Forwarded-Proto`, donc Apache ne savait pas que la requête originale était en HTTPS.
+
+**Solution** : **Corrigé dans v0.2.1**. WebSec ajoute automatiquement `X-Forwarded-Proto: https` ou `http` selon le listener TLS.
+
+Vérifiez que votre VHost Apache utilise :
+```apache
+RewriteEngine On
+RewriteCond %{HTTP:X-Forwarded-Proto} !https
+RewriteRule ^(.*)$ https://%{HTTP_HOST}$1 [R=301,L]
+```
 
 ---
 

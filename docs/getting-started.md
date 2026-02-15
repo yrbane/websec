@@ -40,9 +40,22 @@ cp config/websec.toml.example websec.toml
 
 ```toml
 [server]
-listen = "0.0.0.0:8080"           # Adresse d'écoute du proxy
-backend = "http://127.0.0.1:3000" # URL de votre application backend
+listen = "0.0.0.0:80"             # Fallback (utilisé si listeners vide)
+backend = "http://127.0.0.1:8080" # URL de votre application backend
 workers = 4                        # Nombre de workers (CPU cores recommandé)
+
+# Listener HTTP
+[[server.listeners]]
+listen = "0.0.0.0:80"
+backend = "http://127.0.0.1:8080"
+
+# Listener HTTPS (optionnel — nécessite --features tls)
+[[server.listeners]]
+listen = "0.0.0.0:443"
+backend = "http://127.0.0.1:8080"
+[server.listeners.tls]
+cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
+key_file = "/etc/letsencrypt/live/example.com/privkey.pem"
 
 [reputation]
 base_score = 100                   # Score initial pour les nouvelles IPs
@@ -59,6 +72,8 @@ format = "json"                    # json ou pretty
 type = "redis"
 redis_url = "redis://127.0.0.1:6379"
 ```
+
+> **Note** : WebSec ajoute automatiquement `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-For` et `X-Real-IP` pour que le backend distingue HTTP/HTTPS et connaisse l'IP du client.
 
 ## Lancement
 
@@ -88,22 +103,23 @@ export WEBSEC_CONFIG=websec.toml
 ## Architecture de base
 
 ```
-Client HTTP → WebSec Proxy → Détecteurs → Moteur de Décision → Backend
-                                                ↓
-                                    [ALLOW/BLOCK/CHALLENGE/RATE_LIMIT]
+Client HTTP/2 → WebSec :80/:443 → Détecteurs → Moteur de Décision → Backend :8080
+                  ↓ TLS termination                    ↓
+                  ↓ HTTP/2 → HTTP/1.1        [ALLOW/BLOCK/CHALLENGE/RATE_LIMIT]
 ```
 
 ### Flux de requête
 
-1. **Réception**: WebSec reçoit la requête HTTP
-2. **Extraction IP**: Détection de l'IP réelle (X-Forwarded-For, X-Real-IP)
+1. **Réception**: WebSec reçoit la requête HTTP ou HTTPS (TLS terminé par rustls)
+2. **Extraction IP**: Détection de l'IP réelle (X-Forwarded-For, X-Real-IP, SocketAddr)
 3. **Analyse**: Passage par 9 détecteurs de menaces
 4. **Scoring**: Calcul du score de réputation
 5. **Décision**: Choix de l'action selon les seuils
-6. **Action**:
-   - **ALLOW**: Forward au backend
+6. **Sanitization**: Headers hop-by-hop supprimés, `X-Forwarded-*` ajoutés, Host préservé
+7. **Action**:
+   - **ALLOW**: Forward au backend (HTTP/1.1, headers sanitizés)
    - **RATE_LIMIT**: HTTP 429 (Too Many Requests)
-   - **CHALLENGE**: Afficher CAPTCHA mathématique (à venir)
+   - **CHALLENGE**: Afficher CAPTCHA mathématique
    - **BLOCK**: HTTP 403 (Forbidden)
 
 ## Détecteurs disponibles

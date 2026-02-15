@@ -208,18 +208,22 @@ où:
 
 **Responsabilités**:
 - Préservation complète de l'URI (path + query)
-- Préservation des headers
-- Streaming du body
-- Gestion des erreurs backend
+- Préservation des headers (Host, X-Forwarded-*)
+- Force HTTP/1.1 pour le backend (Apache ne supporte pas h2c)
+- Retry avec exponential backoff
+- Circuit breaker pour protection du backend
+- Connection pooling via hyper
 
-**Implémentation**:
-```rust
-async fn forward(&self, request: Request<Full<Bytes>>) -> Result<Response<Incoming>> {
-    let target_uri = format!("{}{}", self.backend_url, request.uri().path_and_query());
-    *request.uri_mut() = Uri::from_str(&target_uri)?;
-
-    self.client.request(request).await
-}
+**Flux de forwarding**:
+```
+Client HTTP/2 → WebSec → sanitize_request_headers() → BackendClient
+                           ↓                             ↓
+                    - Preserve Host           - Force HTTP/1.1 version
+                    - Add X-Forwarded-Proto   - Set backend URI
+                    - Add X-Forwarded-Host    - Retry on failure
+                    - Add X-Forwarded-For     - Circuit breaker
+                    - Add X-Real-IP
+                    - Synthesize Host from :authority (HTTP/2)
 ```
 
 **Fichier**: `src/proxy/backend.rs`
@@ -388,7 +392,6 @@ impl ReputationRepository for MyRepository {
 
 ### Limitations connues
 
-- Pas de TLS termination (utiliser nginx devant)
 - Pas de WAF complet (complément, pas remplacement)
 - Memory-based storage non distribué (utiliser Redis)
 
@@ -431,17 +434,17 @@ Tous les événements sont loggés avec contexte:
 ### Single Instance
 
 ```
-nginx (TLS) → WebSec → Backend
+Internet → WebSec :80/:443 (TLS + WAF) → Apache/Backend :8080
 ```
 
 ### High Availability
 
 ```
-                    ┌→ WebSec 1 ┐
-nginx (TLS) → LB ──→┼→ WebSec 2 ├→ Backend Pool
-                    └→ WebSec 3 ┘
-                           ↓
-                      Redis (shared state)
+                ┌→ WebSec 1 (TLS) ┐
+Internet → LB ──┼→ WebSec 2 (TLS) ├→ Backend Pool
+                └→ WebSec 3 (TLS) ┘
+                        ↓
+                   Redis (shared state)
 ```
 
 ### Kubernetes

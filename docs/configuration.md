@@ -291,9 +291,24 @@ port = 9090
 # Configuration de production recommandée
 
 [server]
-listen = "0.0.0.0:8080"
-backend = "http://localhost:3000"
+listen = "0.0.0.0:80"
+backend = "http://127.0.0.1:8080"
 workers = 8  # Ajuster selon CPU
+trusted_proxies = []
+max_body_size = 10485760  # 10 MB
+
+# Listener HTTP
+[[server.listeners]]
+listen = "0.0.0.0:80"
+backend = "http://127.0.0.1:8080"
+
+# Listener HTTPS (TLS terminé par WebSec)
+[[server.listeners]]
+listen = "0.0.0.0:443"
+backend = "http://127.0.0.1:8080"
+[server.listeners.tls]
+cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
+key_file = "/etc/letsencrypt/live/example.com/privkey.pem"
 
 [reputation]
 base_score = 100

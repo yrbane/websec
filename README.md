@@ -14,10 +14,11 @@
 
 **WebSec** est un **reverse proxy de sécurité** haute performance écrit en Rust, conçu pour protéger vos serveurs web contre les menaces HTTP(S) en temps réel. Transparent, configurable et prêt pour la production.
 
-> 🎉 **Version actuelle** : v0.2.0 (Production-Ready)
+> 🎉 **Version actuelle** : v0.2.1 (Production-Ready)
 > ✅ **Performance auditée** : Latence de détection < 400µs (0.4ms)
-> ✅ **Qualité** : 144 tests unitaires (0 échec), 0 warning clippy
-> ✅ **Sécurité** : 6 failles critiques auditées et corrigées
+> ✅ **HTTP/2 natif** : Support complet HTTP/2 frontend + HTTP/1.1 backend
+> ✅ **TLS natif** : Terminaison HTTPS avec rustls (TLSv1.3, ALPN, SNI)
+> ✅ **Qualité** : 144+ tests unitaires, 0 warning clippy
 
 ---
 
@@ -29,8 +30,10 @@ WebSec s'installe en amont de votre serveur Apache/Nginx/Node.js et intercepte t
 
 ```
 Internet → WebSec :80/:443 → Votre Serveur :8080 (interne)
-            ↓
-       🛡️ Protection Active
+              ↓
+         🛡️ Protection Active
+         🔐 TLS termination (TLSv1.3, HTTP/2)
+         📡 X-Forwarded-Proto / X-Forwarded-Host / X-Real-IP
 ```
 
 ### Protection complète contre :
@@ -43,6 +46,7 @@ Internet → WebSec :80/:443 → Votre Serveur :8080 (interne)
 - 🌍 **Géolocalisation** (filtrage par pays à risque, détection "impossible travel")
 - 🔒 **Manipulation headers** (CRLF injection, host poisoning, headers anormaux)
 - 🍪 **Anomalies de session** (hijacking, fixation)
+- 📡 **Proxy transparent** (X-Forwarded-Proto, X-Forwarded-Host, X-Real-IP automatiques)
 
 ---
 
@@ -68,7 +72,9 @@ WebSec est conçu pour traiter **10,000+ req/s** sur un matériel standard sans 
 
 - **Déploiement sans interruption** : Architecture stateless, redémarrage à chaud.
 - **Zéro configuration backend** : Apache/Nginx continuent de fonctionner sans changement.
-- **Support TLS natif** : Terminaison HTTPS avec support SNI (multi-domaines).
+- **Support TLS natif** : Terminaison HTTPS avec rustls (TLSv1.3, ALPN HTTP/2, SNI multi-domaines).
+- **HTTP/2 complet** : Accepte HTTP/2 des clients, forward en HTTP/1.1 au backend.
+- **Headers proxy** : `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-For`, `X-Real-IP` automatiques.
 - **Conformité RGPD** : Minimisation des données, aucun stockage de credentials.
 
 ### 🔌 Installation & Déploiement
@@ -121,22 +127,37 @@ cargo build --release --features tls
 
 ## ⚙️ Configuration
 
-WebSec utilise un fichier `websec.toml` simple. Voici un exemple minimal :
+WebSec utilise un fichier `websec.toml` simple. Voici un exemple avec TLS :
 
 ```toml
 [server]
-listen = "0.0.0.0:80"
-backend = "http://127.0.0.1:8080" # Votre serveur actuel
+listen = "0.0.0.0:80"                    # Fallback (utilisé si listeners vide)
+backend = "http://127.0.0.1:8080"        # Votre serveur actuel
 workers = 4
+
+# Listener HTTP (port 80)
+[[server.listeners]]
+listen = "0.0.0.0:80"
+backend = "http://127.0.0.1:8080"
+
+# Listener HTTPS (port 443) — TLS terminé par WebSec
+[[server.listeners]]
+listen = "0.0.0.0:443"
+backend = "http://127.0.0.1:8080"
+[server.listeners.tls]
+cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
+key_file = "/etc/letsencrypt/live/example.com/privkey.pem"
 
 [reputation]
 threshold_block = 20        # Bloquer en dessous de 20/100
 threshold_challenge = 40    # Challenge entre 20 et 40
 
 [storage]
-type = "memory"             # ou "redis" pour la production, "sled" pour la persistance locale
-path = "websec.db"          # Chemin pour le stockage Sled
+type = "redis"              # "redis" pour la production, "memory" pour tests
+redis_url = "redis://127.0.0.1:6379"
 ```
+
+WebSec ajoute automatiquement les headers `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-For` et `X-Real-IP` pour que le backend puisse distinguer HTTP/HTTPS et connaître l'IP du client.
 
 Voir [config/websec.toml.example](config/websec.toml.example) pour toutes les options commentées en français.
 

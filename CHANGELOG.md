@@ -5,6 +5,39 @@ All notable changes to WebSec will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-02-15
+
+### 🔒 Bug Fixes (Reverse Proxy)
+
+#### TLS / rustls 0.23 Compatibility
+- **Fixed** CryptoProvider panic on startup (`rustls::crypto::ring::default_provider().install_default()`)
+- **Commit**: c6aae58
+
+#### HTTP/2 Full Support
+- **Fixed** HTTP/2 requests failing with `UserUnsupportedVersion` when forwarded to Apache backend
+- **Added** Automatic HTTP/1.1 version downgrade for backend forwarding (`backend.rs`)
+- **Fixed** HTTP/2 `:authority` pseudo-header not mapped to `Host` header for backend VHost routing
+- **Fixed** False positive `ProtocolViolation` signal for HTTP/2 requests missing `Host` header (HTTP/2 uses `:authority`)
+- **Commit**: c6aae58
+
+#### Header Handling
+- **Fixed** `Host` header being overwritten with backend host (`127.0.0.1:8080`), breaking Apache VHost routing
+- **Added** `X-Forwarded-Proto` header (http/https based on listener TLS status)
+- **Added** `X-Forwarded-Host` header (original Host preserved)
+- **Added** `is_tls` field to `ProxyState` for per-listener protocol detection
+- **Commit**: c6aae58
+
+### ✨ Features
+
+#### Production Configuration
+- **Updated** `websec.toml` with dual-listener setup: HTTP `:80` + HTTPS `:443`
+- **Added** Let's Encrypt certificate paths in default configuration
+
+### 🧪 Testing
+- **Updated** `protocol_detector_unit_test.rs` and `protocol_integration_test.rs` for HTTP/2 compatibility
+
+---
+
 ## [0.2.0] - 2025-11-21
 
 ### 🔒 Security Fixes (6 Critical Issues Resolved)
@@ -210,6 +243,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version History
 
+- **[0.2.1]** - 2026-02-15 - HTTP/2, TLS rustls 0.23, proxy headers fix
 - **[0.2.0]** - 2025-11-21 - Production-Ready (6 security fixes, documentation)
 - **[0.1.0]** - 2025-11-18 - Initial MVP Release
 
