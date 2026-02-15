@@ -162,8 +162,18 @@ impl ProxyServer {
         tracing::info!("DecisionEngine initialized");
 
         // 6. Challenge manager et métriques
-        let challenge_manager = Arc::new(ChallengeManager::new(Duration::from_secs(300)));
-        tracing::info!("ChallengeManager initialized");
+        let challenge_manager = Arc::new(ChallengeManager::with_pow_config(
+            Duration::from_secs(settings.challenge.timeout_secs),
+            settings.challenge.pow_difficulty,
+            settings.challenge.cookie_ttl_secs,
+        ));
+        tracing::info!(
+            "ChallengeManager initialized (type={}, difficulty={}, timeout={}s, cookie_ttl={}s)",
+            settings.challenge.challenge_type,
+            settings.challenge.pow_difficulty,
+            settings.challenge.timeout_secs,
+            settings.challenge.cookie_ttl_secs,
+        );
 
         let metrics = Arc::new(MetricsRegistry::new());
         tracing::info!("MetricsRegistry initialized");
@@ -492,8 +502,8 @@ fn map_bind_error(error: io::Error, addr: SocketAddr) -> Error {
 mod tests {
     use super::*;
     use crate::config::settings::{
-        GeolocationConfig, ListenerConfig, LoggingConfig, MetricsConfig, RateLimitConfig,
-        ReputationConfig, ServerConfig, Settings, StorageConfig,
+        ChallengeConfig, GeolocationConfig, ListenerConfig, LoggingConfig, MetricsConfig,
+        RateLimitConfig, ReputationConfig, ServerConfig, Settings, StorageConfig,
     };
 
     fn create_test_settings() -> Settings {
@@ -543,6 +553,7 @@ mod tests {
                 enabled: true,
                 port: 9090,
             },
+            challenge: ChallengeConfig::default(),
         }
     }
 
