@@ -3,7 +3,7 @@
 
 [server]
 # Fallback listen address (used when listeners array is empty)
-listen = "0.0.0.0:80"
+listen = "[::]:80"
 
 # Fallback backend URL (used when listeners array is empty)
 backend = "http://127.0.0.1:8080"
@@ -13,11 +13,11 @@ workers = 4
 
 # Multi-listener configuration: HTTP on :80, HTTPS on :443
 [[server.listeners]]
-listen = "0.0.0.0:80"
+listen = "[::]:80"
 backend = "http://127.0.0.1:8080"
 
 [[server.listeners]]
-listen = "0.0.0.0:443"
+listen = "[::]:443"
 backend = "http://127.0.0.1:8080"
 [server.listeners.tls]
 cert_file = "/etc/letsencrypt/live/nethttp.net/fullchain.pem"

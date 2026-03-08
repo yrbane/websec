@@ -80,12 +80,12 @@ WantedBy=multi-user.target
 ```toml
 # HTTP listener (port 80)
 [[server.listeners]]
-listen = "0.0.0.0:80"
+listen = "[::]:80"
 backend = "http://127.0.0.1:8080"
 
 # HTTPS listener (port 443)
 [[server.listeners]]
-listen = "0.0.0.0:443"
+listen = "[::]:443"
 backend = "http://127.0.0.1:8080"
 
 [server.listeners.tls]
@@ -162,11 +162,11 @@ WebSec écoute sur ports > 1024 (pas besoin de root), iptables redirige 80→800
 ```bash
 # websec.toml
 [[server.listeners]]
-listen = "0.0.0.0:8000"  # Au lieu de 80
+listen = "[::]:8000"  # Au lieu de 80
 backend = "http://127.0.0.1:8080"
 
 [[server.listeners]]
-listen = "0.0.0.0:8443"  # Au lieu de 443
+listen = "[::]:8443"  # Au lieu de 443
 backend = "http://127.0.0.1:8080"
 ```
 

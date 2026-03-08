@@ -177,7 +177,7 @@ Error: Config("Failed to parse TOML: missing field `listen`")
 
 ```toml
 [server]
-listen = "0.0.0.0:80"      # ← Obligatoire (legacy)
+listen = "[::]:80"      # ← Obligatoire (legacy)
 backend = "http://127.0.0.1:8081"  # ← Obligatoire (legacy)
 workers = 4
 trusted_proxies = []
@@ -185,11 +185,11 @@ max_body_size = 209715200
 
 # Listeners modernes (multi-listeners)
 [[server.listeners]]
-listen = "0.0.0.0:80"
+listen = "[::]:80"
 backend = "http://127.0.0.1:8081"
 
 [[server.listeners]]
-listen = "0.0.0.0:443"
+listen = "[::]:443"
 backend = "https://127.0.0.1:8443"
 
 [server.listeners.tls]

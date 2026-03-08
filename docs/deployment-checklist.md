@@ -136,12 +136,12 @@ max_body_size = 209715200  # 200 MB pour uploads
 
 # HTTP listener (port 80)
 [[server.listeners]]
-listen = "0.0.0.0:80"
+listen = "[::]:80"
 backend = "http://127.0.0.1:8081"
 
 # HTTPS listener (port 443) - TLS terminé par WebSec
 [[server.listeners]]
-listen = "0.0.0.0:443"
+listen = "[::]:443"
 backend = "http://127.0.0.1:8443"
 
 [server.listeners.tls]

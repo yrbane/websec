@@ -137,18 +137,18 @@ WebSec utilise un fichier `websec.toml` simple. Voici un exemple avec TLS :
 
 ```toml
 [server]
-listen = "0.0.0.0:80"                    # Fallback (utilisé si listeners vide)
+listen = "[::]:80"                    # Fallback (utilisé si listeners vide)
 backend = "http://127.0.0.1:8080"        # Votre serveur actuel
 workers = 4
 
 # Listener HTTP (port 80)
 [[server.listeners]]
-listen = "0.0.0.0:80"
+listen = "[::]:80"
 backend = "http://127.0.0.1:8080"
 
 # Listener HTTPS (port 443) — TLS terminé par WebSec
 [[server.listeners]]
-listen = "0.0.0.0:443"
+listen = "[::]:443"
 backend = "http://127.0.0.1:8080"
 [server.listeners.tls]
 cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
