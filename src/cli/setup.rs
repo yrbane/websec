@@ -901,7 +901,7 @@ impl ApacheEnvironment {
             .lines()
             .map(std::string::ToString::to_string)
             .collect();
-        let port_pattern = Regex::new(&format!(r":{from_port}(?=[^\d]|$)"))
+        let port_pattern = Regex::new(&format!(r":{from_port}\b"))
             .map_err(|e| Error::Config(format!("Regex error: {e}")))?;
 
         let mut touched = false;

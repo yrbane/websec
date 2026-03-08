@@ -18,7 +18,7 @@ use crate::proxy::backend::BackendClient;
 use crate::reputation::decision::DecisionEngine;
 use crate::reputation::score::ProxyDecision;
 use axum::body::Body;
-use axum::extract::State;
+use axum::extract::{ConnectInfo, State};
 use axum::http::{Method, Request, Response, StatusCode};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
@@ -225,13 +225,17 @@ pub async fn proxy_handler(
                 "Request blocked"
             );
 
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
             error_response_with_headers(
                 StatusCode::FORBIDDEN,
                 &[
                     ("X-WebSec-Decision", "BLOCK".to_string()),
                     ("X-WebSec-Score", decision_result.score.to_string()),
                 ],
-                format!("Access Denied - Reputation Score: {}", decision_result.score),
+                format!(
+                    "Access Denied - Reputation Score: {}\nIP: {} | {}",
+                    decision_result.score, client_ip, now
+                ),
             )
         }
         ProxyDecision::Challenge => {
@@ -449,7 +453,11 @@ fn check_pow_cookie(
 /// le `SocketAddr` réel pour empêcher l'usurpation d'IP.
 fn extract_client_ip(req: &Request<Body>, trusted_proxies: &[IpAddr]) -> IpAddr {
     // Extraire l'IP de la socket (connexion réelle)
-    let socket_ip = if let Some(addr) = req.extensions().get::<SocketAddr>() {
+    // axum stocke ConnectInfo<SocketAddr> via into_make_service_with_connect_info
+    let socket_ip = if let Some(ConnectInfo(addr)) = req.extensions().get::<ConnectInfo<SocketAddr>>() {
+        addr.ip()
+    } else if let Some(addr) = req.extensions().get::<SocketAddr>() {
+        // Fallback pour les tests qui insèrent SocketAddr directement
         addr.ip()
     } else {
         // Fallback si pas de SocketAddr (ne devrait jamais arriver)
@@ -508,12 +516,7 @@ fn extract_client_ip(req: &Request<Body>, trusted_proxies: &[IpAddr]) -> IpAddr 
         "No valid forwarding headers, using trusted proxy IP: {}",
         socket_ip
     );
-    if let Some(addr) = req.extensions().get::<SocketAddr>() {
-        return addr.ip();
-    }
-
-    // Dernier fallback : localhost (pour tests)
-    LOCALHOST
+    socket_ip
 }
 
 /// Construit le contexte HTTP pour les détecteurs

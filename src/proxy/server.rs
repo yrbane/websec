@@ -28,9 +28,11 @@
 //! ```
 
 use crate::challenge::ChallengeManager;
+use crate::cli::lists::ListManager;
 use crate::config::settings::{ListenerTlsConfig, ServerConfig};
 use crate::config::Settings;
 use crate::detectors::DetectorRegistry;
+use crate::lists::{Blacklist, Whitelist};
 use crate::observability::logging::{init_logging, LogFormat};
 use crate::observability::metrics::MetricsRegistry;
 use crate::proxy::backend::BackendClient;
@@ -137,7 +139,10 @@ impl ProxyServer {
         let detectors = Self::init_detectors();
         tracing::info!("Detectors registered: {}", detectors.count());
 
-        // 4. Créer la configuration du DecisionEngine
+        // 4. Charger les listes whitelist/blacklist depuis les fichiers
+        let (loaded_blacklist, loaded_whitelist) = Self::load_lists();
+
+        // 5. Créer la configuration du DecisionEngine
         let decision_config = DecisionEngineConfig {
             base_score: settings.reputation.base_score,
             decay_half_life_hours: settings.reputation.decay_half_life_hours,
@@ -148,8 +153,8 @@ impl ProxyServer {
                 challenge: settings.reputation.threshold_challenge,
                 block: settings.reputation.threshold_block,
             },
-            blacklist: None,
-            whitelist: None,
+            blacklist: loaded_blacklist,
+            whitelist: loaded_whitelist,
         };
 
         // 5. Créer le DecisionEngine
@@ -305,6 +310,44 @@ impl ProxyServer {
         detector_registry.register(Arc::new(crate::detectors::SessionDetector::new()));
 
         Arc::new(detector_registry)
+    }
+
+    /// Load whitelist/blacklist from files on disk (via ListManager).
+    /// Falls back gracefully to empty lists if files are missing.
+    fn load_lists() -> (Option<Blacklist>, Option<Whitelist>) {
+        let manager = match ListManager::new(None) {
+            Ok(m) => m,
+            Err(e) => {
+                tracing::warn!("Could not load lists directory: {e}");
+                return (None, None);
+            }
+        };
+
+        let blacklist = match manager.list_blacklist() {
+            Ok(entries) if !entries.is_empty() => {
+                let ips: Vec<IpAddr> = entries
+                    .iter()
+                    .filter_map(|s| s.parse::<IpAddr>().ok())
+                    .collect();
+                tracing::info!("Blacklist loaded: {} IPs", ips.len());
+                Some(Blacklist::from_ips(ips))
+            }
+            _ => None,
+        };
+
+        let whitelist = match manager.list_whitelist() {
+            Ok(entries) if !entries.is_empty() => {
+                let ips: Vec<IpAddr> = entries
+                    .iter()
+                    .filter_map(|s| s.parse::<IpAddr>().ok())
+                    .collect();
+                tracing::info!("Whitelist loaded: {} IPs", ips.len());
+                Some(Whitelist::from_ips(ips))
+            }
+            _ => None,
+        };
+
+        (blacklist, whitelist)
     }
 
     fn init_trusted_proxies(settings: &Settings) -> Arc<Vec<IpAddr>> {
