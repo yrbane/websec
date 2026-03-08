@@ -120,7 +120,7 @@ Pendant la migration, les deux domaines sont actifs avec leurs certificats respe
 ```toml
 [[server.listeners]]
 listen = "0.0.0.0:443"
-backend = "http://127.0.0.1:8080"
+backend = "http://127.0.0.1:8081"
 
 [server.listeners.tls]
 # Certificat par défaut/fallback (obligatoire)
@@ -159,7 +159,7 @@ key_file = "/path/to/domain2/privkey.pem"
 ```toml
 [[server.listeners]]
 listen = "0.0.0.0:443"
-backend = "http://127.0.0.1:8080"
+backend = "http://127.0.0.1:8081"
 
 [server.listeners.tls]
 # Défaut : example.com
@@ -183,7 +183,7 @@ key_file = "/etc/letsencrypt/live/example.org/privkey.pem"
 ```toml
 [[server.listeners]]
 listen = "0.0.0.0:443"
-backend = "http://127.0.0.1:8080"
+backend = "http://127.0.0.1:8081"
 
 [server.listeners.tls]
 # Défaut : example.com
@@ -213,11 +213,11 @@ key_file = "/etc/letsencrypt/live/www.example.com/privkey.pem"
 ```toml
 [[server.listeners]]
 listen = "0.0.0.0:80"
-backend = "http://127.0.0.1:8080"
+backend = "http://127.0.0.1:8081"
 
 [[server.listeners]]
 listen = "0.0.0.0:443"
-backend = "http://127.0.0.1:8080"
+backend = "http://127.0.0.1:8081"
 
 [server.listeners.tls]
 cert_file = "/etc/letsencrypt/live/mainsite.com/fullchain.pem"
@@ -304,7 +304,7 @@ done
 ### 1. Vérifier que WebSec charge les certificats
 
 ```bash
-sudo -u websec /opt/websec/target/release/websec --config /etc/websec/websec.toml run --dry-run
+sudo -u websec /usr/local/bin/websec --config /etc/websec/websec.toml run --dry-run
 ```
 
 **Output attendu** :

@@ -61,7 +61,7 @@ key_file = "/etc/letsencrypt/live/example.com/privkey.pem"
 base_score = 100                   # Score initial pour les nouvelles IPs
 threshold_allow = 70               # Seuil pour ALLOW (forward)
 threshold_ratelimit = 40           # Seuil pour RATE_LIMIT
-threshold_challenge = 20           # Seuil pour CHALLENGE (Captcha)
+threshold_challenge = 20           # Seuil pour CHALLENGE (Proof of Work SHA-256)
 threshold_block = 0                # Seuil pour BLOCK
 
 [logging]
@@ -69,7 +69,7 @@ level = "info"                     # debug, info, warn, error
 format = "json"                    # json ou pretty
 
 [storage]
-type = "redis"
+type = "redis"                     # Types disponibles: "redis", "memory", "sled"
 redis_url = "redis://127.0.0.1:6379"
 ```
 
@@ -81,7 +81,7 @@ redis_url = "redis://127.0.0.1:6379"
 
 ```bash
 # Utilise websec.toml par défaut si défini dans la variable d'environnement
-export WEBSEC_CONFIG=websec.toml
+export WEBSEC_CONFIG=config/websec.toml
 ./target/release/websec run
 
 # Avec une config spécifique
@@ -91,7 +91,7 @@ export WEBSEC_CONFIG=websec.toml
 ### Afficher la configuration
 
 ```bash
-./target/release/websec show-config --config websec.toml
+./target/release/websec config --config websec.toml
 ```
 
 ### Mode validation (dry-run)
@@ -119,12 +119,12 @@ Client HTTP/2 → WebSec :80/:443 → Détecteurs → Moteur de Décision → Ba
 7. **Action**:
    - **ALLOW**: Forward au backend (HTTP/1.1, headers sanitizés)
    - **RATE_LIMIT**: HTTP 429 (Too Many Requests)
-   - **CHALLENGE**: Afficher CAPTCHA mathématique
+   - **CHALLENGE**: Proof of Work SHA-256 (transparent pour les navigateurs)
    - **BLOCK**: HTTP 403 (Forbidden)
 
 ## Détecteurs disponibles
 
-WebSec intègre 12 détecteurs de menaces organisés en stratégies:
+WebSec intègre 9 detecteurs de menaces organisés en stratégies:
 
 1. **BotDetector**: Détecte les bots malveillants (User-Agent suspects, comportement)
 2. **BruteForceDetector**: Tentatives de force brute sur login et credential stuffing
@@ -216,11 +216,11 @@ X-WebSec-Score: 85
 
 Les métriques sont exposées sur un port dédié (défaut 9090):
 
-- `websec_requests_total`: Compteur total de requêtes
-- `websec_decisions{decision="allow|block|challenge|rate_limit"}`: Décisions par type
-- `websec_latency_seconds`: Histogramme de latence
-- `websec_reputation_score{ip}`: Score de réputation par IP
-- `websec_signals_total{signal_type="..."}`: Compteur par type de menace
+- `requests_total`: Compteur total de requêtes
+- `decisions_by_type{decision="..."}`: Décisions par type
+- `request_duration_seconds`: Histogramme de latence
+- `reputation_by_ip{ip="..."}`: Score de réputation par IP
+- `detections_by_detector{detector="..."}`: Compteur par type de menace
 
 ### Logs structurés
 
@@ -263,11 +263,13 @@ threshold_challenge = 15   # Au lieu de 20
 
 ### Performances dégradées
 
-```bash
+```toml
 # Augmenter le nombre de workers
 [server]
 workers = 8  # Nombre de CPU cores
+```
 
+```bash
 # Vérifier la santé du stockage
 ./target/release/websec check-storage
 ```

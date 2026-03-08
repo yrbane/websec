@@ -178,7 +178,7 @@ Error: Config("Failed to parse TOML: missing field `listen`")
 ```toml
 [server]
 listen = "0.0.0.0:80"      # ← Obligatoire (legacy)
-backend = "http://127.0.0.1:8080"  # ← Obligatoire (legacy)
+backend = "http://127.0.0.1:8081"  # ← Obligatoire (legacy)
 workers = 4
 trusted_proxies = []
 max_body_size = 209715200
@@ -186,11 +186,11 @@ max_body_size = 209715200
 # Listeners modernes (multi-listeners)
 [[server.listeners]]
 listen = "0.0.0.0:80"
-backend = "http://127.0.0.1:8080"
+backend = "http://127.0.0.1:8081"
 
 [[server.listeners]]
 listen = "0.0.0.0:443"
-backend = "http://127.0.0.1:8080"
+backend = "https://127.0.0.1:8443"
 
 [server.listeners.tls]
 cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
@@ -275,16 +275,17 @@ sudo lsof -i :80
 sudo lsof -i :443
 
 # Exemples de coupables courants :
-# - Apache écoute encore sur 80/443 (au lieu de 8080)
+# - Apache écoute encore sur 80/443 (au lieu de 8081/8443)
 # - Nginx tourne en parallèle
 # - WebSec déjà lancé dans un autre terminal
 
 # Arrêter Apache temporairement
 sudo systemctl stop apache2
 
-# Ou vérifier qu'Apache écoute bien sur 8080
+# Ou vérifier qu'Apache écoute bien sur 8081/8443
 sudo ss -tlnp | grep apache
-# Attendu: 127.0.0.1:8080  LISTEN  apache2
+# Attendu: 127.0.0.1:8081  LISTEN  apache2
+#          127.0.0.1:8443  LISTEN  apache2
 ```
 
 ---
@@ -295,17 +296,18 @@ sudo ss -tlnp | grep apache
 
 **Solution** :
 ```bash
-# 1. Vérifier qu'Apache écoute sur 8080
-sudo ss -tlnp | grep :8080
-# Attendu: 127.0.0.1:8080  LISTEN  apache2
+# 1. Vérifier qu'Apache écoute sur 8081/8443
+sudo ss -tlnp | grep -E ':8081|:8443'
+# Attendu: 127.0.0.1:8081  LISTEN  apache2
+#          127.0.0.1:8443  LISTEN  apache2
 
 # 2. Tester directement Apache
-curl http://127.0.0.1:8080
+curl http://127.0.0.1:8081
 # Doit retourner votre site
 
 # 3. Vérifier la config WebSec
 grep backend /etc/websec/websec.toml
-# Doit contenir: backend = "http://127.0.0.1:8080"
+# Doit contenir: backend = "http://127.0.0.1:8081" et backend = "https://127.0.0.1:8443"
 
 # 4. Vérifier les logs WebSec
 sudo journalctl -u websec -f
@@ -358,7 +360,7 @@ let client = Client::builder(TokioExecutor::new())
 
 **Explication** :
 - WebSec gère HTTP/2 sur le **frontend** (ports 80/443 publics)
-- Backend (Apache en localhost:8080) reste en HTTP/1.1
+- Backend (Apache en localhost:8081/8443) reste en HTTP/1.1
 - Pas besoin de HTTP/2 pour communication localhost
 
 ---
@@ -369,7 +371,7 @@ let client = Client::builder(TokioExecutor::new())
 
 **Cause** : HTTP/2 utilise le pseudo-header `:authority` au lieu de `Host`. Si WebSec ne synthétise pas le `Host` depuis `:authority`, Apache ne peut pas matcher le VHost et utilise un VHost par défaut qui redirige.
 
-**Solution** : **Corrigé dans v0.2.1** (commit c6aae58)
+**Solution** : **Corrigé dans v0.2.0** (commit c6aae58)
 
 WebSec synthétise automatiquement le header `Host` depuis `:authority` pour les requêtes HTTP/2 avant de forwarder en HTTP/1.1 au backend.
 
@@ -390,7 +392,7 @@ sudo systemctl start websec
 
 **Cause** : WebSec ne définissait pas le header `X-Forwarded-Proto`, donc Apache ne savait pas que la requête originale était en HTTPS.
 
-**Solution** : **Corrigé dans v0.2.1**. WebSec ajoute automatiquement `X-Forwarded-Proto: https` ou `http` selon le listener TLS.
+**Solution** : **Corrigé dans v0.2.0**. WebSec ajoute automatiquement `X-Forwarded-Proto: https` ou `http` selon le listener TLS.
 
 Vérifiez que votre VHost Apache utilise :
 ```apache
@@ -411,7 +413,7 @@ ERROR websec::proxy::middleware: Backend forwarding failed: timeout
 **Solution** :
 ```bash
 # 1. Vérifier que le backend répond
-curl -I http://127.0.0.1:8080
+curl -I http://127.0.0.1:8081
 
 # 2. Augmenter le timeout dans le code (si nécessaire)
 # Par défaut : 30 secondes
@@ -594,7 +596,7 @@ whitelist = [
 id websec
 
 # 2. Capability appliquée
-getcap /opt/websec/target/release/websec
+getcap /usr/local/bin/websec
 
 # 3. Config lisible
 sudo -u websec cat /etc/websec/websec.toml | head -5
@@ -606,15 +608,16 @@ sudo -u websec cat /etc/letsencrypt/live/example.com/fullchain.pem | head -5
 redis-cli ping
 
 # 6. Ports corrects
-sudo ss -tlnp | grep -E ':80|:443|:8080|:9090'
+sudo ss -tlnp | grep -E ':80|:443|:8081|:8443|:9090'
 # Attendu :
 # *:80      LISTEN  websec
 # *:443     LISTEN  websec
-# 127.0.0.1:8080  LISTEN  apache2
+# 127.0.0.1:8081  LISTEN  apache2
+# 127.0.0.1:8443  LISTEN  apache2
 # *:9090    LISTEN  websec
 
 # 7. Test dry-run
-sudo -u websec /opt/websec/target/release/websec --config /etc/websec/websec.toml run --dry-run
+sudo -u websec /usr/local/bin/websec --config /etc/websec/websec.toml run --dry-run
 
 # 8. Logs WebSec
 sudo journalctl -u websec -n 50

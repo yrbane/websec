@@ -730,12 +730,7 @@ async fn forward_to_backend(
             };
 
             // Reconstruire la réponse
-            let mut response = Response::from_parts(parts, Body::from(body_bytes));
-
-            // Ajouter headers informationnels WebSec
-            response
-                .headers_mut()
-                .insert("X-WebSec-Decision", "ALLOW".parse().unwrap());
+            let response = Response::from_parts(parts, Body::from(body_bytes));
 
             response
         }

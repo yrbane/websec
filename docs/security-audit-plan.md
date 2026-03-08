@@ -375,7 +375,7 @@ COOKIE=$(curl -c - https://votre-domaine.com/login | grep session | awk '{print 
 curl -b "session=$COOKIE" --interface eth1 https://votre-domaine.com/account
 ```
 
-**Attendu** : Signal `SessionHijackingSuspected` si changement IP
+**Attendu** : Signal `SessionTokenAnomaly` si changement IP
 
 #### Test 8.2 : Session Anomaly (User-Agent Change)
 
@@ -387,7 +387,7 @@ COOKIE=$(curl -A "Mozilla/5.0 Firefox/95.0" -c - https://votre-domaine.com/login
 curl -A "Mozilla/5.0 Chrome/96.0" -b "session=$COOKIE" https://votre-domaine.com/account
 ```
 
-**Attendu** : Signal `SessionAnomaly`
+**Attendu** : Signal `SessionTokenAnomaly`
 
 ---
 
@@ -399,7 +399,7 @@ curl -A "Mozilla/5.0 Chrome/96.0" -b "session=$COOKIE" https://votre-domaine.com
 (echo -ne "GET / HTTP/1.0\r\n\r\n") | nc votre-domaine.com 80
 ```
 
-**Attendu** : Signal `ProtocolAnomaly`
+**Attendu** : Signal `ProtocolViolation`
 
 #### Test 9.2 : Méthode HTTP Invalide
 
@@ -423,7 +423,7 @@ echo '<?php system($_GET["cmd"]); ?>' > shell.php
 curl -F "file=@shell.php" https://votre-domaine.com/upload.php
 ```
 
-**Attendu** : Signal `PotentialWebshellUpload`, `BLOCK`
+**Attendu** : Signal `ScriptInjection`, `BLOCK` (note : `PotentialWebshellUpload` n'existe pas encore)
 
 ---
 
@@ -450,9 +450,9 @@ curl -F "file=@shell.php" https://votre-domaine.com/upload.php
 | Geo | Impossible Travel | ImpossibleTravel | 20 | BLOCK | ⏳ |
 | Header | CRLF Injection | HeaderInjection | 20 | BLOCK | ⏳ |
 | Header | Multiple Host | HostHeaderAttack | 20 | BLOCK | ⏳ |
-| Session | Hijacking | SessionHijackingSuspected | - | BLOCK | ⏳ |
-| Session | UA Change | SessionAnomaly | - | RATE_LIMIT | ⏳ |
-| Protocol | Invalid HTTP | ProtocolAnomaly | - | BLOCK | ⏳ |
+| Session | Hijacking | SessionTokenAnomaly | 15 | BLOCK | ⏳ |
+| Session | UA Change | SessionTokenAnomaly / SessionFixationAttempt | 15 | RATE_LIMIT | ⏳ |
+| Protocol | Invalid HTTP | ProtocolViolation | 10 | BLOCK | ⏳ |
 
 **Légende** :
 - ⏳ À tester
