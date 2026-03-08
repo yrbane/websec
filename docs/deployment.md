@@ -77,7 +77,7 @@ cp config/websec.toml config/websec-prod.toml
 
 ```toml
 [server]
-listen = "0.0.0.0:8081"
+listen = "[::]:8081"
 backend = "http://host.docker.internal:3000"  # Pour Docker
 # backend = "http://172.17.0.1:3000"          # Alternative
 workers = 4  # Nombre de CPU cores
@@ -220,16 +220,16 @@ docker rm websec-proxy
 
 ```toml
 [server]
-listen = "0.0.0.0:80"                # valeur de repli
+listen = "[::]:80"                # valeur de repli
 backend = "http://127.0.0.1:8081"
 workers = 4
 
 [[server.listeners]]                 # Listener HTTP public
-listen = "0.0.0.0:80"
+listen = "[::]:80"
 backend = "http://127.0.0.1:8081"
 
 [[server.listeners]]                 # Listener HTTPS public
-listen = "0.0.0.0:443"
+listen = "[::]:443"
 backend = "http://127.0.0.1:8443"
 [server.listeners.tls]
 cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"

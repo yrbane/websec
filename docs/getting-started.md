@@ -40,18 +40,18 @@ cp config/websec.toml.example websec.toml
 
 ```toml
 [server]
-listen = "0.0.0.0:80"             # Fallback (utilisé si listeners vide)
+listen = "[::]:80"             # Fallback (utilisé si listeners vide)
 backend = "http://127.0.0.1:8080" # URL de votre application backend
 workers = 4                        # Nombre de workers (CPU cores recommandé)
 
 # Listener HTTP
 [[server.listeners]]
-listen = "0.0.0.0:80"
+listen = "[::]:80"
 backend = "http://127.0.0.1:8080"
 
 # Listener HTTPS (optionnel — nécessite --features tls)
 [[server.listeners]]
-listen = "0.0.0.0:443"
+listen = "[::]:443"
 backend = "http://127.0.0.1:8080"
 [server.listeners.tls]
 cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
@@ -163,7 +163,7 @@ Si plusieurs types d'attaques sont détectés simultanément (ex: SQLi + Scan), 
 
 ```toml
 [server]
-listen = "0.0.0.0:8080"
+listen = "[::]:8080"
 backend = "http://localhost:3000"  # Votre API
 
 [reputation]
@@ -179,7 +179,7 @@ threshold_challenge = 30
 
 ```toml
 [server]
-listen = "0.0.0.0:443"
+listen = "[::]:443"
 backend = "http://localhost:8000"
 
 [reputation]

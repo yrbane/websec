@@ -26,7 +26,7 @@ WebSec supporte SNI (Server Name Indication) permettant de gérer **plusieurs do
 ```toml
 # ❌ Problème : Un seul certificat pour tous les domaines
 [[server.listeners]]
-listen = "0.0.0.0:443"
+listen = "[::]:443"
 [server.listeners.tls]
 cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"  # Seulement example.com
 key_file = "/etc/letsencrypt/live/example.com/privkey.pem"
@@ -39,7 +39,7 @@ key_file = "/etc/letsencrypt/live/example.com/privkey.pem"
 ```toml
 # ✅ Solution : Certificat adapté à chaque domaine
 [[server.listeners]]
-listen = "0.0.0.0:443"
+listen = "[::]:443"
 [server.listeners.tls]
 cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"  # Défaut
 key_file = "/etc/letsencrypt/live/example.com/privkey.pem"
@@ -119,7 +119,7 @@ Pendant la migration, les deux domaines sont actifs avec leurs certificats respe
 
 ```toml
 [[server.listeners]]
-listen = "0.0.0.0:443"
+listen = "[::]:443"
 backend = "http://127.0.0.1:8081"
 
 [server.listeners.tls]
@@ -158,7 +158,7 @@ key_file = "/path/to/domain2/privkey.pem"
 
 ```toml
 [[server.listeners]]
-listen = "0.0.0.0:443"
+listen = "[::]:443"
 backend = "http://127.0.0.1:8081"
 
 [server.listeners.tls]
@@ -182,7 +182,7 @@ key_file = "/etc/letsencrypt/live/example.org/privkey.pem"
 
 ```toml
 [[server.listeners]]
-listen = "0.0.0.0:443"
+listen = "[::]:443"
 backend = "http://127.0.0.1:8081"
 
 [server.listeners.tls]
@@ -212,11 +212,11 @@ key_file = "/etc/letsencrypt/live/www.example.com/privkey.pem"
 
 ```toml
 [[server.listeners]]
-listen = "0.0.0.0:80"
+listen = "[::]:80"
 backend = "http://127.0.0.1:8081"
 
 [[server.listeners]]
-listen = "0.0.0.0:443"
+listen = "[::]:443"
 backend = "http://127.0.0.1:8081"
 
 [server.listeners.tls]
@@ -309,7 +309,7 @@ sudo -u websec /usr/local/bin/websec --config /etc/websec/websec.toml run --dry-
 
 **Output attendu** :
 ```
-🔒 HTTPS listener ready on 0.0.0.0:443 (SNI enabled, 3 certificates)
+🔒 HTTPS listener ready on [::]:443 (SNI enabled, 3 certificates)
 Loaded SNI certificate for: example.org
 Loaded SNI certificate for: example.net
 ```

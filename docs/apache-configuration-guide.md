@@ -60,12 +60,12 @@ max_body_size = 209715200  # 200 MB pour uploads vidéo
 
 # Listener HTTP (port 80)
 [[server.listeners]]
-listen = "0.0.0.0:80"
+listen = "[::]:80"
 backend = "http://127.0.0.1:8081"
 
 # Listener HTTPS (port 443) - TLS terminé par WebSec
 [[server.listeners]]
-listen = "0.0.0.0:443"
+listen = "[::]:443"
 backend = "https://127.0.0.1:8443"  # Apache reçoit HTTPS
 
 [server.listeners.tls]
@@ -312,7 +312,7 @@ sudo tail -f /var/log/apache2/access.log
 
 ### WebSec écoute sur IPv4 et IPv6
 
-Par défaut, `0.0.0.0` dans WebSec écoute **uniquement sur IPv4**. Pour écouter sur IPv6, utilisez `::` :
+Par défaut, `[::]` dans WebSec écoute **sur IPv4 et IPv6** (dual-stack). Pour écouter uniquement sur IPv4, utilisez `0.0.0.0` ; pour IPv6 seul, utilisez `[::]` avec `IPV6_V6ONLY` :
 
 **Configuration websec.toml** :
 
@@ -336,7 +336,7 @@ key_file = "/etc/letsencrypt/live/example.com/privkey.pem"
 ```toml
 # Listener IPv4
 [[server.listeners]]
-listen = "0.0.0.0:80"
+listen = "[::]:80"
 backend = "http://127.0.0.1:8081"
 
 # Listener IPv6
@@ -346,7 +346,7 @@ backend = "http://[::1]:8081"
 
 # Listener HTTPS IPv4
 [[server.listeners]]
-listen = "0.0.0.0:443"
+listen = "[::]:443"
 backend = "https://127.0.0.1:8443"
 
 [server.listeners.tls]

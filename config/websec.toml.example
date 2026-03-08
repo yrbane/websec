@@ -3,7 +3,7 @@
 
 [server]
 # Adresse et port d'écoute
-listen = "0.0.0.0:8080"
+listen = "[::]:8080"
 
 # URL du serveur web backend (votre application)
 backend = "http://127.0.0.1:3000"
@@ -16,11 +16,11 @@ workers = 4
 #
 # Exemple simple (un seul domaine):
 # [[server.listeners]]
-# listen = "0.0.0.0:80"
+# listen = "[::]:80"
 # backend = "http://127.0.0.1:8080"
 #
 # [[server.listeners]]
-# listen = "0.0.0.0:443"
+# listen = "[::]:443"
 # backend = "http://127.0.0.1:8080"
 # [server.listeners.tls]
 # cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
@@ -28,7 +28,7 @@ workers = 4
 #
 # Exemple avancé (SNI multi-domaines sur le même port 443):
 # [[server.listeners]]
-# listen = "0.0.0.0:443"
+# listen = "[::]:443"
 # backend = "http://127.0.0.1:8080"
 # [server.listeners.tls]
 # # Certificat par défaut/fallback

@@ -10,15 +10,15 @@ WebSec utilise le format TOML pour sa configuration. Le fichier par défaut est 
 
 ```toml
 [server]
-listen = "0.0.0.0:8080"           # Obligatoire
+listen = "[::]:8080"           # Obligatoire
 backend = "http://127.0.0.1:3000" # Obligatoire
 workers = 4                        # Optionnel, défaut: num_cpus::get()
 [[server.listeners]]               # Optionnel : listeners explicites
-listen = "0.0.0.0:80"
+listen = "[::]:80"
 backend = "http://127.0.0.1:8081"
 
 [[server.listeners]]
-listen = "0.0.0.0:443"
+listen = "[::]:443"
 backend = "http://127.0.0.1:8443"
 [server.listeners.tls]
 cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
@@ -34,7 +34,7 @@ key_file  = "/etc/letsencrypt/live/other.example.com/privkey.pem"
 - **Type**: String
 - **Format**: `IP:PORT` ou `HOST:PORT`
 - **Exemples**:
-  - `"0.0.0.0:8080"` - Écoute sur toutes les interfaces
+  - `"[::]:8080"` - Écoute sur toutes les interfaces (IPv4 et IPv6, dual-stack)
   - `"127.0.0.1:8080"` - Localhost uniquement
   - `"[::]:8080"` - IPv6 toutes interfaces
 - **Note**: Ports < 1024 nécessitent les permissions root
@@ -333,7 +333,7 @@ port = 9090
 - **Type**: Integer
 - **Défaut**: 9090
 - **Description**: Port dédié pour l'endpoint `/metrics` (séparé du proxy pour sécurité)
-- **Note**: Les métriques sont servies sur `http://0.0.0.0:<port>/metrics`, pas sur le port du proxy
+- **Note**: Les métriques sont servies sur `http://[::]:<port>/metrics`, pas sur le port du proxy
 
 ---
 
@@ -343,7 +343,7 @@ port = 9090
 # Configuration de production recommandée
 
 [server]
-listen = "0.0.0.0:80"
+listen = "[::]:80"
 backend = "http://127.0.0.1:8080"
 workers = 8  # Ajuster selon CPU
 trusted_proxies = []
@@ -351,12 +351,12 @@ max_body_size = 10485760  # 10 MB
 
 # Listener HTTP
 [[server.listeners]]
-listen = "0.0.0.0:80"
+listen = "[::]:80"
 backend = "http://127.0.0.1:8080"
 
 # Listener HTTPS (TLS terminé par WebSec)
 [[server.listeners]]
-listen = "0.0.0.0:443"
+listen = "[::]:443"
 backend = "http://127.0.0.1:8080"
 [server.listeners.tls]
 cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
@@ -419,7 +419,7 @@ WebSec supporte les variables d'environnement suivantes :
 | Variable | Description | Exemple |
 |----------|-------------|---------|
 | `WEBSEC_CONFIG` | Chemin vers le fichier de configuration | `/etc/websec/websec.toml` |
-| `WEBSEC_SERVER_LISTEN` | Surcharge `server.listen` | `0.0.0.0:8080` |
+| `WEBSEC_SERVER_LISTEN` | Surcharge `server.listen` | `[::]:8080` |
 | `WEBSEC_SERVER_BACKEND` | Surcharge `server.backend` | `http://localhost:3000` |
 | `WEBSEC_STORAGE_REDIS_URL` | Surcharge `storage.redis_url` | `redis://localhost:6379` |
 | `WEBSEC_LOGGING_LEVEL` | Surcharge `logging.level` | `debug` |
