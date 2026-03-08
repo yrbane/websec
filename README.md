@@ -14,10 +14,14 @@
 
 **WebSec** est un **reverse proxy de sécurité** haute performance écrit en Rust, conçu pour protéger vos serveurs web contre les menaces HTTP(S) en temps réel. Transparent, configurable et prêt pour la production.
 
-> 🎉 **Version actuelle** : v0.2.0
+> 🎉 **Version actuelle** : v0.3.0
+>
 > ✅ **Performance auditée** : Latence de détection < 400µs (0.4ms)
+>
 > ✅ **HTTP/2 natif** : Support complet HTTP/2 frontend + HTTP/1.1 backend
+>
 > ✅ **TLS natif** : Terminaison HTTPS avec rustls (TLSv1.3, ALPN, SNI)
+>
 > ✅ **Qualité** : 400+ tests unitaires et d'intégration, 0 warning clippy
 
 ---
