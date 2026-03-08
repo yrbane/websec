@@ -1,6 +1,6 @@
 [package]
 name = "websec"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["WebSec Team"]
 description = "High-performance security reverse proxy for HTTP(S) threat detection and mitigation"
