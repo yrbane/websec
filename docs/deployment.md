@@ -77,7 +77,7 @@ cp config/websec.toml config/websec-prod.toml
 
 ```toml
 [server]
-listen = "0.0.0.0:8080"
+listen = "0.0.0.0:8081"
 backend = "http://host.docker.internal:3000"  # Pour Docker
 # backend = "http://172.17.0.1:3000"          # Alternative
 workers = 4  # Nombre de CPU cores
@@ -92,8 +92,8 @@ decay_half_life_hours = 24.0
 correlation_penalty_bonus = 10
 
 [storage]
-type = "redis"
-redis_url = "redis://host.docker.internal:6379"  # Pour Docker
+type = "redis"  # Alternatives : "memory" (in-process), "sled" (embedded DB)
+redis_url = "redis://host.docker.internal:6379"  # Pour Docker (uniquement si type = "redis")
 cache_size = 10000
 
 [geolocation]
@@ -120,7 +120,9 @@ enabled = true
 port = 9090
 
 [lists]
-# Ajoutez vos IPs de confiance
+# Note : les listes (whitelist/blacklist) sont gérées via la commande CLI
+# `websec lists` et le stockage fichier (voir WEBSEC_LISTS_DIR).
+# Les entrées ci-dessous dans le TOML sont ignorées par le code actuel.
 whitelist = [
     "127.0.0.1",
     "::1",
@@ -154,7 +156,7 @@ websec docker build
 docker run -d \
   --name websec-proxy \
   --restart unless-stopped \
-  -p 80:8080 \
+  -p 80:8081 \
   -p 9090:9090 \
   -v $(pwd)/config/websec-prod.toml:/app/config/websec.toml:ro \
   --add-host=host.docker.internal:host-gateway \
@@ -286,38 +288,32 @@ Créer `/etc/systemd/system/websec.service` :
 
 ```ini
 [Unit]
-Description=WebSec HTTP Security Proxy
-Documentation=https://github.com/votre-username/websec
-After=network.target redis.service
-Wants=redis.service
+Description=WebSec Security Proxy
+After=network.target syslog.target
 
 [Service]
+AmbientCapabilities=CAP_NET_BIND_SERVICE
 Type=simple
 User=websec
 Group=websec
-ExecStart=/usr/local/bin/websec run --config /etc/websec/websec.toml
+# Point to the installed binary location
+ExecStart=/usr/local/bin/websec run
+# Set default configuration path
+Environment=WEBSEC_CONFIG=/etc/websec/websec.toml
+Environment=WEBSEC_LISTS_DIR=/etc/websec/lists
+# Restart automatically on failure
 Restart=always
 RestartSec=5
-StandardOutput=journal
-StandardError=journal
 
-# Limites de ressources
-LimitNOFILE=65536
-LimitNPROC=4096
-
-# Sécurité renforcée
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/var/log/websec
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-
-# Performance
-Nice=-5
-CPUSchedulingPolicy=fifo
-CPUSchedulingPriority=50
+# Security Hardening
+# Mount /usr, /boot, and /etc as read-only
+ProtectSystem=full
+# Make /home, /root, /run/user inaccessible
+ProtectHome=yes
+# Create private /tmp directory
+PrivateTmp=yes
+# Make device nodes inaccessible (except /dev/null, /dev/zero, etc)
+PrivateDevices=yes
 
 [Install]
 WantedBy=multi-user.target
@@ -332,7 +328,7 @@ sudo setcap 'cap_net_bind_service=+ep' /usr/local/bin/websec
 
 2. Ou utiliser un port > 1024 et rediriger avec iptables :
 ```bash
-sudo iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 8080
+sudo iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 8081
 ```
 
 ### Démarrage du Service
@@ -727,6 +723,7 @@ groups:
 workers = 8  # = nombre de CPU cores
 
 [storage]
+type = "redis"  # Ou "memory" / "sled" selon vos besoins
 cache_size = 50000  # Plus de cache L1
 
 [ratelimit]
@@ -809,10 +806,12 @@ sudo iptables -A INPUT -p tcp --dport 9090 -s VOTRE_IP_ADMIN -j ACCEPT
 
 ### Sécurité SSL/TLS
 
-WebSec ne gère pas SSL/TLS directement. Utilisez un reverse proxy devant :
+WebSec gère TLS nativement via **rustls** lorsqu'il est compilé avec `--features tls`. Vous pouvez configurer la terminaison TLS directement dans WebSec via les `[[server.listeners]]` avec une section `[server.listeners.tls]` (voir la section "Exemple de configuration multi-listeners" ci-dessus).
+
+Si vous préférez malgré tout placer un reverse proxy TLS devant WebSec (par exemple pour du load-balancing ou du caching), voici un exemple Nginx :
 
 ```nginx
-# Nginx avec SSL
+# Nginx avec SSL devant WebSec (optionnel)
 server {
     listen 443 ssl http2;
     server_name votre-domaine.com;
@@ -857,7 +856,7 @@ websec run --config /etc/websec/websec.toml --dry-run
 redis-cli ping
 
 # Vérifier que le port est libre
-sudo netstat -tulpn | grep :8080
+sudo netstat -tulpn | grep :8081
 ```
 
 ### Erreur "Cannot connect to backend"
@@ -883,14 +882,11 @@ threshold_allow = 60        # Plus permissif (était 70)
 threshold_ratelimit = 30    # Plus permissif (était 40)
 ```
 
-Ou ajoutez des IPs à la whitelist :
+Ou ajoutez des IPs à la whitelist via la CLI :
 
-```toml
-[lists]
-whitelist = [
-    "1.2.3.4",
-    "10.0.0.0/8",
-]
+```bash
+websec lists whitelist add 1.2.3.4
+websec lists whitelist add 10.0.0.0/8
 ```
 
 ### IP légitime bloquée
@@ -985,12 +981,12 @@ sudo systemctl start websec
 
 ## Checklist Pré-Production
 
-- [ ] Redis installé et configuré avec persistence
+- [ ] Storage configuré (Redis avec persistence, ou "memory"/"sled" si mono-instance)
 - [ ] Backend configuré pour écouter sur localhost uniquement
 - [ ] WebSec installé et configuré
 - [ ] Whitelist configurée avec vos IPs d'administration
 - [ ] Firewall configuré
-- [ ] SSL/TLS configuré (via Nginx/Caddy devant)
+- [ ] SSL/TLS configuré (natif via `--features tls`, ou via Nginx/Caddy devant)
 - [ ] Monitoring configuré (Prometheus + Grafana)
 - [ ] Alerting configuré
 - [ ] Logs rotatés (logrotate)

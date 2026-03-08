@@ -53,7 +53,7 @@ base_score = 100
 # Seuils de décision
 threshold_allow = 70        # >= 70: ALLOW (Autoriser)
 threshold_ratelimit = 40    # 40-69: RATE_LIMIT (Limiter)
-threshold_challenge = 20    # 20-39: CHALLENGE (Captcha - à implémenter)
+threshold_challenge = 20    # 20-39: CHALLENGE (Proof of Work SHA-256)
 threshold_block = 0         # < 20: BLOCK (Bloquer)
 
 # Demi-vie de décroissance exponentielle en heures (récupération du score)

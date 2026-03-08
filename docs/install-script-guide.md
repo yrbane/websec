@@ -22,7 +22,7 @@ Le script `install.sh` est un installeur interactif qui automatise le déploieme
 
 ### Ce que le script fait :
 
-✅ **Vérification des dépendances** système (git, gcc, pkg-config, openssl, redis)
+✅ **Vérification des dépendances** système (git, gcc, pkg-config, openssl)
 ✅ **Installation de Rust** via rustup (si non présent)
 ✅ **Création de l'utilisateur système** `websec` (non-privilegié)
 ✅ **Clonage du repository** depuis GitHub ou URL personnalisée
@@ -30,38 +30,33 @@ Le script `install.sh` est un installeur interactif qui automatise le déploieme
 ✅ **Application des permissions** (chown websec:websec)
 ✅ **Configuration des capabilities** (`CAP_NET_BIND_SERVICE`)
 ✅ **Vérification complète** (ownership, capabilities, exécution)
-✅ **Installation système optionnelle** (copie vers `/usr/local/bin`)
+✅ **Installation système automatique** (copie vers `/usr/local/bin`)
+✅ **Configuration de websec.toml** (génération automatique)
+✅ **Installation du service systemd** (génération automatique)
 
 ### Ce que le script NE fait PAS :
 
-❌ Configuration de `/etc/websec/websec.toml` (à faire manuellement)
 ❌ Configuration des certificats SSL (à faire manuellement)
-❌ Installation du service systemd (à faire manuellement)
 ❌ Configuration d'Apache/Nginx backend (à faire manuellement)
 
-Le script se concentre sur l'installation du binaire. La configuration du système reste manuelle pour vous laisser le contrôle.
+Le script installe le binaire, configure websec.toml et le service systemd. La configuration SSL et du backend reste manuelle pour vous laisser le contrôle.
 
 ---
 
 ## ✨ Fonctionnalités
 
-### Mode Interactif
+### Mode Automatique
 
-Le script demande **confirmation avant chaque action** :
+Le script installe automatiquement les dépendances manquantes :
 
 ```
-[INFO] Missing dependencies: redis-server libssl-dev
-
-Command to install dependencies:
-apt-get update && apt-get install -y redis-server libssl-dev
-
-Do you want to install these dependencies now? [y/N]:
+[INFO] Missing dependencies: libssl-dev
+[INFO] Installing missing dependencies...
+apt-get update && apt-get install -y libssl-dev
+[INFO] Dependencies installed successfully
 ```
 
-Vous pouvez :
-- ✅ Accepter l'installation automatique
-- ❌ Refuser et installer manuellement
-- 📋 Copier la commande affichée pour l'exécuter vous-même
+Les dépendances sont installées automatiquement sans confirmation interactive.
 
 ### Détection Automatique
 
@@ -136,15 +131,13 @@ Le script nécessite `sudo` car il doit :
 - `gcc` / `build-essential` : Compilation Rust
 - `pkg-config` : Détection des bibliothèques
 - `libssl-dev` / `openssl-devel` : Support TLS
-- `redis-server` : Stockage distribué (optionnel mais recommandé)
 
 **Si manquant** :
 ```
-[!] Missing dependencies: redis-server libssl-dev
-Command to install dependencies:
-apt-get update && apt-get install -y redis-server libssl-dev
-
-Do you want to install these dependencies now? [y/N]:
+[!] Missing dependencies: libssl-dev
+[INFO] Installing missing dependencies...
+apt-get update && apt-get install -y libssl-dev
+[INFO] Dependencies installed successfully
 ```
 
 ### Étape 3 : Installation de Rust
@@ -163,7 +156,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 Do you want to install Rust now? [y/N]:
 ```
 
-**Important** : Le script installe Rust pour l'utilisateur qui exécute sudo (via `$SUDO_USER`), pas pour root.
+**Important** : Le script installe Rust pour root, qui est utilisé pour la compilation.
 
 ### Étape 4 : Création de l'Utilisateur
 
@@ -176,7 +169,7 @@ Si l'utilisateur n'existe pas :
 ```
 [!] User 'websec' does not exist
 Command to create user:
-useradd -r -s /bin/false -d /opt/websec websec
+useradd -r -s /bin/false -d /var/lib/websec websec
 
 Do you want to create the websec user now? [Y/n]:
 ```
@@ -184,7 +177,7 @@ Do you want to create the websec user now? [Y/n]:
 **Caractéristiques de l'utilisateur** :
 - `-r` : Utilisateur système (UID < 1000)
 - `-s /bin/false` : Pas de shell interactif (sécurité)
-- `-d /opt/websec` : Home directory = installation directory
+- `-d /var/lib/websec` : Home directory = data directory (DATA_DIR)
 
 ### Étape 5 : Clonage du Repository
 
@@ -202,7 +195,7 @@ Do you want to create the websec user now? [Y/n]:
 
 ```
 [INFO] Compiling WebSec...
-[INFO] Compiling as user: your-user
+[INFO] Compiling as root
 [✓] WebSec compiled successfully
 ```
 
@@ -211,9 +204,7 @@ Do you want to create the websec user now? [Y/n]:
 cargo build --release --features tls
 ```
 
-**Important** : La compilation se fait avec l'utilisateur qui a exécuté sudo (`$SUDO_USER`), **pas avec root ou websec**. Ceci est critique car :
-- L'utilisateur `websec` n'a pas accès à Rust
-- Rust est installé dans `~/.cargo/` de l'utilisateur
+**Important** : La compilation se fait en tant que root. L'utilisateur `websec` est uniquement utilisé pour **exécuter** le binaire, pas pour compiler.
 
 ### Étape 7 : Application des Permissions
 
@@ -250,18 +241,15 @@ websec 0.2.0
 3. Capability `cap_net_bind_service` appliquée
 4. Exécution réussie de `websec --version` en tant qu'utilisateur `websec`
 
-### Étape 9 : Installation Système (Optionnelle)
+### Étape 9 : Installation Système (Automatique)
 
 ```
-[INFO] System installation option
-
-This will copy the binary to /usr/local/bin/websec
-Note: You will need to reapply the capability after each recompilation
-
-Do you want to install websec to system path? [y/N]:
+[INFO] Installing websec to system path...
+[✓] Binary copied to /usr/local/bin/websec
+[✓] Capability applied to /usr/local/bin/websec
 ```
 
-Si vous acceptez :
+Le script copie automatiquement le binaire vers `/usr/local/bin/websec` :
 ```bash
 cp /opt/websec/target/release/websec /usr/local/bin/websec
 setcap 'cap_net_bind_service=+ep' /usr/local/bin/websec
@@ -269,13 +257,7 @@ chown root:root /usr/local/bin/websec
 chmod 755 /usr/local/bin/websec
 ```
 
-**Avantages** :
-- Commande `websec` disponible dans le PATH
-- Plus facile à utiliser
-
-**Inconvénients** :
-- Après recompilation, vous devez **recopier et réappliquer la capability**
-- Duplication du binaire (espace disque)
+**Note** : Après recompilation, vous devez **recopier et réappliquer la capability**.
 
 ### Étape 10 : Prochaines Étapes
 
@@ -307,7 +289,9 @@ Vous pouvez modifier ces variables au début du script :
 # Configuration
 WEBSEC_USER="websec"          # Nom de l'utilisateur système
 INSTALL_DIR="/opt/websec"     # Répertoire d'installation
-RUST_VERSION="stable"         # Version Rust (stable/beta/nightly)
+CONFIG_DIR="/etc/websec"      # Répertoire de configuration
+LOG_DIR="/var/log/websec"     # Répertoire des logs
+DATA_DIR="/var/lib/websec"    # Répertoire des données
 ```
 
 ### Exemple : Installation dans un Répertoire Personnalisé
@@ -346,13 +330,13 @@ sudo bash install.sh
 **Solution** : Installer manuellement les dépendances :
 ```bash
 # Debian/Ubuntu
-sudo apt install -y git build-essential pkg-config libssl-dev redis-server
+sudo apt install -y git build-essential pkg-config libssl-dev
 
 # RHEL/CentOS/Fedora
-sudo dnf install -y git gcc pkg-config openssl-devel redis
+sudo dnf install -y git gcc pkg-config openssl-devel
 
 # Arch Linux
-sudo pacman -S --noconfirm git base-devel pkg-config openssl redis
+sudo pacman -S --noconfirm git base-devel pkg-config openssl
 ```
 
 Puis relancer le script.
@@ -449,25 +433,24 @@ sudo setcap -r /bin/ping  # Cleanup
 
 ### Le script modifie-t-il ma configuration système ?
 
-**Oui, avec votre permission** :
-- ✅ Installation de packages système (après confirmation)
+**Oui** :
+- ✅ Installation de packages système (automatiquement)
 - ✅ Création d'un utilisateur système `websec`
-- ✅ Installation de Rust dans `~/.cargo/` de l'utilisateur
+- ✅ Installation de Rust dans `~/.cargo/` de root
+- ✅ Configuration de `/etc/websec/websec.toml`
+- ✅ Installation du service systemd
 
 **Non** :
 - ❌ Pas de modification de Apache/Nginx
 - ❌ Pas de modification des certificats SSL
-- ❌ Pas d'installation de service systemd automatique
 
 ### Que faire après l'installation ?
 
 Suivez les "Next Steps" affichés par le script :
 
-1. **Configuration** : Créer `/etc/websec/websec.toml`
-2. **SSL** : Configurer les permissions Let's Encrypt
-3. **Backend** : Configurer Apache pour écouter sur 8080
-4. **Systemd** : Installer le service systemd
-5. **Test** : Dry-run puis démarrage
+1. **SSL** : Configurer les permissions Let's Encrypt
+2. **Backend** : Configurer Apache pour écouter sur 8081/8443
+3. **Test** : Dry-run puis démarrage
 
 Voir `docs/deployment-checklist.md` pour le guide complet.
 

@@ -12,7 +12,7 @@ WebSec utilise le format TOML pour sa configuration. Le fichier par défaut est 
 [server]
 listen = "0.0.0.0:8080"           # Obligatoire
 backend = "http://127.0.0.1:3000" # Obligatoire
-workers = 4                        # Optionnel, défaut: 4
+workers = 4                        # Optionnel, défaut: num_cpus::get()
 [[server.listeners]]               # Optionnel : listeners explicites
 listen = "0.0.0.0:80"
 backend = "http://127.0.0.1:8081"
@@ -23,6 +23,11 @@ backend = "http://127.0.0.1:8443"
 [server.listeners.tls]
 cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
 key_file  = "/etc/letsencrypt/live/example.com/privkey.pem"
+
+[[server.listeners.tls.sni_certificates]]
+server_name = "other.example.com"
+cert_file = "/etc/letsencrypt/live/other.example.com/fullchain.pem"
+key_file  = "/etc/letsencrypt/live/other.example.com/privkey.pem"
 ```
 
 #### `listen`
@@ -45,7 +50,7 @@ key_file  = "/etc/letsencrypt/live/example.com/privkey.pem"
 
 #### `workers`
 - **Type**: Integer
-- **Défaut**: 4
+- **Défaut**: `num_cpus::get()` (nombre de coeurs CPU)
 - **Recommandation**: Nombre de CPU cores
 - **Min**: 1, **Max**: 256
 
@@ -65,7 +70,11 @@ key_file  = "/etc/letsencrypt/live/example.com/privkey.pem"
 - **Champs** :
   - `cert_file` : chemin vers le certificat (PEM, chaîne complète)
   - `key_file` : clé privée PEM correspondante
-- **Comportement** : si défini, WebSec démarre un listener HTTPS avec Rustls sur l’adresse spécifiée. Le backend peut rester en HTTP (terminaison TLS côté WebSec) ou HTTPS.
+  - `sni_certificates` : tableau optionnel de certificats SNI supplémentaires, chacun avec :
+    - `server_name` : nom de domaine pour le SNI (ex. `"other.example.com"`)
+    - `cert_file` : chemin vers le certificat PEM pour ce domaine
+    - `key_file` : clé privée PEM correspondante pour ce domaine
+- **Comportement** : si défini, WebSec démarre un listener HTTPS avec Rustls sur l'adresse spécifiée. Le backend peut rester en HTTP (terminaison TLS côté WebSec) ou HTTPS. Lorsque `sni_certificates` est configuré, WebSec sélectionne automatiquement le certificat approprié en fonction du SNI envoyé par le client.
 
 > ℹ️ Lorsque `server.listeners` est présent, l’assistant `websec setup` (Apache) mettra à jour automatiquement la première entrée HTTP. Les listeners HTTPS restent à configurer manuellement (certificat + backend correspondant).
 
@@ -108,7 +117,7 @@ correlation_penalty_bonus = 10
 #### `threshold_challenge`
 - **Type**: Integer (0-100)
 - **Défaut**: 20
-- **Description**: Score minimum pour CHALLENGE (CAPTCHA)
+- **Description**: Score minimum pour CHALLENGE (Proof of Work)
 - **Entre**: `threshold_block` et `threshold_ratelimit`
 
 #### `threshold_block`
@@ -139,18 +148,20 @@ correlation_penalty_bonus = 10
 
 ```toml
 [storage]
-storage_type = "memory"           # "memory" ou "redis"
+type = "memory"                   # "memory", "redis" ou "sled"
 cache_size = 10000                # Optionnel pour memory
-redis_url = "redis://localhost:6379"  # Requis si storage_type = "redis"
+redis_url = "redis://localhost:6379"  # Requis si type = "redis"
+path = "websec.db"                # Optionnel, défaut pour sled
 ```
 
-#### `storage_type`
-- **Type**: String
-- **Valeurs**: `"memory"` ou `"redis"`
+#### `type`
+- **Type**: String (serde rename de `storage_type`)
+- **Valeurs**: `"memory"`, `"redis"` ou `"sled"`
 - **Défaut**: `"memory"`
 - **Description**:
   - `memory`: InMemoryRepository (hashmap thread-safe)
   - `redis`: RedisRepository (stockage distribué)
+  - `sled`: SledRepository (base de données embarquée persistante)
 
 #### `cache_size`
 - **Type**: Integer
@@ -164,6 +175,11 @@ redis_url = "redis://localhost:6379"  # Requis si storage_type = "redis"
   - `"redis://localhost:6379"`
   - `"redis://:password@localhost:6379/0"`
   - `"redis://user:pass@redis.internal:6379/1"`
+
+#### `path`
+- **Type**: String (chemin fichier)
+- **Défaut**: `"websec.db"`
+- **Description**: Chemin vers la base de données sled (sled seulement)
 
 ---
 
@@ -182,7 +198,7 @@ NG = 20   # Nigeria
 
 #### `enabled`
 - **Type**: Boolean
-- **Défaut**: false
+- **Défaut**: true
 - **Description**: Active/désactive la géolocalisation
 
 #### `database`
@@ -237,6 +253,41 @@ window_duration_secs = 60
 
 ---
 
+### [challenge] - Configuration du challenge
+
+```toml
+[challenge]
+challenge_type = "pow"    # "pow" ou "math"
+pow_difficulty = 20       # Difficulté du Proof of Work
+timeout_secs = 300        # Délai d'expiration du challenge (5 min)
+cookie_ttl_secs = 3600    # Durée de validité du cookie (1 heure)
+```
+
+#### `challenge_type`
+- **Type**: String
+- **Valeurs**: `"pow"` ou `"math"`
+- **Défaut**: `"pow"`
+- **Description**: Type de challenge présenté aux visiteurs suspects
+  - `pow`: Proof of Work (calcul cryptographique côté client)
+  - `math`: Challenge mathématique simple
+
+#### `pow_difficulty`
+- **Type**: u8
+- **Défaut**: 20
+- **Description**: Difficulté du Proof of Work (nombre de bits de zéros requis). Plus la valeur est élevée, plus le calcul est long côté client.
+
+#### `timeout_secs`
+- **Type**: u64
+- **Défaut**: 300
+- **Description**: Délai d'expiration du challenge en secondes. Le client doit résoudre le challenge dans ce délai.
+
+#### `cookie_ttl_secs`
+- **Type**: u64
+- **Défaut**: 3600
+- **Description**: Durée de validité du cookie de challenge résolu en secondes. Après résolution, le client n'aura pas besoin de résoudre un nouveau challenge pendant cette durée.
+
+---
+
 ### [logging] - Configuration des logs
 
 ```toml
@@ -256,11 +307,12 @@ format = "json"
 
 #### `format`
 - **Type**: String
-- **Valeurs**: `"json"` ou `"pretty"`
+- **Valeurs**: `"json"`, `"pretty"` ou `"compact"`
 - **Défaut**: `"json"`
 - **Description**:
   - `json`: Machine-readable, pour ELK/Splunk
   - `pretty`: Human-readable, pour développement
+  - `compact`: Compact single-line, pour environnements à espace limité
 
 ---
 
@@ -320,7 +372,7 @@ decay_half_life_hours = 24.0
 correlation_penalty_bonus = 10
 
 [storage]
-storage_type = "redis"    # Distribution pour HA
+type = "redis"            # Distribution pour HA
 redis_url = "redis://redis.internal:6379/0"
 cache_size = 10000
 
@@ -357,7 +409,7 @@ port = 9090
 Pour valider votre configuration:
 
 ```bash
-./websec --show-config
+./websec config
 ```
 
 ## Variables d'environnement
@@ -371,6 +423,7 @@ WebSec supporte les variables d'environnement suivantes :
 | `WEBSEC_SERVER_BACKEND` | Surcharge `server.backend` | `http://localhost:3000` |
 | `WEBSEC_STORAGE_REDIS_URL` | Surcharge `storage.redis_url` | `redis://localhost:6379` |
 | `WEBSEC_LOGGING_LEVEL` | Surcharge `logging.level` | `debug` |
+| `WEBSEC_LISTS_DIR` | Répertoire contenant les listes (blocklists, allowlists) | `/etc/websec/lists` |
 
 ```bash
 # Exemple d'utilisation

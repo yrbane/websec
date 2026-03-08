@@ -87,7 +87,7 @@ WebSec est un reverse proxy de sécurité construit en Rust utilisant le framewo
 5. **Action selon décision**:
    - ALLOW: Forward au backend
    - BLOCK: Réponse 403 avec score
-   - CHALLENGE: HTML CAPTCHA
+   - CHALLENGE: Proof of Work SHA-256
    - RATE_LIMIT: Réponse 429
 6. **Métriques**: Enregistrement latence, compteurs, scores
 
@@ -102,19 +102,29 @@ WebSec est un reverse proxy de sécurité construit en Rust utilisant le framewo
 **Algorithme**:
 ```rust
 async fn process_request(context: &HttpRequestContext) -> DecisionEngineResult {
-    // 1. Charger ou créer le profil
+    // 1. Vérifier la blacklist
+    if blacklist.contains(context.ip) {
+        return DecisionEngineResult { decision: Decision::BLOCK, .. };
+    }
+
+    // 2. Vérifier la whitelist
+    if whitelist.contains(context.ip) {
+        return DecisionEngineResult { decision: Decision::ALLOW, .. };
+    }
+
+    // 3. Charger ou créer le profil
     let mut profile = repository.get(context.ip)
         .unwrap_or_else(|| ReputationProfile::new(context.ip, base_score));
 
-    // 2. Analyser avec tous les détecteurs
+    // 4. Analyser avec tous les détecteurs
     let detection_result = detectors.analyze_all(context).await;
 
-    // 3. Ajouter signaux détectés au profil
+    // 5. Ajouter signaux détectés au profil
     for signal in detection_result.signals {
         profile.add_signal(signal);
     }
 
-    // 4. Recalculer le score avec decay
+    // 6. Recalculer le score avec decay
     let new_score = recalculate_and_update(
         &mut profile,
         base_score,
@@ -122,10 +132,10 @@ async fn process_request(context: &HttpRequestContext) -> DecisionEngineResult {
         correlation_penalty
     );
 
-    // 5. Déterminer la décision selon les seuils
+    // 7. Déterminer la décision selon les seuils
     let decision = determine_decision(new_score, &thresholds);
 
-    // 6. Sauvegarder le profil mis à jour
+    // 8. Sauvegarder le profil mis à jour
     repository.save(&profile).await?;
 
     DecisionEngineResult { decision, score: new_score, detection_result }
@@ -152,12 +162,27 @@ async fn process_request(context: &HttpRequestContext) -> DecisionEngineResult {
 9. **SessionDetector**: Session hijacking, token anomalies
 
 **Méthode principale**:
+
+Note: Les détecteurs s'exécutent de manière concurrente (via `tokio::spawn`) et seuls les détecteurs activés (enabled) sont exécutés.
+
 ```rust
 async fn analyze_all(&self, context: &HttpRequestContext) -> DetectionResult {
     let mut all_signals = Vec::new();
+    let mut handles = Vec::new();
 
     for detector in &self.detectors {
-        let result = detector.analyze(context).await;
+        if !detector.is_enabled() {
+            continue;
+        }
+        let ctx = context.clone();
+        let det = detector.clone();
+        handles.push(tokio::spawn(async move {
+            det.analyze(&ctx).await
+        }));
+    }
+
+    for handle in handles {
+        let result = handle.await.unwrap();
         all_signals.extend(result.signals);
     }
 
@@ -183,8 +208,9 @@ pub struct ReputationProfile {
     pub blacklisted: bool,
     pub first_seen: DateTime<Utc>,
     pub last_seen: DateTime<Utc>,
-    pub total_requests: u64,
-    pub blocked_requests: u64,
+    pub request_count: u64,
+    pub blocked_count: u64,
+    pub country_code: Option<String>,
 }
 ```
 
@@ -232,13 +258,14 @@ Client HTTP/2 → WebSec → sanitize_request_headers() → BackendClient
 
 ### 7. ChallengeManager
 
-**Rôle**: Génération et validation de CAPTCHAs
+**Rôle**: Génération et validation de challenges de securite (Proof of Work SHA-256)
 
 **Types de challenges**:
+- `ProofOfWork`: Proof of Work SHA-256
 - `SimpleMath`: Addition, soustraction, multiplication
 
 **Workflow**:
-1. Création: `create_challenge(ip, ChallengeType::SimpleMath)`
+1. Création: `create_challenge(ip, ChallengeType::ProofOfWork)`
 2. Stockage temporaire avec timeout (5 min)
 3. HTML generation: `challenge.to_html()`
 4. Validation: `validate(ip, token, answer)`
@@ -272,8 +299,7 @@ Client → ProxyServer → Middleware
 ```
 Client → ProxyServer → Middleware
   → DecisionEngine (score: 18, detect: Injection + Scan)
-  → ChallengeManager.create_challenge()
-  → HTML CAPTCHA + X-WebSec-Decision: CHALLENGE
+  → HTTP 403 + X-WebSec-Decision: BLOCK
 ```
 
 ### 4. Attaque confirmée (score très bas)
@@ -296,13 +322,27 @@ Client → ProxyServer → Middleware
 - Performance maximale
 - Idéal pour: Tests, dev, single-instance
 
-### RedisRepository (futur)
+### RedisRepository
 
 **Type**: Redis avec serialization JSON
 - Persistance
 - Distribution (multi-instance)
 - TTL automatique
 - Idéal pour: Production, HA
+
+### SledRepository
+
+**Type**: Sled embedded database
+- Persistance locale sur disque
+- Performance élevée
+- Idéal pour: Single-instance avec persistance
+
+### CachedRepository
+
+**Type**: Wrapper avec cache en mémoire
+- Cache LRU devant un repository persistant
+- Réduit les accès disque/réseau
+- Idéal pour: Optimisation des performances
 
 ---
 
@@ -351,7 +391,7 @@ Voir `benches/` pour les benchmarks détaillés:
 pub struct MyDetector;
 
 impl Detector for MyDetector {
-    fn name(&self) -> &'static str { "MyDetector" }
+    fn name(&self) -> &str { "MyDetector" }
 
     async fn analyze(&self, context: &HttpRequestContext) -> DetectionResult {
         // Logic here
@@ -372,7 +412,8 @@ pub struct MyRepository;
 impl ReputationRepository for MyRepository {
     async fn get(&self, ip: &IpAddr) -> Result<Option<ReputationProfile>> { ... }
     async fn save(&self, profile: &ReputationProfile) -> Result<()> { ... }
-    async fn delete(&self, ip: &IpAddr) -> Result<()> { ... }
+    async fn delete(&self, ip: &IpAddr) -> Result<bool> { ... }
+    // Méthodes additionnelles: exists, list_all, count, clear, health_check
 }
 
 // 2. Utiliser dans DecisionEngine::new()

@@ -39,7 +39,7 @@ Identifier les clients qui ne se comportent pas comme de vrais navigateurs humai
 ### Signaux typiques
 
 - `SuspiciousUserAgent`
-- `SuspiciousClientProfile`
+- `BotBehaviorPattern`
 - `AbusiveClient`
 - `VulnerabilityScan` (si les patterns correspondent à des scanners)
 
@@ -91,7 +91,7 @@ Si pendant des milliers de requêtes :
 * pas de `Referer`,
 * aucun chargement d’assets statiques,
 
-on peut émettre des signaux `SuspiciousClientProfile` et `AbusiveClient`.
+on peut émettre des signaux `BotBehaviorPattern` et `AbusiveClient`.
 
 ---
 
@@ -107,9 +107,9 @@ Détecter les attaques contre les mécanismes d’authentification :
 
 ### Signaux typiques
 
-* `FailedAuthAttempt`
+* `FailedLogin`
 * `CredentialStuffing`
-* `PasswordSprayingSuspected`
+* `LoginAttemptPattern`
 
 ### Indicateurs possibles
 
@@ -135,7 +135,7 @@ Si on observe :
 * 50 tentatives en 1 minute depuis `203.0.113.10`,
 * toutes avec des mots de passe différents,
 
-→ plusieurs `FailedAuthAttempt` + montée du score jusqu’à blocage.
+→ plusieurs `FailedLogin` + montée du score jusqu'à blocage.
 
 #### 2.2. Credential stuffing
 
@@ -164,7 +164,7 @@ Détecter les abus de volumétrie au niveau HTTP :
 
 ### Signaux typiques
 
-* `Flooding`
+* `RequestFlood`
 * `AbusiveClient`
 
 ### Indicateurs possibles
@@ -188,7 +188,7 @@ Si une IP envoie :
 * 1000 requêtes `/search?q=...` en 10 secondes,
 * sans aucune autre navigation,
 
-→ multiples signaux `Flooding` → réputation dégradée → blocage.
+→ multiples signaux `RequestFlood` → réputation dégradée → blocage.
 
 ---
 
@@ -204,7 +204,7 @@ Détecter les comportements suspects ou invalides au niveau pur HTTP :
 
 ### Signaux typiques
 
-* `ProtocolAnomaly`
+* `ProtocolViolation`
 
 ### Indicateurs possibles
 
@@ -222,7 +222,7 @@ Host: example.com
 User-Agent: MaliciousScanner/1.0
 ```
 
-→ `ProtocolAnomaly` (et possiblement `VulnerabilityScan`).
+→ `ProtocolViolation` (et possiblement `VulnerabilityScan`).
 
 #### 4.2. Headers invalides
 
@@ -232,7 +232,7 @@ Host: example.com
 X-Invalid-Header: value\r\nFake-Header: test
 ```
 
-→ tentative de `CRLF injection` côté proxy / logs → `ProtocolAnomaly`.
+→ tentative de `CRLF injection` côté proxy / logs → `ProtocolViolation`.
 
 ---
 
@@ -248,7 +248,8 @@ Détecter les tentatives d’accès à des chemins ou fichiers critiques :
 
 ### Signaux typiques
 
-* `SuspiciousPayload`
+* `PathTraversalAttempt`
+* `UnauthorizedFileAccess`
 * `VulnerabilityScan`
 
 ### Indicateurs possibles
@@ -274,7 +275,7 @@ GET /download?file=../../../../etc/passwd HTTP/1.1
 Host: example.com
 ```
 
-→ `SuspiciousPayload` très fort + potentiellement `VulnerabilityScan`.
+→ `PathTraversalAttempt` très fort + potentiellement `VulnerabilityScan`.
 
 ---
 
@@ -290,8 +291,10 @@ Surveiller les uploads de fichiers pour détecter :
 
 ### Signaux typiques
 
-* `SuspiciousPayload`
-* `PotentialWebshellUpload`
+* `UnauthorizedFileAccess`
+* `ScriptInjection`
+
+> **Note** : il n'existe pas encore de signal dédié aux uploads de webshells (`PotentialWebshellUpload` n'existe pas).
 
 ### Indicateurs possibles
 
@@ -316,7 +319,7 @@ Content-Type: image/png
 ------XYZ--
 ```
 
-→ `PotentialWebshellUpload` + forte pénalité de réputation.
+→ `ScriptInjection` + forte pénalité de réputation.
 
 ---
 
@@ -332,11 +335,10 @@ Détecter les patterns classiques d’injection dans :
 
 ### Signaux typiques
 
-* `SuspiciousPayload`
 * `SqlInjectionAttempt`
 * `XssAttempt`
 * `RceAttempt`
-* `FileInclusionAttempt`
+* `ScriptInjection`
 
 ### Indicateurs possibles
 
@@ -365,7 +367,7 @@ GET /product?id=1 UNION SELECT username,password FROM users HTTP/1.1
 Host: example.com
 ```
 
-→ `SqlInjectionAttempt` + `SuspiciousPayload`.
+→ `SqlInjectionAttempt`.
 
 #### 7.2. XSS
 
@@ -431,8 +433,8 @@ Détecter l’utilisation malveillante du header `Host` (ou similaires) :
 
 ### Signaux typiques
 
-* `ProtocolAnomaly`
-* `HostHeaderAbuse`
+* `ProtocolViolation`
+* `HostHeaderAttack`
 
 ### Indicateurs possibles
 
@@ -450,7 +452,7 @@ Host: admin.internal
 X-Forwarded-Host: example.com
 ```
 
-Si `admin.internal` n’est pas un host légitime, on lève `HostHeaderAbuse`.
+Si `admin.internal` n’est pas un host légitime, on lève `HostHeaderAttack`.
 
 ---
 
@@ -462,8 +464,7 @@ Si `admin.internal` n’est pas un host légitime, on lève `HostHeaderAbuse`.
 
 ### Signaux typiques
 
-* `SuspiciousPayload`
-* `SsrSuspected`
+> **Note** : il n'existe pas encore de signal spécifique au SSRF. Les tentatives SSRF peuvent déclencher d'autres signaux existants (`PathTraversalAttempt`, `VulnerabilityScan`, etc.).
 
 ### Indicateurs possibles
 
@@ -485,7 +486,7 @@ GET /proxy?target=http://169.254.169.254/latest/meta-data/ HTTP/1.1
 Host: example.com
 ```
 
-→ `SsrSuspected` + pénalité.
+→ pénalité de réputation (via signaux génériques, pas de signal SSRF dédié pour le moment).
 
 ---
 
@@ -497,8 +498,8 @@ Détecter les signaux indiquant un **hijacking de session** ou un partage de ses
 
 ### Signaux typiques
 
-* `SessionHijackingSuspected`
-* `SessionAnomaly`
+* `SessionTokenAnomaly`
+* `SessionFixationAttempt`
 
 ### Indicateurs possibles
 
@@ -516,7 +517,7 @@ Détecter les signaux indiquant un **hijacking de session** ou un partage de ses
 * 10h05 : `session_id=abc` depuis Russie.
 * 10h07 : retour en France.
 
-→ `SessionHijackingSuspected`.
+→ `SessionTokenAnomaly`.
 
 #### 11.2. Session partagée par des dizaines d’IPs
 
@@ -537,8 +538,7 @@ Profiter de la négociation TLS pour :
 
 ### Signaux typiques
 
-* `WeakTlsClient`
-* `KnownBadFingerprint`
+> **Note** : les signaux TLS (`WeakTlsClient`, `KnownBadFingerprint`) n'existent pas encore. Ils seront ajoutés lorsque websec prendra en charge la terminaison TLS et le fingerprinting client.
 
 ### Indicateurs possibles
 
@@ -552,8 +552,8 @@ Profiter de la négociation TLS pour :
 
 ### Exemples
 
-* Client qui force **TLS 1.0** avec des suites connues faibles → `WeakTlsClient`.
-* JA3 correspondant à un kit de botnet connu → `KnownBadFingerprint`.
+* Client qui force **TLS 1.0** avec des suites connues faibles → signal TLS dédié (non encore implémenté).
+* JA3 correspondant à un kit de botnet connu → signal fingerprint TLS dédié (non encore implémenté).
 
 ---
 
@@ -562,7 +562,7 @@ Profiter de la négociation TLS pour :
 Ces 12 familles constituent la **cartographie de menaces** de `websec`.
 Chaque détecteur implémenté dans le proxy pourra :
 
-* produire un ou plusieurs **signaux** (par ex. `SqlInjectionAttempt`, `Flooding`, `SessionHijackingSuspected`, etc.),
+* produire un ou plusieurs **signaux** (par ex. `SqlInjectionAttempt`, `RequestFlood`, `SessionTokenAnomaly`, etc.),
 * rattacher ces signaux à une **famille de menace**,
 * et contribuer au **score de réputation** de l’IP.
 

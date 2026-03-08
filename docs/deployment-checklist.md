@@ -10,7 +10,7 @@ lsb_release -a
 
 # Installer les dépendances
 sudo apt update
-sudo apt install -y build-essential pkg-config libssl-dev redis-server apache2
+sudo apt install -y build-essential pkg-config redis-server apache2
 
 # Installer Rust (si pas déjà installé)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -32,7 +32,7 @@ redis-cli ping  # Doit retourner "PONG"
 
 ```bash
 # Créer un utilisateur système pour WebSec (sans login)
-sudo useradd -r -s /bin/false -d /opt/websec websec
+sudo useradd -r -s /bin/false -d /var/lib/websec websec
 
 # Créer le groupe websec (si pas déjà fait)
 sudo groupadd websec 2>/dev/null || true
@@ -49,19 +49,20 @@ sudo git clone https://github.com/yrbane/websec.git
 cd /opt/websec
 cargo build --release --features tls
 
-# APRÈS compilation : changer le propriétaire et ajouter la capability
-sudo chown -R websec:websec /opt/websec
-sudo setcap 'cap_net_bind_service=+ep' /opt/websec/target/release/websec
+# APRÈS compilation : installer le binaire et ajouter la capability
+sudo cp target/release/websec /usr/local/bin/websec
+sudo chmod +x /usr/local/bin/websec
+sudo setcap 'cap_net_bind_service=+ep' /usr/local/bin/websec
 
 # Vérifier le binaire
-./target/release/websec --version
+websec --version
 
 # Vérifier les capabilities
-getcap /opt/websec/target/release/websec
-# Attendu: /opt/websec/target/release/websec cap_net_bind_service=ep
+getcap /usr/local/bin/websec
+# Attendu: /usr/local/bin/websec cap_net_bind_service=ep
 ```
 
-**Note importante** : On compile d'abord avec l'utilisateur courant (qui a Rust installé), puis on change le propriétaire des fichiers. L'utilisateur `websec` n'a pas besoin d'avoir Rust installé puisqu'il exécutera seulement le binaire compilé.
+**Note importante** : On compile d'abord avec l'utilisateur courant (qui a Rust installé), puis on installe le binaire dans `/usr/local/bin/`. L'utilisateur `websec` n'a pas besoin d'avoir Rust installé puisqu'il exécutera seulement le binaire compilé. WebSec utilise **rustls** pour TLS (pas openssl), donc `libssl-dev` n'est pas requis.
 
 ---
 
@@ -136,12 +137,12 @@ max_body_size = 209715200  # 200 MB pour uploads
 # HTTP listener (port 80)
 [[server.listeners]]
 listen = "0.0.0.0:80"
-backend = "http://127.0.0.1:8080"
+backend = "http://127.0.0.1:8081"
 
 # HTTPS listener (port 443) - TLS terminé par WebSec
 [[server.listeners]]
 listen = "0.0.0.0:443"
-backend = "http://127.0.0.1:8080"
+backend = "http://127.0.0.1:8443"
 
 [server.listeners.tls]
 cert_file = "/etc/letsencrypt/live/votre-domaine.com/fullchain.pem"
@@ -156,6 +157,9 @@ threshold_block = 0
 decay_half_life_hours = 24.0
 correlation_penalty_bonus = 10
 
+# Note : les signal_weights ci-dessous ne sont pas encore consommés par le code.
+# Les poids sont actuellement codés en dur dans les modules de détection.
+# Cette section est réservée pour un usage futur.
 [reputation.signal_weights]
 VulnerabilityScan = 25
 SuspiciousUserAgent = 10
@@ -177,6 +181,9 @@ HeaderInjection = 20
 HostHeaderAttack = 20
 RefererSpoofing = 10
 
+# Note : les listes (whitelist/blacklist) sont gérées via la commande CLI
+# `websec lists` et le stockage fichier (voir WEBSEC_LISTS_DIR dans le service systemd).
+# Les entrées ci-dessous dans le TOML ne sont pas consommées par le code actuel.
 [lists]
 blacklist = []
 whitelist = [
@@ -185,8 +192,8 @@ whitelist = [
 ]
 
 [storage]
-type = "redis"
-redis_url = "redis://127.0.0.1:6379"
+type = "redis"  # Alternatives : "memory" (in-process), "sled" (embedded DB)
+redis_url = "redis://127.0.0.1:6379"  # Uniquement si type = "redis"
 cache_size = 10000
 
 [geolocation]
@@ -251,16 +258,19 @@ Listen 80
 
 **Par (IPv4 + IPv6)** :
 ```apache
-# Apache écoute UNIQUEMENT en local (WebSec forward sur ce port)
-# IPv4
-Listen 127.0.0.1:8080
+# Apache écoute UNIQUEMENT en local (WebSec forward sur ces ports)
+# IPv4 HTTP
+Listen 127.0.0.1:8081
+# IPv4 HTTPS backend
+Listen 127.0.0.1:8443
 # IPv6
-Listen [::1]:8080
+Listen [::1]:8081
 ```
 
 **Ou si vous voulez IPv4 uniquement** :
 ```apache
-Listen 127.0.0.1:8080
+Listen 127.0.0.1:8081
+Listen 127.0.0.1:8443
 ```
 
 ### 3. Mettre à jour les VirtualHosts
@@ -283,7 +293,7 @@ sudo nano /etc/apache2/sites-enabled/000-default.conf
 **Après (IPv4 + IPv6)** :
 ```apache
 # VirtualHost IPv4
-<VirtualHost 127.0.0.1:8080>
+<VirtualHost 127.0.0.1:8081>
     ServerName votre-domaine.com
 
     # Récupérer la vraie IP depuis WebSec
@@ -309,7 +319,7 @@ sudo nano /etc/apache2/sites-enabled/000-default.conf
 </VirtualHost>
 
 # VirtualHost IPv6 (même configuration)
-<VirtualHost [::1]:8080>
+<VirtualHost [::1]:8081>
     ServerName votre-domaine.com
 
     RemoteIPHeader X-Real-IP
@@ -381,7 +391,8 @@ sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 
 # BLOQUER accès direct à Apache (empêche bypass de WebSec)
-sudo ufw deny 8080/tcp
+sudo ufw deny 8081/tcp
+sudo ufw deny 8443/tcp
 
 # Autoriser SSH (NE PAS OUBLIER !)
 sudo ufw allow 22/tcp
@@ -401,10 +412,10 @@ sudo ufw status
 cd /opt/websec
 
 # Test dry-run (en tant qu'utilisateur websec)
-sudo -u websec ./target/release/websec --config /etc/websec/websec.toml run --dry-run
+sudo -u websec /usr/local/bin/websec --config /etc/websec/websec.toml run --dry-run
 
 # Lancer WebSec manuellement (pour tester)
-sudo -u websec ./target/release/websec --config /etc/websec/websec.toml run
+sudo -u websec /usr/local/bin/websec --config /etc/websec/websec.toml run
 ```
 
 ### 2. Service systemd (production)
@@ -416,35 +427,32 @@ sudo nano /etc/systemd/system/websec.service
 **Contenu** :
 ```ini
 [Unit]
-Description=WebSec Security Reverse Proxy
-After=network.target redis-server.service
-Wants=redis-server.service
+Description=WebSec Security Proxy
+After=network.target syslog.target
 
 [Service]
+AmbientCapabilities=CAP_NET_BIND_SERVICE
 Type=simple
 User=websec
 Group=websec
-WorkingDirectory=/opt/websec
+# Point to the installed binary location
+ExecStart=/usr/local/bin/websec run
+# Set default configuration path
+Environment=WEBSEC_CONFIG=/etc/websec/websec.toml
+Environment=WEBSEC_LISTS_DIR=/etc/websec/lists
+# Restart automatically on failure
+Restart=always
+RestartSec=5
 
-# Capability pour écouter sur ports 80/443 sans root
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-
-ExecStart=/opt/websec/target/release/websec --config /etc/websec/websec.toml run
-Restart=on-failure
-RestartSec=5s
-
-# Sécurité renforcée
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/var/log
-
-# Logs
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=websec
+# Security Hardening
+# Mount /usr, /boot, and /etc as read-only
+ProtectSystem=full
+# Make /home, /root, /run/user inaccessible
+ProtectHome=yes
+# Create private /tmp directory
+PrivateTmp=yes
+# Make device nodes inaccessible (except /dev/null, /dev/zero, etc)
+PrivateDevices=yes
 
 [Install]
 WantedBy=multi-user.target
@@ -461,14 +469,15 @@ sudo systemctl status websec
 ### 3. Vérifier les ports
 
 ```bash
-sudo ss -tlnp | grep -E ':80|:443|:8080|:9090'
+sudo ss -tlnp | grep -E ':80|:443|:8081|:8443|:9090'
 ```
 
 **Attendu** :
 ```
 *:80      LISTEN  websec
 *:443     LISTEN  websec
-127.0.0.1:8080  LISTEN  apache2
+127.0.0.1:8081  LISTEN  apache2
+127.0.0.1:8443  LISTEN  apache2
 *:9090    LISTEN  websec (metrics)
 ```
 
@@ -550,10 +559,10 @@ sudo certbot renew --dry-run
 - [ ] Certificats SSL valides et lisibles par groupe `websec`
 - [ ] `websec.toml` créé avec bon domaine et chemins certificats
 - [ ] `/etc/websec` permissions configurées (750, fichiers 640, group websec)
-- [ ] Apache écoute sur `127.0.0.1:8080` uniquement
+- [ ] Apache écoute sur `127.0.0.1:8081` (HTTP) et `127.0.0.1:8443` (HTTPS) uniquement
 - [ ] VirtualHosts mis à jour (RemoteIPHeader, SetEnvIf)
 - [ ] Modules Apache activés (remoteip, headers)
-- [ ] Firewall configuré (80/443 open, 8080 closed)
+- [ ] Firewall configuré (80/443 open, 8081/8443 closed)
 - [ ] Service systemd créé avec `User=websec` et capabilities
 - [ ] WebSec démarre sans erreur (`systemctl status websec`)
 - [ ] Ports corrects (`ss -tlnp`)
@@ -571,16 +580,16 @@ sudo certbot renew --dry-run
 
 ```bash
 # Vérifier la config
-sudo -u websec /opt/websec/target/release/websec --config /etc/websec/websec.toml run --dry-run
+sudo -u websec /usr/local/bin/websec --config /etc/websec/websec.toml run --dry-run
 
 # Vérifier les logs
 sudo journalctl -u websec -n 50
 
 # Vérifier les capabilities
-getcap /opt/websec/target/release/websec
+getcap /usr/local/bin/websec
 
 # Si capability manquante, la réappliquer
-sudo setcap 'cap_net_bind_service=+ep' /opt/websec/target/release/websec
+sudo setcap 'cap_net_bind_service=+ep' /usr/local/bin/websec
 ```
 
 ### "Permission denied" lors de la lecture de la config
@@ -618,11 +627,11 @@ sudo systemctl stop apache2
 ### Apache ne reçoit pas les requêtes
 
 ```bash
-# Vérifier qu'Apache écoute bien sur 8080
-sudo ss -tlnp | grep :8080
+# Vérifier qu'Apache écoute bien sur 8081/8443
+sudo ss -tlnp | grep -E ':8081|:8443'
 
 # Tester directement Apache
-curl http://127.0.0.1:8080
+curl http://127.0.0.1:8081
 ```
 
 ### Certificats SSL non accessibles

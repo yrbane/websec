@@ -5,8 +5,8 @@
 ```
 Internet
     ↓
-WebSec :80 (HTTP)  ──────────→ Apache :8080 (HTTP)
-WebSec :443 (HTTPS) ─(TLS)─→  Apache :8080 (HTTP)
+WebSec :80 (HTTP)  ──────────→ Apache :8081 (HTTP)
+WebSec :443 (HTTPS) ─(TLS)─→  Apache :8443 (HTTPS)
          ↑                           ↑
     🔐 Certificat SSL          Pas de SSL nécessaire
 ```
@@ -61,12 +61,12 @@ max_body_size = 209715200  # 200 MB pour uploads vidéo
 # Listener HTTP (port 80)
 [[server.listeners]]
 listen = "0.0.0.0:80"
-backend = "http://127.0.0.1:8080"
+backend = "http://127.0.0.1:8081"
 
 # Listener HTTPS (port 443) - TLS terminé par WebSec
 [[server.listeners]]
 listen = "0.0.0.0:443"
-backend = "http://127.0.0.1:8080"  # Apache reçoit HTTP déchiffré
+backend = "https://127.0.0.1:8443"  # Apache reçoit HTTPS
 
 [server.listeners.tls]
 cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
@@ -154,7 +154,7 @@ Apache n'a **plus besoin de gérer SSL** (WebSec s'en charge).
 **IPv4 + IPv6** :
 ```apache
 # VirtualHost IPv4
-<VirtualHost 127.0.0.1:8080>
+<VirtualHost 127.0.0.1:8081>
     ServerName example.com
 
     # Pas de SSLEngine - WebSec gère le TLS
@@ -181,7 +181,7 @@ Apache n'a **plus besoin de gérer SSL** (WebSec s'en charge).
 </VirtualHost>
 
 # VirtualHost IPv6 (même configuration)
-<VirtualHost [::1]:8080>
+<VirtualHost [::1]:8081>
     ServerName example.com
 
     RemoteIPHeader X-Real-IP
@@ -205,7 +205,7 @@ Apache n'a **plus besoin de gérer SSL** (WebSec s'en charge).
 
 **Ou IPv4 uniquement** :
 ```apache
-<VirtualHost 127.0.0.1:8080>
+<VirtualHost 127.0.0.1:8081>
     ServerName example.com
     # ... reste de la config
 </VirtualHost>
@@ -219,11 +219,13 @@ sudo nano /etc/apache2/ports.conf
 
 **IPv4 + IPv6 (recommandé)** :
 ```apache
-# Apache écoute UNIQUEMENT en local sur 8080
+# Apache écoute UNIQUEMENT en local sur 8081 (HTTP) et 8443 (HTTPS)
 # IPv4
-Listen 127.0.0.1:8080
+Listen 127.0.0.1:8081
+Listen 127.0.0.1:8443
 # IPv6
-Listen [::1]:8080
+Listen [::1]:8081
+Listen [::1]:8443
 
 # Supprimer :
 # Listen 80
@@ -232,7 +234,8 @@ Listen [::1]:8080
 
 **IPv4 uniquement** :
 ```apache
-Listen 127.0.0.1:8080
+Listen 127.0.0.1:8081
+Listen 127.0.0.1:8443
 ```
 
 ### 3. Activer les modules nécessaires
@@ -251,7 +254,7 @@ sudo systemctl restart apache2
 
 ```bash
 # WebSec
-sudo websec --config /etc/websec/websec.toml --validate
+sudo websec --config /etc/websec/websec.toml run --dry-run
 
 # Apache
 sudo apachectl configtest
@@ -268,14 +271,15 @@ sudo systemctl start apache2
 sudo systemctl start websec
 
 # Vérifier les ports
-sudo ss -tlnp | grep -E ':80|:443|:8080|:9090'
+sudo ss -tlnp | grep -E ':80|:443|:8081|:8443|:9090'
 ```
 
 Vous devriez voir :
 ```
 *:80    LISTEN  websec
 *:443   LISTEN  websec
-127.0.0.1:8080  LISTEN  apache2
+127.0.0.1:8081  LISTEN  apache2
+127.0.0.1:8443  LISTEN  apache2
 *:9090  LISTEN  websec (metrics)
 ```
 
@@ -316,11 +320,11 @@ Par défaut, `0.0.0.0` dans WebSec écoute **uniquement sur IPv4**. Pour écoute
 # Écouter sur IPv4 ET IPv6
 [[server.listeners]]
 listen = "[::]:80"          # IPv6 (inclut aussi IPv4 avec dual-stack)
-backend = "http://127.0.0.1:8080"
+backend = "http://127.0.0.1:8081"
 
 [[server.listeners]]
 listen = "[::]:443"         # IPv6 (inclut aussi IPv4 avec dual-stack)
-backend = "http://127.0.0.1:8080"
+backend = "https://127.0.0.1:8443"
 
 [server.listeners.tls]
 cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
@@ -333,17 +337,17 @@ key_file = "/etc/letsencrypt/live/example.com/privkey.pem"
 # Listener IPv4
 [[server.listeners]]
 listen = "0.0.0.0:80"
-backend = "http://127.0.0.1:8080"
+backend = "http://127.0.0.1:8081"
 
 # Listener IPv6
 [[server.listeners]]
 listen = "[::]:80"
-backend = "http://[::1]:8080"
+backend = "http://[::1]:8081"
 
 # Listener HTTPS IPv4
 [[server.listeners]]
 listen = "0.0.0.0:443"
-backend = "http://127.0.0.1:8080"
+backend = "https://127.0.0.1:8443"
 
 [server.listeners.tls]
 cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
@@ -352,7 +356,7 @@ key_file = "/etc/letsencrypt/live/example.com/privkey.pem"
 # Listener HTTPS IPv6
 [[server.listeners]]
 listen = "[::]:443"
-backend = "http://[::1]:8080"
+backend = "https://[::1]:8443"
 
 [server.listeners.tls]
 cert_file = "/etc/letsencrypt/live/example.com/fullchain.pem"
@@ -361,17 +365,19 @@ key_file = "/etc/letsencrypt/live/example.com/privkey.pem"
 
 ### Apache doit écouter sur IPv6 localhost
 
-Comme vu plus haut, Apache doit écouter sur `[::1]:8080` en plus de `127.0.0.1:8080`.
+Comme vu plus haut, Apache doit écouter sur `[::1]:8081` en plus de `127.0.0.1:8081`.
 
 **Vérification** :
 
 ```bash
 # Voir les ports écoutés
-sudo ss -tlnp | grep :8080
+sudo ss -tlnp | grep -E ':8081|:8443'
 
 # Attendu (avec IPv6) :
-# 127.0.0.1:8080    LISTEN   apache2
-# [::1]:8080        LISTEN   apache2
+# 127.0.0.1:8081    LISTEN   apache2
+# 127.0.0.1:8443    LISTEN   apache2
+# [::1]:8081        LISTEN   apache2
+# [::1]:8443        LISTEN   apache2
 ```
 
 ---
@@ -402,14 +408,14 @@ User=websec
 Group=websec
 
 # Capability pour écouter sur ports 80/443 sans root
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 
 # Sécurité renforcée
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectSystem=strict
+ProtectSystem=full
 ProtectHome=true
+PrivateDevices=yes
 ```
 
 **Avantages** :
@@ -424,7 +430,8 @@ ProtectHome=true
 # Bloquer l'accès direct à Apache (uniquement depuis localhost)
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
-sudo ufw deny 8080/tcp  # Empêcher bypass de WebSec
+sudo ufw deny 8081/tcp  # Empêcher bypass de WebSec
+sudo ufw deny 8443/tcp  # Empêcher bypass de WebSec
 sudo ufw enable
 ```
 
@@ -433,7 +440,8 @@ sudo ufw enable
 Dans `/etc/apache2/ports.conf` :
 ```apache
 # Force Apache à UNIQUEMENT écouter en local
-Listen 127.0.0.1:8080
+Listen 127.0.0.1:8081
+Listen 127.0.0.1:8443
 ```
 
 Ainsi, même si le firewall est mal configuré, Apache refuse les connexions externes.
@@ -458,7 +466,7 @@ sudo systemctl restart apache2
 
 **Architecture** :
 ```
-Internet → WebSec :80/443 (WAF) → Apache :8080 (localhost)
+Internet → WebSec :80/443 (WAF) → Apache :8081/:8443 (localhost)
               ↑
          🛡️ Analyse ici
          (pas besoin de ModSecurity après)
@@ -485,11 +493,12 @@ curl http://localhost:9090/metrics | grep websec_requests_total
 | WebSec    | :80   | HTTP public |
 | WebSec    | :443  | HTTPS public (TLS terminé) |
 | WebSec    | :9090 | Métriques Prometheus (interne) |
-| Apache    | :8080 | Backend HTTP (local uniquement) |
+| Apache    | :8081 | Backend HTTP (local uniquement) |
+| Apache    | :8443 | Backend HTTPS (local uniquement) |
 
 **Flux de données** :
 ```
-Client HTTPS → WebSec :443 (déchiffre) → Apache :8080 (HTTP)
+Client HTTPS → WebSec :443 (déchiffre) → Apache :8443 (HTTPS)
                   ↑
             🛡️ Analyse WAF
             🔐 Certificat SSL du domaine
