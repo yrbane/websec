@@ -208,6 +208,9 @@ impl ProxyServer {
         let mut runtimes = Vec::new();
         let mut info = Vec::new();
 
+        // Save first TLS config for metrics endpoint (before listeners are moved)
+        let first_tls_config = effective_listeners.iter().find_map(|l| l.tls.clone());
+
         for listener in effective_listeners {
             tracing::info!(
                 "Listener configured on {} -> {}{}",
@@ -242,20 +245,24 @@ impl ProxyServer {
         }
 
         // Add dedicated metrics listener (separate port for security)
+        // Reuse TLS config from the first HTTPS listener (if any) so metrics
+        // are served over HTTPS — required when HSTS is active on the domain.
         if settings.metrics.enabled {
-            let metrics_addr = SocketAddr::from(([0, 0, 0, 0], settings.metrics.port));
+            let metrics_addr: SocketAddr = format!("[::]:{}", settings.metrics.port).parse().unwrap();
             let metrics_app = build_metrics_router(metrics.clone());
+
+            let metrics_tls = first_tls_config;
 
             tracing::info!(
                 "Metrics server configured on {}{}",
                 metrics_addr,
-                " (separate port for security)"
+                if metrics_tls.is_some() { " (TLS, separate port)" } else { " (separate port)" }
             );
 
             runtimes.push(ListenerRuntime {
                 addr: metrics_addr,
                 app: metrics_app,
-                tls: None, // Metrics always served over HTTP (internal only)
+                tls: metrics_tls,
             });
         } else {
             tracing::warn!("Metrics disabled - Prometheus endpoint not available");
