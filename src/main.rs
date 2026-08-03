@@ -262,9 +262,19 @@ enum ListCommands {
 
 #[derive(Subcommand, Debug)]
 enum ListAction {
-    Add { entry: String },
-    Remove { entry: String },
+    /// Ajoute une entrée : IP exacte ou plage CIDR (IPv4 ou IPv6)
+    Add {
+        /// IP (`203.0.113.10`, `::1`) ou plage CIDR (`10.0.0.0/8`, `2001:db8::/64`)
+        entry: String,
+    },
+    /// Retire une entrée (doit correspondre exactement à la ligne stockée)
+    Remove {
+        /// Entrée à retirer
+        entry: String,
+    },
+    /// Affiche toutes les entrées de la liste
     List,
+    /// Vide entièrement la liste
     Clear,
 }
 

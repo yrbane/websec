@@ -423,7 +423,7 @@ WebSec supporte les variables d'environnement suivantes :
 | `WEBSEC_SERVER_BACKEND` | Surcharge `server.backend` | `http://localhost:3000` |
 | `WEBSEC_STORAGE_REDIS_URL` | Surcharge `storage.redis_url` | `redis://localhost:6379` |
 | `WEBSEC_LOGGING_LEVEL` | Surcharge `logging.level` | `debug` |
-| `WEBSEC_LISTS_DIR` | Répertoire contenant les listes (blocklists, allowlists) | `/etc/websec/lists` |
+| `WEBSEC_LISTS_DIR` | Surcharge le répertoire des listes. Par défaut, il est co-localisé avec le fichier de configuration : `<dossier de WEBSEC_CONFIG>/lists` (soit `/etc/websec/lists`) | `/etc/websec/lists` |
 
 ```bash
 # Exemple d'utilisation
@@ -434,6 +434,22 @@ websec run
 ```
 
 > **Note**: Les variables d'environnement ont la priorité sur le fichier de configuration.
+
+## Listes de contrôle d'accès (whitelist / blacklist)
+
+Les listes sont de simples fichiers texte (`whitelist.txt`, `blacklist.txt`), une entrée par ligne, dans le répertoire des listes (`/etc/websec/lists` par défaut, voir `WEBSEC_LISTS_DIR`). Chaque entrée peut être :
+
+- une **IP exacte** — IPv4 (`203.0.113.10`) ou IPv6 (`::1`, `2001:db8::1`) ;
+- une **plage CIDR** — IPv4 (`10.0.0.0/8`) ou IPv6 (`2001:db8::/64`). Un `/64` couvre l'ensemble d'un préfixe, ce qui permet de whitelister durablement un client dont l'adresse IPv6 « privacy » change au sein de son `/64`.
+
+Gestion via le CLI (toujours avec `-c` pour cibler le dossier lu par le service) :
+
+```bash
+sudo websec lists whitelist add 2001:db8::/64 -c /etc/websec/websec.toml
+sudo systemctl restart websec   # les listes sont chargées au démarrage
+```
+
+Les IP whitelistées contournent tout le scoring (score 100, décision ALLOW) ; les IP blacklistées sont bloquées (score 0). La blacklist est prioritaire sur la whitelist.
 
 ## Rechargement à chaud
 
