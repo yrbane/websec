@@ -153,11 +153,12 @@ async fn main() -> websec::Result<()> {
             let metrics_url = match url {
                 Some(u) => u,
                 None => {
-                    // Derive from config metrics.port
+                    // Derive from config metrics.port. The metrics endpoint is
+                    // served over TLS (self-signed / SNI cert), so default to https.
                     let port = websec::config::load_from_file(&args.config)
                         .map(|s| s.metrics.port)
                         .unwrap_or(9090);
-                    format!("http://localhost:{port}/metrics")
+                    format!("https://localhost:{port}/metrics")
                 }
             };
             cli::show_stats(&metrics_url, interval).await?;

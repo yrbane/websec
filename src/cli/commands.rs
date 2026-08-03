@@ -293,7 +293,13 @@ pub async fn show_stats(metrics_url: &str, interval_secs: u64) -> Result<()> {
     println!("Refresh interval: {interval_secs}s");
     println!("Press Ctrl+C to stop\n");
 
-    let client = reqwest::Client::new();
+    // The metrics endpoint uses a self-signed / SNI certificate on localhost;
+    // accept it (localhost scrape only). Falls back to a default client if the
+    // TLS backend is unavailable.
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
 
     loop {
         match client.get(metrics_url).send().await {
