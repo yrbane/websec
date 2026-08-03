@@ -148,7 +148,7 @@ mod tests {
         assert!(result.is_ok(), "Example config should be valid");
 
         let settings = result.unwrap();
-        assert_eq!(settings.server.listen, "0.0.0.0:8080");
+        assert_eq!(settings.server.listen, "[::]:8080");
         assert_eq!(settings.reputation.base_score, 100);
         assert_eq!(settings.storage.storage_type, "redis");
     }

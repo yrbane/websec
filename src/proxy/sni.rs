@@ -217,8 +217,6 @@ fn load_certified_key(cert_path: &str, key_path: &str) -> Result<CertifiedKey> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_wildcard_pattern_parsing() {
         // Test wildcard domain pattern extraction
