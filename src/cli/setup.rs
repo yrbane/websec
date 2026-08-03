@@ -443,11 +443,11 @@ fn finalize_setup(
 fn print_setup_summary(web_server: &WebServer, migrations: &[PortMigration]) {
     println!("\n🎉 Configuration terminée");
     if migrations.iter().any(|m| m.original_port == 80) {
-        println!("- Les sites HTTP ont été déplacés. WebSec doit écouter sur 0.0.0.0:80.");
+        println!("- Les sites HTTP ont été déplacés. WebSec doit écouter sur [::]:80.");
     }
     if migrations.iter().any(|m| m.original_port == 443) {
         println!(
-            "- Les sites HTTPS ont été déplacés. WebSec gère le TLS sur 0.0.0.0:443 avec support SNI multi-domaines."
+            "- Les sites HTTPS ont été déplacés. WebSec gère le TLS sur [::]:443 (IPv4+IPv6) avec support SNI multi-domaines."
         );
     }
     println!(
@@ -1395,11 +1395,14 @@ fn update_websec_config_with_sni(
     // Add HTTP listener if port was migrated
     if let Some(port) = plaintext_backend_port {
         settings.server.listeners.push(ListenerConfig {
-            listen: "0.0.0.0:80".to_string(),
+            // [::] = dual-stack : sert IPv4 ET IPv6 (bindv6only=0). Indispensable
+            // car les domaines publient des AAAA ; sinon les clients IPv6 se
+            // voient refuser la connexion sur le port.
+            listen: "[::]:80".to_string(),
             backend: format!("http://127.0.0.1:{port}"),
             tls: None,
         });
-        println!("✅ Listener HTTP ajouté : 0.0.0.0:80 → http://127.0.0.1:{port}");
+        println!("✅ Listener HTTP ajouté : [::]:80 (IPv4+IPv6) → http://127.0.0.1:{port}");
     }
 
     // Add HTTPS listener with SNI if port was migrated
@@ -1444,7 +1447,7 @@ fn update_websec_config_with_sni(
                     }
 
                     settings.server.listeners.push(ListenerConfig {
-                        listen: "0.0.0.0:443".to_string(),
+                        listen: "[::]:443".to_string(),
                         backend: format!("http://127.0.0.1:{port}"),
                         tls: Some(ListenerTlsConfig {
                             cert_file: default_cert.cert_file.to_string_lossy().to_string(),
@@ -1454,7 +1457,7 @@ fn update_websec_config_with_sni(
                     });
 
                     println!(
-                        "✅ Listener HTTPS ajouté : 0.0.0.0:443 → http://127.0.0.1:{port}"
+                        "✅ Listener HTTPS ajouté : [::]:443 (IPv4+IPv6) → http://127.0.0.1:{port}"
                     );
                     println!("   Certificat par défaut : {default_name}");
 
