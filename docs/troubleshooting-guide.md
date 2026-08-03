@@ -257,6 +257,31 @@ enabled = false
 
 ---
 
+### Erreur : Whitelist / Blacklist non prise en compte
+
+**Symptôme** : Une IP ajoutée via `websec lists whitelist add` continue d'être challengée / bloquée.
+
+**Cause** : Le dossier des listes est co-localisé avec le fichier de configuration (`<dossier de WEBSEC_CONFIG>/lists`, soit `/etc/websec/lists`). Une commande CLI lancée sans `-c` (ou depuis un autre répertoire) écrit dans un `lists/` différent de celui que lit le service.
+
+**Solution** :
+```bash
+# Toujours cibler la config du service avec -c
+sudo websec lists whitelist add 2001:db8::/64 -c /etc/websec/websec.toml
+
+# Vérifier le fichier réellement lu par le runtime
+sudo cat /etc/websec/lists/whitelist.txt
+
+# Recharger : le service lit les listes au démarrage
+sudo systemctl restart websec
+
+# Confirmer dans les logs (doit refléter le bon nombre d'entrées)
+sudo journalctl -u websec --since "-1min" | grep "Whitelist loaded"
+```
+
+**Note** : les entrées acceptent une IP exacte **ou** une plage CIDR, en IPv4 comme en IPv6 (`::1`, `2001:db8::/64`, `10.0.0.0/8`). Un `/64` couvre toutes les adresses d'un même préfixe (utile face aux adresses IPv6 « privacy » qui tournent).
+
+---
+
 ## 🌐 Problèmes Réseau
 
 ### Erreur : "Address already in use"
@@ -332,6 +357,27 @@ sudo ufw status
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 sudo ufw enable
+```
+
+---
+
+### Erreur : Site injoignable en IPv6 (connexion refusée)
+
+**Symptôme** : Le site répond en IPv4 mais un client IPv6 obtient « connexion refusée » sur `:443`. Fréquent quand le domaine publie un enregistrement **AAAA** : le navigateur tente l'IPv6 en priorité (Happy Eyeballs).
+
+**Cause** : Les listeners sont bindés sur `0.0.0.0` (IPv4 uniquement) au lieu de `[::]` (dual-stack).
+
+**Solution** :
+```bash
+# Vérifier les adresses d'écoute — on veut *:443 / *:80, pas 0.0.0.0:443
+sudo ss -tlnp | grep -E ':80 |:443 '
+
+# Si 0.0.0.0 : passer les listeners en [::] dans /etc/websec/websec.toml
+#   listen = "[::]:80"   /   listen = "[::]:443"
+# ([::] sert IPv4 + IPv6 tant que net.ipv6.bindv6only = 0)
+sudo systemctl restart websec
+
+# `websec setup` (>= v0.3.0) génère directement des listeners [::].
 ```
 
 ---

@@ -77,10 +77,11 @@ WebSec est conçu pour traiter **10,000+ req/s** sur un matériel standard sans 
 - **Déploiement sans interruption** : Architecture stateless, redémarrage à chaud.
 - **Zéro configuration backend** : Apache/Nginx continuent de fonctionner sans changement.
 - **Support TLS natif** : Terminaison HTTPS avec rustls (TLSv1.3, ALPN HTTP/2, SNI multi-domaines).
+- **Écoute dual-stack IPv6** : Listeners `[::]` servant IPv4 **et** IPv6 sur un seul socket — indispensable pour les domaines publiant un enregistrement AAAA.
 - **HTTP/2 complet** : Accepte HTTP/2 des clients, forward en HTTP/1.1 au backend.
 - **Headers proxy** : `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-For`, `X-Real-IP` automatiques.
 - **Challenge Proof of Work** : Challenge SHA-256 transparent côté navigateur (pas de CAPTCHA externe).
-- **Whitelist / Blacklist** : Gestion par fichier ou CLI, chargées au démarrage.
+- **Whitelist / Blacklist** : Gestion par fichier ou CLI, chargées au démarrage. Accepte des IP exactes **et des plages CIDR** (IPv4 comme IPv6, ex. un `/64` couvrant les adresses « privacy »).
 - **Conformité RGPD** : Minimisation des données, aucun stockage de credentials.
 
 ### 🔌 Installation & Déploiement
@@ -180,11 +181,16 @@ WebSec inclut un outil CLI puissant pour gérer votre instance :
 # Voir les statistiques en temps réel
 websec stats
 
-# Gérer les listes noires / blanches
-websec lists blacklist add 1.2.3.4
-websec lists whitelist add 203.0.113.10
+# Gérer les listes noires / blanches (IP exacte ou plage CIDR, IPv4 ou IPv6)
+websec lists blacklist add 1.2.3.4          -c /etc/websec/websec.toml
+websec lists whitelist add 203.0.113.10     -c /etc/websec/websec.toml
+websec lists whitelist add ::1              -c /etc/websec/websec.toml
+websec lists whitelist add 2001:db8::/64    -c /etc/websec/websec.toml   # tout un /64 IPv6
+websec lists whitelist add 10.0.0.0/8       -c /etc/websec/websec.toml   # plage IPv4
+# Les listes sont stockées à côté de la config (ici /etc/websec/lists/). Le
+# drapeau -c cible ce dossier ; redémarrez WebSec pour recharger la liste.
 
-# Configurer Apache automatiquement
+# Configurer Apache automatiquement (idempotent, génère des listeners [::] dual-stack)
 websec setup
 
 # Vérifier la configuration avant redémarrage

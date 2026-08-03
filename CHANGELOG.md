@@ -5,6 +5,43 @@ All notable changes to WebSec will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-08-03
+
+### 🔒 Bug Fixes
+
+#### Écoute IPv6 (dual-stack)
+- **Fixed** Les listeners étaient bindés sur `0.0.0.0` (IPv4 uniquement). Un domaine publiant un enregistrement AAAA était injoignable en IPv6 (connexion refusée sur `:443`), le navigateur devant se rabattre sur l'IPv4.
+- **Changed** `websec setup` génère désormais les listeners sur `[::]` (dual-stack : IPv4 **et** IPv6 sur un seul socket, `bindv6only=0`). Serveur de métriques également passé en `[::]`.
+- **Commits**: 289ab6e, 7435603, a676fce
+
+#### Whitelist jamais chargée au runtime
+- **Fixed** Le dossier des listes était résolu en `lists/` **relatif au CWD**. Sous systemd (CWD = `/`), le runtime cherchait `/lists/whitelist.txt` (inexistant) : la whitelist n'était **jamais** chargée en production.
+- **Changed** Le dossier des listes est désormais co-localisé avec le fichier de configuration : `<dossier de WEBSEC_CONFIG>/lists` (= `/etc/websec/lists`), côté runtime **et** CLI. Le CLI accepte toujours `--dir` ou `WEBSEC_LISTS_DIR` en surcharge.
+- **Note** Utiliser `websec lists whitelist add <ip|cidr> -c /etc/websec/websec.toml` puis redémarrer le service pour que le runtime relise le fichier. Log de démarrage : `Whitelist loaded: N entries`.
+- **Commit**: ffbfd3f
+
+#### Whitelist : rejet des adresses IPv6
+- **Fixed** `validate_ip` (CLI) n'acceptait qu'une regex IPv4 → toute adresse IPv6 était rejetée (« Format IP/CIDR invalide »), rendant impossible la whitelist d'un client IPv6.
+- **Changed** Validation via `std::net::IpAddr` : accepte IPv4, IPv6 et le suffixe CIDR (avec bornes de préfixe par famille : ≤ 32 en IPv4, ≤ 128 en IPv6).
+- **Commit**: a676fce
+
+#### `websec setup` : empilement infini de backups
+- **Fixed** `scan_virtual_hosts` parcourait tous les fichiers de `sites-enabled`, y compris ses propres backups `*.websec.bak.<timestamp>`, les re-modifiait et créait un backup du backup → noms `x.conf.websec.bak.T1.websec.bak.T2…` à chaque exécution.
+- **Changed** Les fichiers `.websec.bak.*` sont désormais ignorés au scan. `websec setup` est **idempotent** (aucun backup recréé si la configuration est déjà migrée).
+- **Commit**: 51d18cd
+
+### ✨ Features
+
+#### Whitelist / Blacklist par plage CIDR
+- **Added** Matching CIDR au runtime (`whitelist.rs` : `add_cidr` / `add_entry` / `cidr_contains`). On peut whitelister un bloc entier — par exemple un `/64` IPv6 (couvre toutes les adresses « privacy » qui tournent dans le préfixe) ou un `/24` IPv4 — au lieu d'IP exactes uniquement. IPv4 et IPv6 supportés, sans correspondance croisée entre familles.
+- **Commit**: ffbfd3f
+
+### 🧪 Testing
+- **Added** Tests unitaires du matching CIDR (`/64` IPv6, `/24` IPv4, familles disjointes, entrées invalides).
+- **Fixed** Assertions de tests alignées sur les listeners `[::]` ; suppression d'un import mort (`use super::*`) qui bloquait la compilation des tests sous `#![deny(warnings)]`.
+
+---
+
 ## [0.2.1] - 2026-02-15
 
 ### 🔒 Bug Fixes (Reverse Proxy)
