@@ -1632,10 +1632,10 @@ Listen 8080
         .expect("update should succeed");
 
         let new_settings = load_from_file(&cfg_path).expect("updated config should be valid");
-        assert_eq!(new_settings.server.listen, "0.0.0.0:80");
+        assert_eq!(new_settings.server.listen, "[::]:80");
         assert_eq!(new_settings.server.backend, "http://127.0.0.1:8081");
         assert_eq!(new_settings.server.listeners.len(), 1);
-        assert_eq!(new_settings.server.listeners[0].listen, "0.0.0.0:80");
+        assert_eq!(new_settings.server.listeners[0].listen, "[::]:80");
         assert_eq!(
             new_settings.server.listeners[0].backend,
             "http://127.0.0.1:8081"

@@ -147,7 +147,7 @@ async fn main() -> websec::Result<()> {
             e2e::run_dev_backend(port).await?;
         }
         Some(Commands::Lists { dir, command }) => {
-            handle_lists(dir.as_deref(), &command)?;
+            handle_lists(dir.as_deref(), &args.config, &command)?;
         }
         Some(Commands::Stats { url, interval }) => {
             let metrics_url = match url {
@@ -171,8 +171,18 @@ async fn main() -> websec::Result<()> {
     Ok(())
 }
 
-fn handle_lists(dir: Option<&Path>, command: &ListCommands) -> websec::Result<()> {
-    let manager = lists::ListManager::new(dir)?;
+fn handle_lists(
+    dir: Option<&Path>,
+    config: &Path,
+    command: &ListCommands,
+) -> websec::Result<()> {
+    // Sans --dir explicite, on co-localise les listes avec le fichier de config
+    // (<dossier config>/lists) pour rester cohérent avec le runtime, au lieu de
+    // "lists" relatif au CWD (source de fichiers whitelist éparpillés).
+    let list_dir = dir
+        .map(std::path::Path::to_path_buf)
+        .or_else(|| config.parent().map(|p| p.join("lists")));
+    let manager = lists::ListManager::new(list_dir.as_deref())?;
     match command {
         ListCommands::Blacklist(action) => match action {
             ListAction::Add { entry } => manager.add_blacklist(entry)?,

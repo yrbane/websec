@@ -322,7 +322,13 @@ impl ProxyServer {
     /// Load whitelist/blacklist from files on disk (via ListManager).
     /// Falls back gracefully to empty lists if files are missing.
     fn load_lists() -> (Option<Blacklist>, Option<Whitelist>) {
-        let manager = match ListManager::new(None) {
+        // Le dossier des listes est co-localisé avec le fichier de config
+        // (WEBSEC_CONFIG). Sinon "lists" serait résolu relativement au CWD du
+        // service (= / sous systemd) → /lists inexistant → whitelist jamais chargée.
+        let list_dir = std::env::var("WEBSEC_CONFIG").ok().and_then(|c| {
+            std::path::Path::new(&c).parent().map(|p| p.join("lists"))
+        });
+        let manager = match ListManager::new(list_dir.as_deref()) {
             Ok(m) => m,
             Err(e) => {
                 tracing::warn!("Could not load lists directory: {e}");
@@ -344,12 +350,19 @@ impl ProxyServer {
 
         let whitelist = match manager.list_whitelist() {
             Ok(entries) if !entries.is_empty() => {
-                let ips: Vec<IpAddr> = entries
-                    .iter()
-                    .filter_map(|s| s.parse::<IpAddr>().ok())
-                    .collect();
-                tracing::info!("Whitelist loaded: {} IPs", ips.len());
-                Some(Whitelist::from_ips(ips))
+                // add_entry gère IP exacte ET CIDR (ex. un /64 IPv6). L'ancien
+                // parse::<IpAddr>() ignorait silencieusement les entrées CIDR.
+                let mut wl = Whitelist::new();
+                let mut count = 0usize;
+                for entry in &entries {
+                    if wl.add_entry(entry) {
+                        count += 1;
+                    } else {
+                        tracing::warn!("Whitelist: entrée ignorée (format invalide): {}", entry);
+                    }
+                }
+                tracing::info!("Whitelist loaded: {} entries", count);
+                Some(wl)
             }
             _ => None,
         };
