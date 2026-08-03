@@ -1,5 +1,4 @@
 use crate::{Error, Result};
-use regex::Regex;
 use serde_json::{json, Value};
 use std::env;
 use std::fs;
@@ -204,11 +203,21 @@ fn touch(path: &Path) -> Result<()> {
 }
 
 fn validate_ip(entry: &str) -> Result<()> {
-    let regex = Regex::new(r"^(\d{1,3}\.){3}\d{1,3}(/\d{1,2})?$")
-        .map_err(|e| Error::Config(format!("Regex invalide: {e}")))?;
-    if regex.is_match(entry) {
-        Ok(())
-    } else {
-        Err(Error::Config(format!("Format IP/CIDR invalide: {entry}")))
+    // Accepte IPv4 et IPv6, avec ou sans suffixe CIDR. L'ancienne regex ne
+    // reconnaissait que l'IPv4, rejetant toute adresse IPv6 (ex: whitelist admin).
+    use std::net::IpAddr;
+    let (addr, prefix) = entry.split_once('/').map_or((entry, None), |(a, p)| (a, Some(p)));
+    let ip: IpAddr = addr
+        .parse()
+        .map_err(|_| Error::Config(format!("Format IP/CIDR invalide: {entry}")))?;
+    if let Some(p) = prefix {
+        let max = if ip.is_ipv4() { 32 } else { 128 };
+        let bits: u8 = p
+            .parse()
+            .map_err(|_| Error::Config(format!("Format IP/CIDR invalide: {entry}")))?;
+        if bits > max {
+            return Err(Error::Config(format!("Prefixe CIDR hors limites: {entry}")));
+        }
     }
+    Ok(())
 }
