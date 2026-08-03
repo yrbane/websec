@@ -807,6 +807,17 @@ impl ApacheEnvironment {
             .filter_map(std::result::Result::ok)
         {
             let path = entry.path();
+            // Ne pas traiter nos propres backups : sans ce filtre, chaque run
+            // re-scanne les fichiers `.websec.bak.<timestamp>`, y trouve des
+            // <VirtualHost>, les re-modifie et les re-sauvegarde, empilant des
+            // noms `x.conf.websec.bak.T1.websec.bak.T2...` a l'infini.
+            if path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.contains(".websec.bak."))
+            {
+                continue;
+            }
             if path.is_file() {
                 self.parse_virtual_hosts(&path, &mut entries)?;
             }
