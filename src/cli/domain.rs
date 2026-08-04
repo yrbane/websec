@@ -26,10 +26,14 @@
 
 use crate::config::load_from_file;
 use crate::config::settings::{GeoSiteRule, RouteConfig, Settings};
+use crate::detectors::{Detector, GeoDetector, HttpRequestContext};
+use crate::geolocation::CountryDb;
 use crate::{Error, Result};
 use chrono::Utc;
 use std::fs;
+use std::net::IpAddr;
 use std::path::Path;
+use std::sync::Arc;
 
 /// Intention parsée pour un domaine (issue des drapeaux CLI).
 #[derive(Debug, Default, Clone)]
@@ -252,15 +256,126 @@ fn backup(config_path: &Path) -> Result<std::path::PathBuf> {
     Ok(backup_path)
 }
 
+/// Charge la base pays depuis `country_dir` (défaut `/etc/websec/geoip`).
+fn load_country_db(settings: &Settings) -> CountryDb {
+    let dir = settings
+        .geolocation
+        .country_dir
+        .clone()
+        .unwrap_or_else(|| "/etc/websec/geoip".to_string());
+    CountryDb::load_dir(&dir).unwrap_or_else(|_| CountryDb::empty())
+}
+
+/// Vérifie les codes pays demandés contre la base. Un code `allow` inconnu est
+/// une erreur (allow-only bloquerait tout le monde) ; un code `block` inconnu
+/// n'est qu'un avertissement (règle inerte pour ce pays).
+fn validate_codes(db: &CountryDb, change: &DomainChange) -> Result<()> {
+    if db.is_empty() {
+        eprintln!(
+            "⚠️  Base géo absente ou vide (/etc/websec/geoip) : validation des \
+             codes pays ignorée. Lancez `websec-geoip-sync.sh`."
+        );
+        return Ok(());
+    }
+    if let Some(codes) = &change.geo_allow {
+        let unknown: Vec<String> = codes
+            .iter()
+            .flat_map(|s| s.split(','))
+            .map(|s| s.trim().to_ascii_uppercase())
+            .filter(|s| !s.is_empty() && !db.knows_country(s))
+            .collect();
+        if !unknown.is_empty() {
+            return Err(Error::Config(format!(
+                "Codes pays inconnus dans --geo-allow : [{}]. En allow-only, un \
+                 pays non identifiable bloquerait TOUS les visiteurs. Corrigez \
+                 les codes (ISO alpha-2) ou vérifiez les données géo.",
+                unknown.join(", ")
+            )));
+        }
+    }
+    if let Some(codes) = &change.geo_block {
+        let unknown: Vec<String> = codes
+            .iter()
+            .flat_map(|s| s.split(','))
+            .map(|s| s.trim().to_ascii_uppercase())
+            .filter(|s| !s.is_empty() && !db.knows_country(s))
+            .collect();
+        if !unknown.is_empty() {
+            eprintln!(
+                "⚠️  Codes pays inconnus dans --geo-block : [{}]. La règle sera \
+                 inerte pour ces pays (aucune plage chargée).",
+                unknown.join(", ")
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Simule la décision géo pour une IP sur un hôte, sans rien modifier.
+async fn simulate(settings: &Settings, host: &str, ip: IpAddr) -> Result<()> {
+    let db = Arc::new(load_country_db(settings));
+    let country = db.lookup(ip).map(str::to_string);
+    let detector = GeoDetector::from_config(&settings.geolocation, db);
+
+    let ctx = HttpRequestContext {
+        ip,
+        method: "GET".into(),
+        path: "/".into(),
+        query: None,
+        headers: vec![("host".into(), host.to_string())],
+        body: None,
+        user_agent: None,
+        referer: None,
+        content_type: None,
+    };
+    let result = detector.analyze(&ctx).await;
+
+    println!("Simulation géo :");
+    println!("  IP      : {ip}");
+    println!("  Hôte    : {host}");
+    println!(
+        "  Pays    : {}",
+        country.as_deref().unwrap_or("inconnu (aucune plage)")
+    );
+    if !settings.geolocation.enabled {
+        println!("  ⚠️  [geolocation].enabled = false : la géo ne s'applique pas.");
+    }
+    if result.force_block {
+        println!(
+            "  Décision: 🚫 BLOCK — {}",
+            result.message.as_deref().unwrap_or("politique géo")
+        );
+    } else {
+        println!("  Décision: ✅ PASS (aucun blocage géo pour cet hôte)");
+    }
+    Ok(())
+}
+
 /// Point d'entrée `websec domain`.
 ///
-/// Si `list` est vrai (ou aucun changement demandé), affiche la configuration
-/// par domaine sans rien modifier. Sinon applique le changement et réécrit le
-/// fichier après sauvegarde.
-pub fn run_domain(config_path: &Path, change: &DomainChange, list: bool) -> Result<()> {
+/// - `test_ip` : simule la décision géo (IP + hôte) sans modifier la config.
+/// - `list` (ou aucun changement) : affiche la configuration par domaine.
+/// - sinon : valide, applique le changement et réécrit le fichier après sauvegarde.
+pub async fn run_domain(
+    config_path: &Path,
+    change: &DomainChange,
+    list: bool,
+    test_ip: Option<IpAddr>,
+) -> Result<()> {
     let mut settings = load_from_file(config_path).map_err(|e| {
         Error::Config(format!("Impossible de charger {}: {e}", config_path.display()))
     })?;
+
+    // Mode simulation : ne modifie rien.
+    if let Some(ip) = test_ip {
+        if change.host.is_empty() {
+            return Err(Error::Config(
+                "Précisez l'hôte à simuler, ex. `websec domain boutique.fr --test 1.2.3.4`."
+                    .to_string(),
+            ));
+        }
+        return simulate(&settings, &change.host, ip).await;
+    }
 
     let has_change = !change.remove
         && change.backend.is_none()
@@ -280,6 +395,9 @@ pub fn run_domain(config_path: &Path, change: &DomainChange, list: bool) -> Resu
                 .to_string(),
         ));
     }
+
+    // Valide les codes pays avant d'écrire quoi que ce soit.
+    validate_codes(&load_country_db(&settings), change)?;
 
     let actions = apply_domain_change(&mut settings, change);
 
@@ -433,6 +551,40 @@ mod tests {
         clear.geo_clear = true;
         apply_domain_change(&mut s, &clear);
         assert!(s.geolocation.sites.is_empty());
+    }
+
+    fn db3() -> CountryDb {
+        CountryDb::from_pairs(&[("fr", "90.114.0.0/16"), ("cn", "1.0.0.0/8")])
+    }
+
+    #[test]
+    fn validate_rejects_unknown_allow_code() {
+        let mut c = change("boutique.fr");
+        c.geo_allow = Some(vec!["QQ".into()]);
+        assert!(validate_codes(&db3(), &c).is_err());
+    }
+
+    #[test]
+    fn validate_accepts_known_allow_code() {
+        let mut c = change("boutique.fr");
+        c.geo_allow = Some(vec!["fr".into()]);
+        assert!(validate_codes(&db3(), &c).is_ok());
+    }
+
+    #[test]
+    fn validate_warns_but_accepts_unknown_block_code() {
+        let mut c = change("api.example.com");
+        c.geo_block = Some(vec!["QQ".into()]);
+        // Unknown block code is only a warning, not an error.
+        assert!(validate_codes(&db3(), &c).is_ok());
+    }
+
+    #[test]
+    fn validate_skips_on_empty_db() {
+        let mut c = change("boutique.fr");
+        c.geo_allow = Some(vec!["QQ".into()]);
+        // No data loaded -> validation is skipped (cannot verify), never errors.
+        assert!(validate_codes(&CountryDb::empty(), &c).is_ok());
     }
 
     #[test]

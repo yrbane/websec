@@ -46,6 +46,9 @@ pub struct DetectionResult {
     /// policy). Honored by `DecisionEngine::process_request`.
     #[allow(clippy::struct_field_names)]
     pub force_block: bool,
+    /// ISO country code resolved for the client IP, if any (set by the geo
+    /// detector). Persisted to the profile and used for geo metrics/logs.
+    pub country: Option<String>,
 }
 
 impl DetectionResult {
@@ -57,6 +60,7 @@ impl DetectionResult {
             suspicious: false,
             message: None,
             force_block: false,
+            country: None,
         }
     }
 
@@ -68,6 +72,7 @@ impl DetectionResult {
             suspicious: true,
             message: Some(reason),
             force_block: true,
+            country: None,
         }
     }
 
@@ -79,6 +84,7 @@ impl DetectionResult {
             suspicious: true,
             message: None,
             force_block: false,
+            country: None,
         }
     }
 
@@ -91,6 +97,7 @@ impl DetectionResult {
             suspicious,
             message: None,
             force_block: false,
+            country: None,
         }
     }
 
@@ -98,6 +105,13 @@ impl DetectionResult {
     #[must_use]
     pub fn with_message(mut self, message: String) -> Self {
         self.message = Some(message);
+        self
+    }
+
+    /// Attach a resolved ISO country code to the result.
+    #[must_use]
+    pub fn with_country(mut self, country: Option<String>) -> Self {
+        self.country = country;
         self
     }
 }

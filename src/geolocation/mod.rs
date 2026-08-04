@@ -167,6 +167,14 @@ impl CountryDb {
         self.names.len()
     }
 
+    /// Whether a country code (case-insensitive) has ranges loaded — i.e. the
+    /// geo engine can actually identify visitors from that country.
+    #[must_use]
+    pub fn knows_country(&self, cc: &str) -> bool {
+        let cc = cc.trim().to_ascii_uppercase();
+        self.names.iter().any(|n| *n == cc)
+    }
+
     /// True when no ranges are loaded.
     #[must_use]
     pub fn is_empty(&self) -> bool {
@@ -218,6 +226,16 @@ mod tests {
         assert_eq!(db.lookup("2001:863:21d::1".parse().unwrap()), Some("FR"));
         // v4-mapped resolves via the v4 table
         assert_eq!(db.lookup("::ffff:8.8.8.8".parse().unwrap()), Some("US"));
+    }
+
+    #[test]
+    fn knows_country_is_case_insensitive() {
+        let db = db();
+        assert!(db.knows_country("fr"));
+        assert!(db.knows_country("FR"));
+        assert!(db.knows_country(" us "));
+        assert!(!db.knows_country("QQ"));
+        assert!(!CountryDb::empty().knows_country("FR"));
     }
 
     #[test]

@@ -91,6 +91,11 @@ enum Commands {
         /// List the current per-domain routing and geo configuration.
         #[arg(long)]
         list: bool,
+
+        /// Simulate the geo decision for this IP on HOST, without modifying
+        /// anything (e.g. `websec domain boutique.fr --test 1.2.3.4`).
+        #[arg(long, value_name = "IP")]
+        test: Option<std::net::IpAddr>,
     },
 
     /// Docker utilities (build/test)
@@ -176,6 +181,7 @@ async fn main() -> websec::Result<()> {
             geo_clear,
             remove,
             list,
+            test,
         }) => {
             let backend = backend.or_else(|| port.map(|p| format!("http://127.0.0.1:{p}")));
             let change = cli::DomainChange {
@@ -186,7 +192,7 @@ async fn main() -> websec::Result<()> {
                 geo_clear,
                 remove,
             };
-            cli::run_domain(&args.config, &change, list)?;
+            cli::run_domain(&args.config, &change, list, test).await?;
         }
         Some(Commands::Docker { command }) => match command {
             DockerCommands::Build => {

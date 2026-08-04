@@ -306,6 +306,7 @@ impl Detector for ProtocolDetector {
                     signals.len()
                 )),
                 force_block: false,
+                country: None,
             }
         }
     }

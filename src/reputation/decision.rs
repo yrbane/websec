@@ -157,6 +157,13 @@ impl DecisionEngine {
         // Step 2: Run detectors
         let detection = self.detectors.analyze_all(context).await;
 
+        // Persist the resolved country (from the geo detector) on the profile so
+        // it can be queried and used for metrics. Only overwrite when resolved,
+        // to keep the last known country for exempt/unknown requests.
+        if detection.country.is_some() {
+            profile.country_code = detection.country.clone();
+        }
+
         // Hard block from a detector (e.g. per-domain geo policy): deterministic,
         // bypasses the score pipeline entirely.
         if detection.force_block {
