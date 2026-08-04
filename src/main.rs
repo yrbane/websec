@@ -55,6 +55,44 @@ enum Commands {
     /// Restore web server config and disable WebSec
     Restore,
 
+    /// Per-domain configuration: host routing and GeoIP policy (exceptions to
+    /// the global rules), without an extra reverse-proxy.
+    Domain {
+        /// Target host (exact "app.example.com" or wildcard "*.example.com").
+        /// Omit with --list to only display the current configuration.
+        #[arg(value_name = "HOST")]
+        host: Option<String>,
+
+        /// Route this host to a backend URL (e.g. http://127.0.0.1:8082).
+        #[arg(long, value_name = "URL")]
+        backend: Option<String>,
+
+        /// Shorthand for --backend http://127.0.0.1:<PORT>.
+        #[arg(long, value_name = "PORT", conflicts_with = "backend")]
+        port: Option<u16>,
+
+        /// Allow-only these countries (ISO alpha-2, comma-separated). Any other
+        /// country — or unknown — is blocked for this host.
+        #[arg(long, value_name = "CC,CC", value_delimiter = ',')]
+        geo_allow: Option<Vec<String>>,
+
+        /// Block these countries for this host (ISO alpha-2, comma-separated).
+        #[arg(long, value_name = "CC,CC", value_delimiter = ',')]
+        geo_block: Option<Vec<String>>,
+
+        /// Remove this host's geo rule (revert to the global policy).
+        #[arg(long)]
+        geo_clear: bool,
+
+        /// Remove this host entirely (route + geo rule).
+        #[arg(long)]
+        remove: bool,
+
+        /// List the current per-domain routing and geo configuration.
+        #[arg(long)]
+        list: bool,
+    },
+
     /// Docker utilities (build/test)
     Docker {
         #[command(subcommand)]
@@ -128,6 +166,27 @@ async fn main() -> websec::Result<()> {
         }
         Some(Commands::Restore) => {
             cli::run_restore(&args.config)?;
+        }
+        Some(Commands::Domain {
+            host,
+            backend,
+            port,
+            geo_allow,
+            geo_block,
+            geo_clear,
+            remove,
+            list,
+        }) => {
+            let backend = backend.or_else(|| port.map(|p| format!("http://127.0.0.1:{p}")));
+            let change = cli::DomainChange {
+                host: host.unwrap_or_default(),
+                backend,
+                geo_allow,
+                geo_block,
+                geo_clear,
+                remove,
+            };
+            cli::run_domain(&args.config, &change, list)?;
         }
         Some(Commands::Docker { command }) => match command {
             DockerCommands::Build => {
