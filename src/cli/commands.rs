@@ -50,7 +50,9 @@ pub async fn run_server(config_path: &Path, dry_run: bool) -> Result<()> {
 
     // Normal run
     println!("🔧 Initializing WebSec...");
-    let server = crate::proxy::server::ProxyServer::new(&settings).await?;
+    let mut server = crate::proxy::server::ProxyServer::new(&settings).await?;
+    // Enable SIGHUP hot-reload of the geo configuration from this file.
+    server.set_config_path(config_path.to_path_buf());
 
     println!("✅ WebSec initialized successfully");
     let listeners = server.listener_infos().to_vec();

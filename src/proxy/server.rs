@@ -63,6 +63,10 @@ use tokio::net::TcpListener;
 pub struct ProxyServer {
     listeners: Vec<ListenerRuntime>,
     info: Vec<ListenerInfo>,
+    /// Geo detector handle for SIGHUP hot-reload of geo rules + country data.
+    geo_detector: Arc<crate::detectors::GeoDetector>,
+    /// Config file path, used by the SIGHUP handler to re-read the geo config.
+    config_path: Option<std::path::PathBuf>,
 }
 
 /// Informations publiques sur un listener (utilisé pour l'affichage CLI)
@@ -136,7 +140,7 @@ impl ProxyServer {
         let repository = Self::init_repository(settings).await?;
 
         // 3. Créer le registry de détecteurs
-        let detectors = Self::init_detectors(settings);
+        let (detectors, geo_detector) = Self::init_detectors(settings);
         tracing::info!("Detectors registered: {}", detectors.count());
 
         // 4. Charger les listes whitelist/blacklist depuis les fichiers
@@ -279,7 +283,14 @@ impl ProxyServer {
         Ok(Self {
             listeners: runtimes,
             info,
+            geo_detector,
+            config_path: None,
         })
+    }
+
+    /// Set the config file path so SIGHUP can hot-reload the geo configuration.
+    pub fn set_config_path(&mut self, path: std::path::PathBuf) {
+        self.config_path = Some(path);
     }
 
     async fn init_repository(
@@ -311,7 +322,9 @@ impl ProxyServer {
         }
     }
 
-    fn init_detectors(settings: &Settings) -> Arc<DetectorRegistry> {
+    /// Build the detector registry. Also returns the geo detector handle so the
+    /// server can hot-reload its rules + country data on SIGHUP without restart.
+    fn init_detectors(settings: &Settings) -> (Arc<DetectorRegistry>, Arc<crate::detectors::GeoDetector>) {
         let mut detector_registry = DetectorRegistry::new();
 
         detector_registry.register(Arc::new(crate::detectors::BotDetector::new()));
@@ -320,38 +333,16 @@ impl ProxyServer {
         detector_registry.register(Arc::new(crate::detectors::InjectionDetector::new()));
         detector_registry.register(Arc::new(crate::detectors::ScanDetector::new()));
         detector_registry.register(Arc::new(crate::detectors::HeaderDetector::new()));
-        // Geo detector: load per-country CIDR DB once and apply per-domain policy.
-        let geo_cfg = &settings.geolocation;
-        let country_dir = geo_cfg
-            .country_dir
-            .clone()
-            .unwrap_or_else(|| "/etc/websec/geoip".to_string());
-        let country_db = if geo_cfg.enabled {
-            match crate::geolocation::CountryDb::load_dir(&country_dir) {
-                Ok(db) => {
-                    tracing::info!(
-                        "GeoIP country DB: {} ranges / {} countries (from {})",
-                        db.range_count(),
-                        db.country_count(),
-                        country_dir
-                    );
-                    Arc::new(db)
-                }
-                Err(e) => {
-                    tracing::warn!("GeoIP country DB load failed ({e}); geo policy inert");
-                    Arc::new(crate::geolocation::CountryDb::empty())
-                }
-            }
-        } else {
-            Arc::new(crate::geolocation::CountryDb::empty())
-        };
-        detector_registry.register(Arc::new(crate::detectors::GeoDetector::from_config(
-            geo_cfg, country_db,
-        )));
+        // Geo detector: loads the per-country CIDR DB from disk and applies the
+        // per-domain policy. Kept as a concrete handle for SIGHUP hot-reload.
+        let geo_detector = Arc::new(crate::detectors::GeoDetector::from_settings(
+            &settings.geolocation,
+        ));
+        detector_registry.register(geo_detector.clone());
         detector_registry.register(Arc::new(crate::detectors::ProtocolDetector::new()));
         detector_registry.register(Arc::new(crate::detectors::SessionDetector::new()));
 
-        Arc::new(detector_registry)
+        (Arc::new(detector_registry), geo_detector)
     }
 
     /// Load whitelist/blacklist from files on disk (via ListManager).
@@ -455,8 +446,51 @@ impl ProxyServer {
     /// # }
     /// ```
     pub async fn run(self) -> Result<()> {
+        // Hot-reload on SIGHUP: re-read the config and swap the geo rules +
+        // country data in place, no restart / no dropped connections. Only the
+        // geo layer reloads; routes, listeners and TLS still need a restart.
+        Self::spawn_reload_handler(self.geo_detector, self.config_path);
+
         try_join_all(self.listeners.into_iter().map(ListenerRuntime::run)).await?;
         Ok(())
+    }
+
+    /// Spawn a task that reloads the geo configuration on each SIGHUP.
+    #[cfg(unix)]
+    fn spawn_reload_handler(
+        geo_detector: Arc<crate::detectors::GeoDetector>,
+        config_path: Option<std::path::PathBuf>,
+    ) {
+        let Some(path) = config_path else {
+            tracing::debug!("SIGHUP reload disabled (no config path set)");
+            return;
+        };
+        tokio::spawn(async move {
+            let mut hangup = match tokio::signal::unix::signal(
+                tokio::signal::unix::SignalKind::hangup(),
+            ) {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!("Cannot install SIGHUP handler: {e}");
+                    return;
+                }
+            };
+            tracing::info!("SIGHUP handler ready: `kill -HUP` reloads geo config from {}", path.display());
+            while hangup.recv().await.is_some() {
+                tracing::info!("SIGHUP received: reloading geo configuration");
+                match crate::config::load_from_file(&path) {
+                    Ok(settings) => geo_detector.reload_from_config(&settings.geolocation),
+                    Err(e) => tracing::warn!("SIGHUP reload failed to load {}: {e}", path.display()),
+                }
+            }
+        });
+    }
+
+    #[cfg(not(unix))]
+    fn spawn_reload_handler(
+        _geo_detector: Arc<crate::detectors::GeoDetector>,
+        _config_path: Option<std::path::PathBuf>,
+    ) {
     }
 }
 

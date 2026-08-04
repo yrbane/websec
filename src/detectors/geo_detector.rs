@@ -19,7 +19,7 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Weight of the impossible-travel scoring signal.
@@ -40,16 +40,38 @@ struct SiteRule {
     block: HashSet<String>,
 }
 
-/// Geolocation detector: hard per-domain country policy + soft scoring.
-pub struct GeoDetector {
+/// Hot-swappable geolocation state: everything derived from config + data files.
+/// Held behind an `RwLock<Arc<..>>` so a SIGHUP reload can atomically replace it
+/// without restarting the proxy. The impossible-travel history lives outside it
+/// (on `GeoDetector`) so a reload doesn't wipe per-IP travel memory.
+struct GeoState {
     db: Arc<CountryDb>,
     global_allow: HashSet<String>,
     global_block: HashSet<String>,
     sites: Vec<SiteRule>,
     /// Country -> soft penalty weight (scoring, not a hard block).
     penalties: HashMap<String, u8>,
-    ip_history: Arc<DashMap<IpAddr, Vec<GeoLocation>>>,
     enabled: bool,
+}
+
+impl GeoState {
+    /// Resolve the effective allow/block sets for a target host. A matching
+    /// per-domain rule fully overrides the global policy; otherwise the global
+    /// allow/block applies.
+    fn effective_policy(&self, host: &str) -> (&HashSet<String>, &HashSet<String>) {
+        if !host.is_empty() {
+            if let Some(rule) = self.sites.iter().find(|r| host_matches(&r.server_name, host)) {
+                return (&rule.allow, &rule.block);
+            }
+        }
+        (&self.global_allow, &self.global_block)
+    }
+}
+
+/// Geolocation detector: hard per-domain country policy + soft scoring.
+pub struct GeoDetector {
+    state: RwLock<Arc<GeoState>>,
+    ip_history: Arc<DashMap<IpAddr, Vec<GeoLocation>>>,
 }
 
 fn upper_set(v: &[String]) -> HashSet<String> {
@@ -85,50 +107,105 @@ fn host_of(context: &HttpRequestContext) -> String {
         .unwrap_or_default()
 }
 
+/// Build the geo state (rules) from config and a country database.
+fn state_from_config(cfg: &GeolocationConfig, db: Arc<CountryDb>) -> GeoState {
+    GeoState {
+        db,
+        global_allow: upper_set(&cfg.allow),
+        global_block: upper_set(&cfg.block),
+        sites: cfg.sites.iter().map(compile_site).collect(),
+        penalties: cfg
+            .penalties
+            .iter()
+            .map(|(k, v)| (k.trim().to_ascii_uppercase(), *v))
+            .collect(),
+        enabled: cfg.enabled,
+    }
+}
+
+/// Load the per-country CIDR database from the configured directory (default
+/// `/etc/websec/geoip`). Returns an empty DB when geo is disabled or on error,
+/// so geo policy degrades to inert rather than failing.
+fn load_db_for(cfg: &GeolocationConfig) -> Arc<CountryDb> {
+    if !cfg.enabled {
+        return Arc::new(CountryDb::empty());
+    }
+    let dir = cfg
+        .country_dir
+        .clone()
+        .unwrap_or_else(|| "/etc/websec/geoip".to_string());
+    match CountryDb::load_dir(&dir) {
+        Ok(db) => {
+            tracing::info!(
+                "GeoIP country DB: {} ranges / {} countries (from {})",
+                db.range_count(),
+                db.country_count(),
+                dir
+            );
+            Arc::new(db)
+        }
+        Err(e) => {
+            tracing::warn!("GeoIP country DB load failed ({e}); geo policy inert");
+            Arc::new(CountryDb::empty())
+        }
+    }
+}
+
 impl GeoDetector {
+    fn from_state(state: GeoState) -> Self {
+        Self {
+            state: RwLock::new(Arc::new(state)),
+            ip_history: Arc::new(DashMap::new()),
+        }
+    }
+
     /// Inert detector: no country data, no rules. Resolves nothing and never
     /// blocks — the safe default used when geolocation is disabled or unset.
     #[must_use]
     pub fn new() -> Self {
-        Self {
+        Self::from_state(GeoState {
             db: Arc::new(CountryDb::empty()),
             global_allow: HashSet::new(),
             global_block: HashSet::new(),
             sites: Vec::new(),
             penalties: HashMap::new(),
-            ip_history: Arc::new(DashMap::new()),
             enabled: true,
-        }
+        })
     }
 
     /// Build from configuration and a shared country database.
     #[must_use]
     pub fn from_config(cfg: &GeolocationConfig, db: Arc<CountryDb>) -> Self {
-        Self {
-            db,
-            global_allow: upper_set(&cfg.allow),
-            global_block: upper_set(&cfg.block),
-            sites: cfg.sites.iter().map(compile_site).collect(),
-            penalties: cfg
-                .penalties
-                .iter()
-                .map(|(k, v)| (k.trim().to_ascii_uppercase(), *v))
-                .collect(),
-            ip_history: Arc::new(DashMap::new()),
-            enabled: cfg.enabled,
+        Self::from_state(state_from_config(cfg, db))
+    }
+
+    /// Build from configuration, loading the country database from disk
+    /// (`country_dir`). This is what the server uses at startup and on reload.
+    #[must_use]
+    pub fn from_settings(cfg: &GeolocationConfig) -> Self {
+        Self::from_config(cfg, load_db_for(cfg))
+    }
+
+    /// Atomically replace the geo state (rules + country data) with one built
+    /// from `cfg` and `db`. Impossible-travel history is preserved.
+    pub fn reload(&self, cfg: &GeolocationConfig, db: Arc<CountryDb>) {
+        let new_state = state_from_config(cfg, db);
+        if let Ok(mut guard) = self.state.write() {
+            *guard = Arc::new(new_state);
+            tracing::info!(
+                "GeoDetector reloaded: enabled={}, {} sites, global allow={} block={}",
+                guard.enabled,
+                guard.sites.len(),
+                guard.global_allow.len(),
+                guard.global_block.len()
+            );
         }
     }
 
-    /// Resolve the effective allow/block sets for a target host. A matching
-    /// per-domain rule fully overrides the global policy; otherwise the global
-    /// allow/block applies.
-    fn effective_policy(&self, host: &str) -> (&HashSet<String>, &HashSet<String>) {
-        if !host.is_empty() {
-            if let Some(rule) = self.sites.iter().find(|r| host_matches(&r.server_name, host)) {
-                return (&rule.allow, &rule.block);
-            }
-        }
-        (&self.global_allow, &self.global_block)
+    /// Reload from a fresh config, loading the database from disk. Used by the
+    /// SIGHUP handler: no restart, no dropped connections.
+    pub fn reload_from_config(&self, cfg: &GeolocationConfig) {
+        self.reload(cfg, load_db_for(cfg));
     }
 
     /// Loopback / private / link-local IPs are never geo-evaluated.
@@ -177,11 +254,19 @@ impl Detector for GeoDetector {
     }
 
     fn enabled(&self) -> bool {
-        self.enabled
+        self.state.read().map(|s| s.enabled).unwrap_or(false)
     }
 
     async fn analyze(&self, context: &HttpRequestContext) -> DetectionResult {
-        if !self.enabled {
+        // Snapshot the current state (cheap Arc clone) so a concurrent reload
+        // can't tear this evaluation.
+        let state = {
+            match self.state.read() {
+                Ok(guard) => Arc::clone(&guard),
+                Err(_) => return DetectionResult::clean(),
+            }
+        };
+        if !state.enabled {
             return DetectionResult::clean();
         }
         let ip = context.ip;
@@ -189,9 +274,9 @@ impl Detector for GeoDetector {
             return DetectionResult::clean();
         }
 
-        let country = self.db.lookup(ip).map(str::to_string); // already upper-case
+        let country = state.db.lookup(ip).map(str::to_string); // already upper-case
         let host = host_of(context);
-        let (allow, block) = self.effective_policy(&host);
+        let (allow, block) = state.effective_policy(&host);
 
         // --- Hard policy (deterministic block) ---
         if !allow.is_empty() {
@@ -218,7 +303,7 @@ impl Detector for GeoDetector {
             return DetectionResult::clean();
         };
         let mut signals = Vec::new();
-        if let Some(weight) = self.penalties.get(&cc) {
+        if let Some(weight) = state.penalties.get(&cc) {
             if *weight > 0 {
                 signals.push(Signal::with_context(
                     SignalVariant::HighRiskCountry,
@@ -342,6 +427,21 @@ mod tests {
         // unmatched host: global block CN
         assert!(det.analyze(&ctx("1.2.3.4", "blog.example.com")).await.force_block);
         assert!(!det.analyze(&ctx("8.8.8.8", "blog.example.com")).await.force_block);
+    }
+
+    #[tokio::test]
+    async fn reload_swaps_policy_live() {
+        // Start with no policy: CN passes.
+        let det = GeoDetector::from_config(&cfg(vec![], vec![], vec![]), db());
+        assert!(!det.analyze(&ctx("1.2.3.4", "api.example.com")).await.force_block);
+
+        // Reload with a global block on CN: same detector now blocks CN.
+        det.reload(&cfg(vec![], vec![], vec!["CN".into()]), db());
+        assert!(det.analyze(&ctx("1.2.3.4", "api.example.com")).await.force_block);
+
+        // Reload back to empty policy: CN passes again.
+        det.reload(&cfg(vec![], vec![], vec![]), db());
+        assert!(!det.analyze(&ctx("1.2.3.4", "api.example.com")).await.force_block);
     }
 
     #[tokio::test]
