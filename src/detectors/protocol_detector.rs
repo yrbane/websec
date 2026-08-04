@@ -305,6 +305,7 @@ impl Detector for ProtocolDetector {
                     "Protocol violation detected: {} issue(s)",
                     signals.len()
                 )),
+                force_block: false,
             }
         }
     }

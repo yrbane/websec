@@ -105,8 +105,15 @@ fn shell(accent: &str, badge: &str, code: &str, title: &str, body: &str, meta_ro
     )
 }
 
-/// 403 — request refused by the reputation engine.
-pub fn block_page(ip: &str, score: impl std::fmt::Display, host: &str, when: &str) -> String {
+/// 403 — request refused (reputation score, or a hard policy such as geo).
+/// `reason`, when present, replaces the generic explanation (e.g. geo block).
+pub fn block_page(
+    ip: &str,
+    score: impl std::fmt::Display,
+    host: &str,
+    when: &str,
+    reason: Option<&str>,
+) -> String {
     let meta = format!(
         "<dt>Adresse IP</dt><dd>{ip}</dd><dt>Hôte</dt><dd>{host}</dd><dt>Score</dt><dd>{score}</dd><dt>Horodatage</dt><dd>{when}</dd>",
         ip = esc(ip),
@@ -114,14 +121,19 @@ pub fn block_page(ip: &str, score: impl std::fmt::Display, host: &str, when: &st
         score = score,
         when = esc(when),
     );
+    let body = match reason {
+        Some(r) => format!("<p>{}</p>", esc(r)),
+        None => "<p>Notre moteur de réputation a jugé cette requête malveillante ou trop peu fiable. \
+Si vous pensez qu'il s'agit d'une erreur, réessayez plus tard ou contactez l'administrateur \
+du site en indiquant l'horodatage ci-dessous.</p>"
+            .to_string(),
+    };
     shell(
         "danger",
         "Accès refusé",
         "403",
         "Votre requête a été bloquée",
-        "<p>Notre moteur de réputation a jugé cette requête malveillante ou trop peu fiable. \
-Si vous pensez qu'il s'agit d'une erreur, réessayez plus tard ou contactez l'administrateur \
-du site en indiquant l'horodatage ci-dessous.</p>",
+        &body,
         &meta,
     )
 }
@@ -154,7 +166,7 @@ mod tests {
 
     #[test]
     fn block_page_is_self_contained_html() {
-        let h = block_page("203.0.113.4", 7, "example.com", "2026-01-01 00:00:00 UTC");
+        let h = block_page("203.0.113.4", 7, "example.com", "2026-01-01 00:00:00 UTC", None);
         assert!(h.starts_with("<!DOCTYPE html>"));
         assert!(h.contains("403"));
         assert!(h.contains("203.0.113.4"));
@@ -173,7 +185,7 @@ mod tests {
 
     #[test]
     fn escaping_prevents_injection_via_host() {
-        let h = block_page("1.2.3.4", 0, "<script>x</script>", "t");
+        let h = block_page("1.2.3.4", 0, "<script>x</script>", "t", None);
         assert!(!h.contains("<script>x"));
         assert!(h.contains("&lt;script&gt;"));
     }

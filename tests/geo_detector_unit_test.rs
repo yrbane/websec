@@ -1,28 +1,34 @@
-//! Unit tests for GeoDetector
+//! Unit tests for GeoDetector — real CIDR-backed API (ipdeny country DB).
 //!
-//! TDD RED PHASE: Tests written BEFORE implementation
-//!
-//! Testing:
-//! - Detection of requests from high-risk countries
-//! - Impossible travel detection (geolocation jump)
-//! - Country-based signal generation
-//! - Geographic correlation
+//! Covers per-domain geo policy (allow-only / blocklist), global fallback,
+//! exemptions (loopback/private), unknown-country handling, and soft scoring.
 
+use std::collections::HashMap;
 use std::net::IpAddr;
 use std::str::FromStr;
+use std::sync::Arc;
+use websec::config::settings::{GeoSiteRule, GeolocationConfig};
 use websec::detectors::geo_detector::GeoDetector;
-use websec::detectors::Detector;
-use websec::detectors::HttpRequestContext;
+use websec::detectors::{Detector, HttpRequestContext};
+use websec::geolocation::CountryDb;
 use websec::reputation::SignalVariant;
 
-/// Helper to create test context
-fn create_context(ip: &str) -> HttpRequestContext {
+/// Small deterministic country DB (no MaxMind, no network).
+fn db() -> Arc<CountryDb> {
+    Arc::new(CountryDb::from_pairs(&[
+        ("fr", "90.114.0.0/16"),
+        ("cn", "1.0.0.0/8"),
+        ("us", "8.8.8.0/24"),
+    ]))
+}
+
+fn ctx(ip: &str, host: &str) -> HttpRequestContext {
     HttpRequestContext {
         ip: IpAddr::from_str(ip).unwrap(),
         method: "GET".to_string(),
         path: "/".to_string(),
         query: None,
-        headers: vec![],
+        headers: vec![("host".to_string(), host.to_string())],
         body: None,
         user_agent: Some("Mozilla/5.0".to_string()),
         referer: None,
@@ -30,164 +36,126 @@ fn create_context(ip: &str) -> HttpRequestContext {
     }
 }
 
-#[tokio::test]
-async fn test_high_risk_country_detection() {
-    let detector = GeoDetector::new();
-
-    // China is considered high-risk in our test config
-    let context = create_context("1.2.3.4"); // Chinese IP (example)
-    let result = detector.analyze(&context).await;
-
-    assert!(result.suspicious, "Should detect high-risk country");
-    assert!(!result.signals.is_empty(), "Should have signals");
-    assert!(
-        result
-            .signals
-            .iter()
-            .any(|s| matches!(s.variant, SignalVariant::HighRiskCountry)),
-        "Should generate HighRiskCountry signal"
-    );
-}
-
-#[tokio::test]
-async fn test_safe_country_no_signal() {
-    let detector = GeoDetector::new();
-
-    // US IP (generally safe)
-    let context = create_context("8.8.8.8"); // Google DNS (US)
-    let result = detector.analyze(&context).await;
-
-    assert!(
-        !result.suspicious
-            || !result
-                .signals
-                .iter()
-                .any(|s| matches!(s.variant, SignalVariant::HighRiskCountry)),
-        "Safe country should not generate HighRiskCountry signal"
-    );
-}
-
-#[tokio::test]
-async fn test_impossible_travel_detection() {
-    let detector = GeoDetector::new();
-
-    // First request from US
-    let context1 = create_context("8.8.8.8");
-    let _result1 = detector.analyze(&context1).await;
-
-    // Second request from China 1 second later (impossible travel)
-    let context2 = create_context("1.2.3.4");
-    let result2 = detector.analyze(&context2).await;
-
-    // Note: This test requires the detector to track previous locations
-    // For now, we'll just check that the detector can process both requests
-    let _ = result2.signals;
-}
-
-#[tokio::test]
-async fn test_unknown_country_handling() {
-    let detector = GeoDetector::new();
-
-    // Private IP (no geolocation)
-    let context = create_context("192.168.1.1");
-    let result = detector.analyze(&context).await;
-
-    // Should not crash on unknown country
-    assert!(!result.suspicious, "Private IP should not be flagged");
-}
-
-#[tokio::test]
-async fn test_localhost_exempt() {
-    let detector = GeoDetector::new();
-
-    let context = create_context("127.0.0.1");
-    let result = detector.analyze(&context).await;
-
-    assert!(
-        !result.suspicious,
-        "Localhost should be exempt from geo checks"
-    );
-}
-
-#[tokio::test]
-async fn test_multiple_high_risk_countries() {
-    let detector = GeoDetector::new();
-
-    // Test multiple high-risk IPs
-    let high_risk_ips = vec![
-        "1.2.3.4",  // China
-        "5.6.7.8",  // Russia (example)
-        "41.2.3.4", // Nigeria (example)
-    ];
-
-    for ip in high_risk_ips {
-        let context = create_context(ip);
-        let result = detector.analyze(&context).await;
-
-        // At least some should be detected as high-risk
-        // (depends on actual GeoIP database)
+fn cfg(sites: Vec<GeoSiteRule>, allow: Vec<String>, block: Vec<String>) -> GeolocationConfig {
+    GeolocationConfig {
+        enabled: true,
+        database: None,
+        penalties: HashMap::new(),
+        country_dir: None,
+        allow,
+        block,
+        sites,
     }
 }
 
 #[tokio::test]
-async fn test_country_code_extraction() {
-    let detector = GeoDetector::new();
-
-    let context = create_context("8.8.8.8");
-    let _result = detector.analyze(&context).await;
-
-    // Detector should be able to extract country code
-    // This is implicitly tested by other tests
+async fn allow_only_per_domain_blocks_everyone_else() {
+    let det = GeoDetector::from_config(
+        &cfg(
+            vec![GeoSiteRule {
+                server_name: "boutique.fr".into(),
+                allow: vec!["FR".into()],
+                block: vec![],
+            }],
+            vec![],
+            vec![],
+        ),
+        db(),
+    );
+    // FR allowed
+    assert!(!det.analyze(&ctx("90.114.131.138", "boutique.fr")).await.force_block);
+    // CN refused
+    assert!(det.analyze(&ctx("1.2.3.4", "boutique.fr")).await.force_block);
+    // Unknown country refused under allow-only
+    assert!(det.analyze(&ctx("203.0.113.7", "boutique.fr")).await.force_block);
 }
 
 #[tokio::test]
-async fn test_configurable_risk_countries() {
-    // Test that risk countries are configurable
-    let risk_countries = vec!["CN".to_string(), "RU".to_string(), "KP".to_string()];
-    let detector = GeoDetector::with_risk_countries(risk_countries);
-
-    let context = create_context("1.2.3.4");
-    let result = detector.analyze(&context).await;
-
-    // Should use custom risk country list
+async fn blocklist_per_domain() {
+    let det = GeoDetector::from_config(
+        &cfg(
+            vec![GeoSiteRule {
+                server_name: "api.example.com".into(),
+                allow: vec![],
+                block: vec!["CN".into()],
+            }],
+            vec![],
+            vec![],
+        ),
+        db(),
+    );
+    assert!(det.analyze(&ctx("1.2.3.4", "api.example.com")).await.force_block);
+    assert!(!det.analyze(&ctx("8.8.8.8", "api.example.com")).await.force_block);
 }
 
 #[tokio::test]
-async fn test_signal_weight_for_high_risk() {
-    let detector = GeoDetector::new();
+async fn global_policy_and_wildcard_override() {
+    let det = GeoDetector::from_config(
+        &cfg(
+            vec![GeoSiteRule {
+                server_name: "*.corp.example".into(),
+                allow: vec!["FR".into()],
+                block: vec![],
+            }],
+            vec![],
+            vec!["CN".into()],
+        ),
+        db(),
+    );
+    // wildcard host is allow-only FR
+    assert!(det.analyze(&ctx("1.2.3.4", "a.corp.example")).await.force_block);
+    assert!(!det.analyze(&ctx("90.114.131.138", "a.corp.example")).await.force_block);
+    // unmatched host falls back to global block CN
+    assert!(det.analyze(&ctx("1.2.3.4", "blog.example.com")).await.force_block);
+    assert!(!det.analyze(&ctx("8.8.8.8", "blog.example.com")).await.force_block);
+}
 
-    let context = create_context("1.2.3.4");
-    let result = detector.analyze(&context).await;
+#[tokio::test]
+async fn loopback_and_private_are_exempt() {
+    let det = GeoDetector::from_config(&cfg(vec![], vec!["FR".into()], vec![]), db());
+    // allow-only FR, but loopback/private never geo-blocked
+    assert!(!det.analyze(&ctx("127.0.0.1", "boutique.fr")).await.force_block);
+    assert!(!det.analyze(&ctx("192.168.1.10", "boutique.fr")).await.force_block);
+}
 
-    if let Some(signal) = result
+#[tokio::test]
+async fn disabled_detector_never_blocks() {
+    let mut c = cfg(vec![], vec!["FR".into()], vec![]);
+    c.enabled = false;
+    let det = GeoDetector::from_config(&c, db());
+    assert!(!det.analyze(&ctx("1.2.3.4", "boutique.fr")).await.force_block);
+}
+
+#[tokio::test]
+async fn soft_penalty_scores_high_risk_country() {
+    let mut penalties = HashMap::new();
+    penalties.insert("CN".to_string(), 15u8);
+    let c = GeolocationConfig {
+        enabled: true,
+        database: None,
+        penalties,
+        country_dir: None,
+        allow: vec![],
+        block: vec![],
+        sites: vec![],
+    };
+    let det = GeoDetector::from_config(&c, db());
+    let result = det.analyze(&ctx("1.2.3.4", "blog.example.com")).await;
+    // Not a hard block: just a scoring signal
+    assert!(!result.force_block);
+    let sig = result
         .signals
         .iter()
         .find(|s| matches!(s.variant, SignalVariant::HighRiskCountry))
-    {
-        // HighRiskCountry should have weight 15 (from signal.rs)
-        assert_eq!(signal.weight, 15, "HighRiskCountry should have weight 15");
-    }
+        .expect("should emit HighRiskCountry signal");
+    assert_eq!(sig.weight, 15);
 }
 
 #[tokio::test]
-async fn test_concurrent_geo_lookups() {
-    let detector = GeoDetector::new();
-
-    // Simulate concurrent requests
-    let handles: Vec<_> = (0..10)
-        .map(|i| {
-            let detector = detector.clone();
-            tokio::spawn(async move {
-                let ip = format!("8.8.8.{}", i);
-                let context = create_context(&ip);
-                detector.analyze(&context).await
-            })
-        })
-        .collect();
-
-    for handle in handles {
-        let result = handle.await.unwrap();
-        // DetectionResult doesn't have is_ok, just check it ran
-        let _ = result.signals;
-    }
+async fn unknown_country_without_allow_is_clean() {
+    let det = GeoDetector::from_config(&cfg(vec![], vec![], vec!["CN".into()]), db());
+    // Unknown IP, only a global blocklist -> passes through
+    let result = det.analyze(&ctx("203.0.113.7", "blog.example.com")).await;
+    assert!(!result.force_block);
+    assert!(!result.suspicious);
 }

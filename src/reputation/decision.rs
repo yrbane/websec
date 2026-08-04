@@ -157,6 +157,21 @@ impl DecisionEngine {
         // Step 2: Run detectors
         let detection = self.detectors.analyze_all(context).await;
 
+        // Hard block from a detector (e.g. per-domain geo policy): deterministic,
+        // bypasses the score pipeline entirely.
+        if detection.force_block {
+            tracing::info!(ip = %ip, reason = ?detection.message, "Hard block from detector");
+            profile.record_request();
+            profile.record_blocked();
+            self.repository.save(&profile).await?;
+            return Ok(DecisionEngineResult {
+                decision: ProxyDecision::Block,
+                score: 0,
+                detection,
+                is_new_ip,
+            });
+        }
+
         // Step 3: Add signals to profile
         for signal in &detection.signals {
             profile.add_signal(signal.clone());
