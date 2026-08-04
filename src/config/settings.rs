@@ -54,11 +54,25 @@ pub struct ServerConfig {
 pub struct ListenerConfig {
     /// Address to bind (e.g., 0.0.0.0:80)
     pub listen: String,
-    /// Backend URL for this listener
+    /// Backend URL for this listener (default when no `routes` entry matches)
     pub backend: String,
     /// TLS configuration (if HTTPS)
     #[serde(default)]
     pub tls: Option<ListenerTlsConfig>,
+    /// Per-host backend routes. Empty = every request goes to `backend`.
+    /// When set, the request's `Host` header selects the backend (exact match
+    /// or `*.domain` wildcard), falling back to `backend`.
+    #[serde(default)]
+    pub routes: Vec<RouteConfig>,
+}
+
+/// Per-host backend route for a listener (host -> upstream backend).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RouteConfig {
+    /// Host to match: exact ("app.example.com") or wildcard ("*.example.com").
+    pub server_name: String,
+    /// Backend URL for this host (e.g. "http://127.0.0.1:3000").
+    pub backend: String,
 }
 
 /// TLS certificate/key configuration for HTTPS listeners

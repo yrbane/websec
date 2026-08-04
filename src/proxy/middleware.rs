@@ -12,6 +12,7 @@
 //! ```
 
 use crate::challenge::ChallengeManager;
+use crate::proxy::router::HostRouter;
 use crate::detectors::HttpRequestContext;
 use crate::observability::metrics::MetricsRegistry;
 use crate::proxy::backend::BackendClient;
@@ -62,8 +63,10 @@ fn error_response_with_headers(
 pub struct ProxyState {
     /// Moteur de décision de réputation
     pub decision_engine: Arc<DecisionEngine>,
-    /// Client pour forwarder au backend
+    /// Client pour forwarder au backend (backend par défaut du listener)
     pub backend_client: Arc<BackendClient>,
+    /// Routeur hôte -> backend ; renvoie `backend_client` si aucune route ne matche
+    pub router: Arc<HostRouter>,
     /// Gestionnaire de challenges CAPTCHA
     pub challenge_manager: Arc<ChallengeManager>,
     /// Registry de métriques
@@ -80,8 +83,10 @@ pub struct ProxyState {
 pub struct ProxyStateConfig {
     /// Decision engine for reputation scoring
     pub decision_engine: Arc<DecisionEngine>,
-    /// Backend client for forwarding requests
+    /// Backend client for forwarding requests (listener default backend)
     pub backend_client: Arc<BackendClient>,
+    /// Host -> backend router (falls back to `backend_client`)
+    pub router: Arc<HostRouter>,
     /// Challenge manager for CAPTCHA
     pub challenge_manager: Arc<ChallengeManager>,
     /// Metrics registry for Prometheus
@@ -101,6 +106,7 @@ impl ProxyState {
         Self {
             decision_engine: config.decision_engine,
             backend_client: config.backend_client,
+            router: config.router,
             challenge_manager: config.challenge_manager,
             metrics: config.metrics,
             trusted_proxies: config.trusted_proxies,
@@ -225,16 +231,24 @@ pub async fn proxy_handler(
                 "Request blocked"
             );
 
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC");
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+            let host = parts
+                .headers
+                .get(http::header::HOST)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("");
             error_response_with_headers(
                 StatusCode::FORBIDDEN,
                 &[
+                    ("Content-Type", "text/html; charset=utf-8".to_string()),
                     ("X-WebSec-Decision", "BLOCK".to_string()),
                     ("X-WebSec-Score", decision_result.score.to_string()),
                 ],
-                format!(
-                    "Access Denied - Reputation Score: {}\nIP: {} | {}",
-                    decision_result.score, client_ip, now
+                crate::proxy::pages::block_page(
+                    &client_ip.to_string(),
+                    decision_result.score,
+                    host,
+                    &now,
                 ),
             )
         }
@@ -281,14 +295,21 @@ pub async fn proxy_handler(
                 "Rate limit applied"
             );
 
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+            let host = parts
+                .headers
+                .get(http::header::HOST)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("");
             error_response_with_headers(
                 StatusCode::TOO_MANY_REQUESTS,
                 &[
+                    ("Content-Type", "text/html; charset=utf-8".to_string()),
                     ("X-WebSec-Decision", "RATE_LIMIT".to_string()),
                     ("X-WebSec-Score", decision_result.score.to_string()),
                     ("Retry-After", "60".to_string()),
                 ],
-                "Too Many Requests - Please slow down",
+                crate::proxy::pages::rate_limit_page(&client_ip.to_string(), host, &now, 60),
             )
         }
     };
@@ -439,6 +460,18 @@ fn check_pow_cookie(
     false
 }
 
+/// Canonicalise une adresse IPv4-mappée en IPv6 (`::ffff:a.b.c.d`) vers son
+/// équivalent IPv4. Indispensable en écoute dual-stack (`[::]:443`) : une
+/// connexion IPv4 arrive sous forme mappée, et sans cette normalisation une
+/// whitelist/blacklist saisie en IPv4 (ex. `90.114.131.138`) ne matcherait
+/// jamais l'IP vue par le proxy.
+fn canonical_ip(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v6) => v6.to_ipv4_mapped().map_or(IpAddr::V6(v6), IpAddr::V4),
+        other => other,
+    }
+}
+
 /// Extrait l'IP du client depuis les headers ou la socket
 ///
 /// Priorité (seulement si la connexion vient d'un proxy de confiance) :
@@ -463,6 +496,9 @@ fn extract_client_ip(req: &Request<Body>, trusted_proxies: &[IpAddr]) -> IpAddr 
         // Fallback si pas de SocketAddr (ne devrait jamais arriver)
         return LOCALHOST;
     };
+
+    // Normalise une éventuelle adresse IPv4-mappée (écoute dual-stack).
+    let socket_ip = canonical_ip(socket_ip);
 
     // Si trusted_proxies est vide, TOUJOURS utiliser l'IP socket (connexion directe)
     if trusted_proxies.is_empty() {
@@ -495,7 +531,7 @@ fn extract_client_ip(req: &Request<Body>, trusted_proxies: &[IpAddr]) -> IpAddr 
             if let Some(first_ip) = value.split(',').next() {
                 if let Ok(ip) = IpAddr::from_str(first_ip.trim()) {
                     tracing::debug!("Using X-Forwarded-For IP: {}", ip);
-                    return ip;
+                    return canonical_ip(ip);
                 }
             }
         }
@@ -506,7 +542,7 @@ fn extract_client_ip(req: &Request<Body>, trusted_proxies: &[IpAddr]) -> IpAddr 
         if let Ok(value) = real_ip.to_str() {
             if let Ok(ip) = IpAddr::from_str(value.trim()) {
                 tracing::debug!("Using X-Real-IP: {}", ip);
-                return ip;
+                return canonical_ip(ip);
             }
         }
     }
@@ -705,14 +741,25 @@ async fn forward_to_backend(
     body: Bytes,
     client_ip: IpAddr,
 ) -> Response<Body> {
+    // Choisir le backend selon l'hôte (routage par domaine). Sans routes
+    // configurées, le routeur renvoie toujours le backend par défaut, donc le
+    // comportement est identique à l'ancien proxy mono-backend.
+    let host = parts
+        .headers
+        .get(http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
     // Sanitize headers avant de forwarder (sécurité)
     let sanitized_parts = sanitize_request_headers(parts, &state, client_ip);
 
     // Reconstruire la requête avec le body et headers sanitizés
     let request = Request::from_parts(sanitized_parts, Full::new(body));
 
-    // Forward au backend
-    match state.backend_client.forward(request).await {
+    // Forward au backend sélectionné pour cet hôte
+    let backend = state.router.select(&host);
+    match backend.forward(request).await {
         Ok(backend_response) => {
             // Convertir la réponse backend en Response<Body>
             let (parts, body) = backend_response.into_parts();

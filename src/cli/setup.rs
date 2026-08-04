@@ -1401,6 +1401,7 @@ fn update_websec_config_with_sni(
             listen: "[::]:80".to_string(),
             backend: format!("http://127.0.0.1:{port}"),
             tls: None,
+            routes: Vec::new(),
         });
         println!("✅ Listener HTTP ajouté : [::]:80 (IPv4+IPv6) → http://127.0.0.1:{port}");
     }
@@ -1454,6 +1455,7 @@ fn update_websec_config_with_sni(
                             key_file: default_cert.key_file.to_string_lossy().to_string(),
                             sni_certificates,
                         }),
+                        routes: Vec::new(),
                     });
 
                     println!(

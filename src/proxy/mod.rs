@@ -11,12 +11,15 @@
 pub mod backend;
 pub mod circuit_breaker;
 pub mod middleware;
+pub mod pages;
 pub mod retry;
+pub mod router;
 pub mod server;
 #[cfg(feature = "tls")]
 pub mod sni;
 
 pub use backend::BackendClient;
+pub use router::HostRouter;
 pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitState};
 pub use middleware::{metrics_handler, proxy_handler, ProxyState};
 pub use retry::RetryPolicy;
