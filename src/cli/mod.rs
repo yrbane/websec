@@ -14,6 +14,9 @@ pub mod e2e;
 /// Blacklist/whitelist management helpers
 pub mod lists;
 pub mod setup;
+/// Per-domain configuration (routing + geo policy)
+pub mod domain;
 
 pub use commands::{check_storage, run_server, show_config, show_stats};
+pub use domain::{run_domain, DomainChange};
 pub use setup::{run_setup, run_setup_noninteractive, run_restore};
