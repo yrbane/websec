@@ -279,6 +279,7 @@ impl Detector for HeaderDetector {
                     signals.len()
                 )),
                 force_block: false,
+                country: None,
             }
         }
     }

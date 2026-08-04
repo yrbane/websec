@@ -201,13 +201,15 @@ impl Detector for GeoDetector {
                 return DetectionResult::block(format!(
                     "Accès non autorisé depuis votre zone géographique ({}).",
                     country.as_deref().unwrap_or("pays inconnu")
-                ));
+                ))
+                .with_country(country.clone());
             }
         } else if let Some(cc) = country.as_deref() {
             if block.contains(cc) {
                 return DetectionResult::block(format!(
                     "Accès bloqué depuis votre pays ({cc})."
-                ));
+                ))
+                .with_country(country.clone());
             }
         }
 
@@ -234,9 +236,9 @@ impl Detector for GeoDetector {
         }
 
         if signals.is_empty() {
-            DetectionResult::clean()
+            DetectionResult::clean().with_country(Some(cc))
         } else {
-            DetectionResult::with_signals(signals)
+            DetectionResult::with_signals(signals).with_country(Some(cc))
         }
     }
 }

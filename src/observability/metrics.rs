@@ -199,6 +199,21 @@ impl MetricsRegistry {
             .unwrap()
             .insert("decisions_by_type".to_string(), decisions_by_type);
 
+        // Compteur des blocages géographiques par pays et par hôte
+        let geo_opts = Opts::new(
+            "geo_blocks_total",
+            "Nombre de requêtes bloquées par politique géographique",
+        );
+        let geo_blocks = IntCounterVec::new(geo_opts, &["country", "host"])
+            .expect("Création métrique geo_blocks_total");
+        self.registry
+            .register(Box::new(geo_blocks.clone()))
+            .expect("Enregistrement geo_blocks_total");
+        self.counter_vecs
+            .lock()
+            .unwrap()
+            .insert("geo_blocks_total".to_string(), geo_blocks);
+
         // Jauge par IP pour score de réputation
         let reputation_opts = Opts::new("reputation_by_ip", "Score de réputation par adresse IP");
         let reputation_by_ip =
@@ -320,6 +335,17 @@ impl MetricsRegistry {
     pub fn increment_decision(&self, decision_type: &str) {
         if let Some(vec) = self.counter_vecs.lock().unwrap().get("decisions_by_type") {
             vec.with_label_values(&[decision_type]).inc();
+        }
+    }
+
+    /// Incrémente le compteur de blocages géographiques pour un pays et un hôte.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned
+    pub fn increment_geo_block(&self, country: &str, host: &str) {
+        if let Some(vec) = self.counter_vecs.lock().unwrap().get("geo_blocks_total") {
+            vec.with_label_values(&[country, host]).inc();
         }
     }
 

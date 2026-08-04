@@ -235,19 +235,31 @@ pub async fn proxy_handler(
             resp
         }
         ProxyDecision::Block => {
-            tracing::warn!(
-                ip = %client_ip,
-                score = decision_result.score,
-                signals = decision_result.detection.signals.len(),
-                "Request blocked"
-            );
-
             let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
             let host = parts
                 .headers
                 .get(http::header::HOST)
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or("");
+
+            let country = decision_result.detection.country.as_deref();
+            tracing::warn!(
+                ip = %client_ip,
+                score = decision_result.score,
+                signals = decision_result.detection.signals.len(),
+                country = country.unwrap_or("?"),
+                host = host,
+                geo = decision_result.detection.force_block,
+                "Request blocked"
+            );
+
+            // Geo policy block (force_block + resolved country): count it per
+            // country/host so operators can tune per-domain rules.
+            if decision_result.detection.force_block {
+                if let Some(cc) = country {
+                    state.metrics.increment_geo_block(cc, host);
+                }
+            }
             error_response_with_headers(
                 StatusCode::FORBIDDEN,
                 &[

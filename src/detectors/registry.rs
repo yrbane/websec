@@ -53,6 +53,7 @@ impl DetectorRegistry {
         let mut any_suspicious = false;
         let mut force_block = false;
         let mut block_message: Option<String> = None;
+        let mut country: Option<String> = None;
 
         // Execute all enabled detectors concurrently
         let futures: Vec<_> = self
@@ -78,6 +79,9 @@ impl DetectorRegistry {
                         block_message = result.message.clone();
                     }
                 }
+                if country.is_none() && result.country.is_some() {
+                    country = result.country.clone();
+                }
                 all_signals.extend(result.signals);
             }
         }
@@ -87,6 +91,7 @@ impl DetectorRegistry {
             suspicious: any_suspicious,
             message: block_message,
             force_block,
+            country,
         }
     }
 
