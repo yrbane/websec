@@ -225,14 +225,19 @@ impl BackendClient {
                     // Send request
                     match client_clone.request(req).await {
                         Ok(response) => {
-                            // Check if response indicates backend error (5xx)
-                            if response.status().is_server_error() {
-                                cb.record_failure().await;
-                                Err(Error::Http(format!("Backend error: {}", response.status())))
-                            } else {
-                                cb.record_success().await;
-                                Ok(response)
-                            }
+                            // Le backend a repondu : il est joignable. On relaie sa
+                            // reponse TELLE QUELLE, y compris un statut 5xx applicatif
+                            // (ex. pages ErrorDocument, qui renvoient 500/503 par
+                            // conception). Un 5xx HTTP est une reponse valide d'un
+                            // upstream joignable : le masquer en 502 << Bad Gateway >>
+                            // efface le vrai code et la page d'erreur du backend.
+                            //
+                            // Le circuit breaker ne reagit qu'aux echecs de TRANSPORT
+                            // (voir la branche Err) : compter les 5xx applicatifs comme
+                            // des echecs ouvrirait le breaker sur les pages d'erreur
+                            // elles-memes -> 502 en cascade sur tout le trafic.
+                            cb.record_success().await;
+                            Ok(response)
                         }
                         Err(e) => {
                             cb.record_failure().await;
