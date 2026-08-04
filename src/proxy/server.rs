@@ -220,9 +220,17 @@ impl ProxyServer {
             );
 
             let backend_client = Arc::new(BackendClient::new(&listener.backend));
+            let router = Arc::new(crate::proxy::router::HostRouter::new(
+                backend_client.clone(),
+                &listener.routes,
+            ));
+            for route in &listener.routes {
+                tracing::info!("  route {} -> {}", route.server_name, route.backend);
+            }
             let proxy_state = Arc::new(ProxyState::new(ProxyStateConfig {
                 decision_engine: decision_engine.clone(),
                 backend_client,
+                router,
                 challenge_manager: challenge_manager.clone(),
                 metrics: metrics.clone(),
                 trusted_proxies: trusted_proxies.clone(),
@@ -445,6 +453,7 @@ struct EffectiveListener {
     addr: SocketAddr,
     backend: String,
     tls: Option<ListenerTlsConfig>,
+    routes: Vec<crate::config::settings::RouteConfig>,
 }
 
 fn build_router(state: Arc<ProxyState>) -> Router {
@@ -469,6 +478,7 @@ fn resolve_listeners(server_cfg: &ServerConfig) -> Result<Vec<EffectiveListener>
             addr,
             backend: server_cfg.backend.clone(),
             tls: None,
+            routes: Vec::new(),
         }]);
     }
 
@@ -482,6 +492,7 @@ fn resolve_listeners(server_cfg: &ServerConfig) -> Result<Vec<EffectiveListener>
                 addr,
                 backend: listener.backend.clone(),
                 tls: listener.tls.clone(),
+                routes: listener.routes.clone(),
             })
         })
         .collect()
@@ -648,11 +659,13 @@ mod tests {
                 listen: "127.0.0.1:18080".to_string(),
                 backend: "http://127.0.0.1:13000".to_string(),
                 tls: None,
+                routes: vec![],
             },
             ListenerConfig {
                 listen: "127.0.0.1:18443".to_string(),
                 backend: "http://127.0.0.1:13001".to_string(),
                 tls: None,
+                routes: vec![],
             },
         ];
 
