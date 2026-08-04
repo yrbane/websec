@@ -410,9 +410,14 @@ pub async fn run_domain(
     for line in &actions {
         println!("✅ {line}");
     }
-    println!(
-        "ℹ️  Relancez WebSec pour appliquer : systemctl restart websec"
-    );
+    // Geo-only changes apply via a hot reload (no downtime); route/backend
+    // changes still require a full restart (listeners are built at startup).
+    let touched_route = change.backend.is_some() || change.remove;
+    if touched_route {
+        println!("ℹ️  Changement de routage : redémarrez WebSec : systemctl restart websec");
+    } else {
+        println!("ℹ️  Appliquer à chaud (sans coupure) : systemctl reload websec");
+    }
     Ok(())
 }
 
