@@ -146,11 +146,39 @@ pub struct GeolocationConfig {
     /// Enable geolocation lookups
     #[serde(default = "default_true")]
     pub enabled: bool,
-    /// Path to `GeoIP2` database
+    /// Path to `GeoIP2` database (legacy; the ipdeny CIDR backend uses `country_dir`)
     pub database: Option<String>,
-    /// Country code penalties (ISO 3166-1 alpha-2 -> penalty points)
+    /// Country code penalties (ISO 3166-1 alpha-2 -> soft penalty points)
     #[serde(default)]
     pub penalties: HashMap<String, u8>,
+    /// Directory of per-country CIDR files (`<cc>.zone`, ipdeny format).
+    /// Defaults to `/etc/websec/geoip` when unset.
+    #[serde(default)]
+    pub country_dir: Option<String>,
+    /// Global allowlist (ISO alpha-2). Non-empty => allow-only: any other
+    /// country (or unknown) is hard-blocked, unless a per-site rule overrides.
+    #[serde(default)]
+    pub allow: Vec<String>,
+    /// Global blocklist (ISO alpha-2). Listed countries are hard-blocked.
+    #[serde(default)]
+    pub block: Vec<String>,
+    /// Per-domain overrides of the global allow/block policy.
+    #[serde(default)]
+    pub sites: Vec<GeoSiteRule>,
+}
+
+/// Per-domain GeoIP policy. A matching rule fully overrides the global
+/// allow/block for that host.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GeoSiteRule {
+    /// Host to match: exact ("boutique.fr") or wildcard ("*.example.com").
+    pub server_name: String,
+    /// Allowlist for this host (non-empty => allow-only).
+    #[serde(default)]
+    pub allow: Vec<String>,
+    /// Blocklist for this host.
+    #[serde(default)]
+    pub block: Vec<String>,
 }
 
 /// Rate limiting configuration

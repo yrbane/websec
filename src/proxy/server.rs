@@ -136,7 +136,7 @@ impl ProxyServer {
         let repository = Self::init_repository(settings).await?;
 
         // 3. Créer le registry de détecteurs
-        let detectors = Self::init_detectors();
+        let detectors = Self::init_detectors(settings);
         tracing::info!("Detectors registered: {}", detectors.count());
 
         // 4. Charger les listes whitelist/blacklist depuis les fichiers
@@ -311,7 +311,7 @@ impl ProxyServer {
         }
     }
 
-    fn init_detectors() -> Arc<DetectorRegistry> {
+    fn init_detectors(settings: &Settings) -> Arc<DetectorRegistry> {
         let mut detector_registry = DetectorRegistry::new();
 
         detector_registry.register(Arc::new(crate::detectors::BotDetector::new()));
@@ -320,7 +320,34 @@ impl ProxyServer {
         detector_registry.register(Arc::new(crate::detectors::InjectionDetector::new()));
         detector_registry.register(Arc::new(crate::detectors::ScanDetector::new()));
         detector_registry.register(Arc::new(crate::detectors::HeaderDetector::new()));
-        detector_registry.register(Arc::new(crate::detectors::GeoDetector::new()));
+        // Geo detector: load per-country CIDR DB once and apply per-domain policy.
+        let geo_cfg = &settings.geolocation;
+        let country_dir = geo_cfg
+            .country_dir
+            .clone()
+            .unwrap_or_else(|| "/etc/websec/geoip".to_string());
+        let country_db = if geo_cfg.enabled {
+            match crate::geolocation::CountryDb::load_dir(&country_dir) {
+                Ok(db) => {
+                    tracing::info!(
+                        "GeoIP country DB: {} ranges / {} countries (from {})",
+                        db.range_count(),
+                        db.country_count(),
+                        country_dir
+                    );
+                    Arc::new(db)
+                }
+                Err(e) => {
+                    tracing::warn!("GeoIP country DB load failed ({e}); geo policy inert");
+                    Arc::new(crate::geolocation::CountryDb::empty())
+                }
+            }
+        } else {
+            Arc::new(crate::geolocation::CountryDb::empty())
+        };
+        detector_registry.register(Arc::new(crate::detectors::GeoDetector::from_config(
+            geo_cfg, country_db,
+        )));
         detector_registry.register(Arc::new(crate::detectors::ProtocolDetector::new()));
         detector_registry.register(Arc::new(crate::detectors::SessionDetector::new()));
 
@@ -609,6 +636,10 @@ mod tests {
                 enabled: false,
                 database: None,
                 penalties: std::collections::HashMap::new(),
+                country_dir: None,
+                allow: Vec::new(),
+                block: Vec::new(),
+                sites: Vec::new(),
             },
             ratelimit: RateLimitConfig {
                 normal_rpm: 1000,

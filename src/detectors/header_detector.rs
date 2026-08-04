@@ -278,6 +278,7 @@ impl Detector for HeaderDetector {
                     "Header manipulation detected: {} signal(s)",
                     signals.len()
                 )),
+                force_block: false,
             }
         }
     }

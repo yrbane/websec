@@ -40,8 +40,12 @@ pub struct DetectionResult {
     pub signals: Vec<Signal>,
     /// Whether the detector found suspicious activity
     pub suspicious: bool,
-    /// Optional diagnostic message
+    /// Optional diagnostic message (also used as the block reason)
     pub message: Option<String>,
+    /// Force a deterministic BLOCK regardless of score (e.g. geo allow/block
+    /// policy). Honored by `DecisionEngine::process_request`.
+    #[allow(clippy::struct_field_names)]
+    pub force_block: bool,
 }
 
 impl DetectionResult {
@@ -52,6 +56,18 @@ impl DetectionResult {
             signals: Vec::new(),
             suspicious: false,
             message: None,
+            force_block: false,
+        }
+    }
+
+    /// Create a hard-block result carrying a human-readable reason.
+    #[must_use]
+    pub fn block(reason: String) -> Self {
+        Self {
+            signals: Vec::new(),
+            suspicious: true,
+            message: Some(reason),
+            force_block: true,
         }
     }
 
@@ -62,6 +78,7 @@ impl DetectionResult {
             signals: vec![signal],
             suspicious: true,
             message: None,
+            force_block: false,
         }
     }
 
@@ -73,6 +90,7 @@ impl DetectionResult {
             signals,
             suspicious,
             message: None,
+            force_block: false,
         }
     }
 

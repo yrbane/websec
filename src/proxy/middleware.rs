@@ -221,7 +221,18 @@ pub async fn proxy_handler(
     let response = match decision_result.decision {
         ProxyDecision::Allow => {
             // Forward la requête au backend (avec sanitization des headers)
-            forward_to_backend(state.clone(), parts, body_bytes, client_ip).await
+            let mut resp =
+                forward_to_backend(state.clone(), parts, body_bytes, client_ip).await;
+            // Marquer la réponse comme autorisée (cohérent avec BLOCK/CHALLENGE/RATE_LIMIT).
+            let headers = resp.headers_mut();
+            headers.insert(
+                "X-WebSec-Decision",
+                http::HeaderValue::from_static("ALLOW"),
+            );
+            if let Ok(score) = http::HeaderValue::from_str(&decision_result.score.to_string()) {
+                headers.insert("X-WebSec-Score", score);
+            }
+            resp
         }
         ProxyDecision::Block => {
             tracing::warn!(
@@ -249,6 +260,7 @@ pub async fn proxy_handler(
                     decision_result.score,
                     host,
                     &now,
+                    decision_result.detection.message.as_deref(),
                 ),
             )
         }

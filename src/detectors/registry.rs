@@ -51,6 +51,8 @@ impl DetectorRegistry {
     pub async fn analyze_all(&self, context: &HttpRequestContext) -> DetectionResult {
         let mut all_signals = Vec::new();
         let mut any_suspicious = false;
+        let mut force_block = false;
+        let mut block_message: Option<String> = None;
 
         // Execute all enabled detectors concurrently
         let futures: Vec<_> = self
@@ -70,6 +72,12 @@ impl DetectorRegistry {
                 if result.suspicious {
                     any_suspicious = true;
                 }
+                if result.force_block {
+                    force_block = true;
+                    if block_message.is_none() {
+                        block_message = result.message.clone();
+                    }
+                }
                 all_signals.extend(result.signals);
             }
         }
@@ -77,7 +85,8 @@ impl DetectorRegistry {
         DetectionResult {
             signals: all_signals,
             suspicious: any_suspicious,
-            message: None,
+            message: block_message,
+            force_block,
         }
     }
 

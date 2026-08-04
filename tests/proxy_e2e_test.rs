@@ -12,8 +12,8 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::time::sleep;
 use websec::config::settings::{
-    GeolocationConfig, LoggingConfig, MetricsConfig, RateLimitConfig, ReputationConfig,
-    ServerConfig, Settings, StorageConfig,
+    ChallengeConfig, GeolocationConfig, LoggingConfig, MetricsConfig, RateLimitConfig,
+    ReputationConfig, ServerConfig, Settings, StorageConfig,
 };
 use websec::proxy::server::ProxyServer;
 
@@ -52,6 +52,7 @@ async fn start_test_backend(port: u16) -> tokio::task::JoinHandle<()> {
 /// Le metrics_port doit être unique pour chaque test pour éviter les conflits
 fn create_test_settings(proxy_port: u16, backend_port: u16, metrics_port: u16) -> Settings {
     Settings {
+        challenge: ChallengeConfig::default(),
         server: ServerConfig {
             listen: format!("127.0.0.1:{proxy_port}"),
             backend: format!("http://127.0.0.1:{backend_port}"),
@@ -79,6 +80,10 @@ fn create_test_settings(proxy_port: u16, backend_port: u16, metrics_port: u16) -
             enabled: false,
             database: None,
             penalties: std::collections::HashMap::new(),
+            country_dir: None,
+            allow: Vec::new(),
+            block: Vec::new(),
+            sites: Vec::new(),
         },
         ratelimit: RateLimitConfig {
             normal_rpm: 1000,
