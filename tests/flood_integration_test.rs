@@ -152,7 +152,7 @@ async fn test_burst_followed_by_normal_traffic() {
 
     // Normal request
     let context = create_context(ip, "/normal");
-    let result = engine.process_request(&context).await.unwrap();
+    let _result = engine.process_request(&context).await.unwrap();
 
     // Behavior depends on implementation (may rate limit or allow with degraded score)
 }

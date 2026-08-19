@@ -19,10 +19,10 @@ pub mod server;
 pub mod sni;
 
 pub use backend::BackendClient;
-pub use router::HostRouter;
 pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitState};
 pub use middleware::{metrics_handler, proxy_handler, ProxyState};
 pub use retry::RetryPolicy;
+pub use router::HostRouter;
 pub use server::ProxyServer;
 #[cfg(feature = "tls")]
 pub use sni::SniResolver;

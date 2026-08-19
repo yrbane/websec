@@ -45,9 +45,13 @@ impl HostRouter {
                 exact.insert(name, backend);
             }
         }
-        wildcard.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+        wildcard.sort_by_key(|w| std::cmp::Reverse(w.0.len()));
 
-        Self { default, exact, wildcard }
+        Self {
+            default,
+            exact,
+            wildcard,
+        }
     }
 
     /// Number of configured host routes (default backend excluded).
@@ -62,15 +66,16 @@ impl HostRouter {
     /// matching. Matching is case-insensitive.
     #[must_use]
     pub fn select(&self, host: &str) -> &Arc<BackendClient> {
-        let host = host
-            .rsplit('@')
-            .next()
-            .unwrap_or(host)
-            .trim();
+        let host = host.rsplit('@').next().unwrap_or(host).trim();
         // Strip a trailing :port (IPv6 literals in Host use brackets, and we
         // only ever match on names, so a plain split on the last ':' is safe
         // for the hostnames we route).
-        let host = host.split(':').next().unwrap_or(host).trim().to_ascii_lowercase();
+        let host = host
+            .split(':')
+            .next()
+            .unwrap_or(host)
+            .trim()
+            .to_ascii_lowercase();
 
         if let Some(backend) = self.exact.get(&host) {
             return backend;
@@ -109,25 +114,37 @@ mod tests {
     #[test]
     fn exact_beats_wildcard() {
         let r = router();
-        assert_eq!(r.select("app.example.com").backend_url(), "http://127.0.0.1:3000");
+        assert_eq!(
+            r.select("app.example.com").backend_url(),
+            "http://127.0.0.1:3000"
+        );
     }
 
     #[test]
     fn wildcard_matches_subdomain() {
         let r = router();
-        assert_eq!(r.select("other.example.com").backend_url(), "http://127.0.0.1:4000");
+        assert_eq!(
+            r.select("other.example.com").backend_url(),
+            "http://127.0.0.1:4000"
+        );
     }
 
     #[test]
     fn unmatched_host_uses_default() {
         let r = router();
-        assert_eq!(r.select("nethttp.net").backend_url(), "http://127.0.0.1:8443");
+        assert_eq!(
+            r.select("nethttp.net").backend_url(),
+            "http://127.0.0.1:8443"
+        );
     }
 
     #[test]
     fn strips_port_and_is_case_insensitive() {
         let r = router();
-        assert_eq!(r.select("APP.Example.com:443").backend_url(), "http://127.0.0.1:3000");
+        assert_eq!(
+            r.select("APP.Example.com:443").backend_url(),
+            "http://127.0.0.1:3000"
+        );
     }
 
     #[test]

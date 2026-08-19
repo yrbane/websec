@@ -50,7 +50,7 @@ impl BotDetector {
 
     /// Check if User-Agent is missing or empty
     fn is_missing_user_agent(user_agent: Option<&str>) -> bool {
-        user_agent.is_none() || user_agent.is_some_and(|ua| ua.trim().is_empty())
+        user_agent.is_none_or(|ua| ua.trim().is_empty())
     }
 
     /// Analyze User-Agent header

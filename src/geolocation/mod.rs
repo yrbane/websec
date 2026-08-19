@@ -1,6 +1,6 @@
 //! Country lookup from per-country CIDR files (ipdeny.com `.zone` format).
 //!
-//! No MaxMind licence required: we reuse the per-country IP block lists that
+//! No `MaxMind` licence required: we reuse the per-country IP block lists that
 //! the server already downloads weekly. Each `<cc>.zone` file (e.g. `fr.zone`)
 //! holds one CIDR per line. They are loaded once at startup into a pair of
 //! range tables (IPv4 as `u32`, IPv6 as `u128`), sorted by start address, and
@@ -172,7 +172,7 @@ impl CountryDb {
     #[must_use]
     pub fn knows_country(&self, cc: &str) -> bool {
         let cc = cc.trim().to_ascii_uppercase();
-        self.names.iter().any(|n| *n == cc)
+        self.names.contains(&cc)
     }
 
     /// True when no ranges are loaded.

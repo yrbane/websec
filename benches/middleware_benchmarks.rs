@@ -166,20 +166,16 @@ fn bench_header_count_scaling(c: &mut Criterion) {
             content_type: None,
         };
 
-        group.bench_with_input(
-            BenchmarkId::from_parameter(header_count),
-            &ctx,
-            |b, ctx| {
-                b.iter(|| {
-                    // Simulate what detectors do: scan all headers
-                    let has_host = ctx
-                        .headers
-                        .iter()
-                        .any(|(name, _)| name.eq_ignore_ascii_case("host"));
-                    black_box(has_host)
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::from_parameter(header_count), &ctx, |b, ctx| {
+            b.iter(|| {
+                // Simulate what detectors do: scan all headers
+                let has_host = ctx
+                    .headers
+                    .iter()
+                    .any(|(name, _)| name.eq_ignore_ascii_case("host"));
+                black_box(has_host)
+            });
+        });
     }
 
     group.finish();

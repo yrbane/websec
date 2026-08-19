@@ -17,7 +17,7 @@ fn create_login_context(
     ip: &str,
     username: &str,
     password: &str,
-    response_status: u16,
+    _response_status: u16,
 ) -> HttpRequestContext {
     let body = format!("username={}&password={}", username, password);
     let headers = vec![(
@@ -51,7 +51,7 @@ async fn test_single_failed_login_no_signal() {
     );
 
     // First failed attempt should not trigger signal yet
-    let result = detector.analyze(&context).await;
+    let _result = detector.analyze(&context).await;
 
     // Depending on threshold, might be clean or generate signal
     // Conservative: only flag after multiple attempts
@@ -89,7 +89,7 @@ async fn test_successful_login_resets_counter() {
     let ip = "192.168.1.100";
 
     // 2 failed attempts
-    for i in 0..2 {
+    for _i in 0..2 {
         let context = create_login_context(ip, "admin", "wrongpass", 401);
         let _ = detector.analyze(&context).await;
     }
@@ -191,7 +191,7 @@ async fn test_different_endpoints_tracked_separately() {
     // depending on implementation (sensitive endpoint grouping)
     let mut admin_context = create_login_context(ip, "admin", "wrongpass", 401);
     admin_context.path = "/admin/login".to_string();
-    let result = detector.analyze(&admin_context).await;
+    let _result = detector.analyze(&admin_context).await;
 
     // Implementation detail: might aggregate or track separately
 }

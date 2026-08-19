@@ -39,6 +39,9 @@ use std::collections::HashSet;
 use std::net::IpAddr;
 use std::sync::{Arc, RwLock};
 
+/// Un bloc CIDR whitelisté : (adresse réseau, longueur de préfixe).
+type CidrNet = (IpAddr, u8);
+
 /// Whitelist of trusted IP addresses
 ///
 /// IPs in the whitelist bypass all scoring logic and detection, receiving
@@ -55,7 +58,7 @@ pub struct Whitelist {
     /// Whitelisted CIDR networks: (network address, prefix length).
     /// Permet de whitelister un bloc entier — ex. un /64 IPv6 (les adresses
     /// « privacy » tournent dans le /64) ou un /24 IPv4 — sans lister chaque IP.
-    nets: Arc<RwLock<Vec<(IpAddr, u8)>>>,
+    nets: Arc<RwLock<Vec<CidrNet>>>,
 }
 
 impl Whitelist {
@@ -205,7 +208,6 @@ impl Default for Whitelist {
     }
 }
 
-
 #[cfg(test)]
 mod cidr_tests {
     use super::*;
@@ -249,6 +251,6 @@ mod cidr_tests {
         let mut wl = Whitelist::new();
         assert!(!wl.add_entry("not-an-ip"));
         assert!(!wl.add_entry("2001:db8::/999")); // prefixe hors limites
-        assert!(!wl.add_entry("10.0.0.0/33"));     // prefixe IPv4 hors limites
+        assert!(!wl.add_entry("10.0.0.0/33")); // prefixe IPv4 hors limites
     }
 }

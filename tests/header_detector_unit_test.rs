@@ -88,7 +88,7 @@ async fn test_host_header_mismatch() {
     // Host header with suspicious domain
     let headers = vec![("Host".to_string(), "localhost:1337".to_string())];
     let context = create_context("8.8.8.8", headers, None);
-    let result = detector.analyze(&context).await;
+    let _result = detector.analyze(&context).await;
 
     // May or may not be suspicious depending on configuration
 }
@@ -104,7 +104,7 @@ async fn test_referer_spoofing() {
         headers,
         Some("http://definitely-not-spoofed.ru/"),
     );
-    let result = detector.analyze(&context).await;
+    let _result = detector.analyze(&context).await;
 
     // Referer from different domain might be flagged
 }
@@ -195,7 +195,7 @@ async fn test_x_forwarded_for_spoofing() {
         ),
     ];
     let context = create_context("8.8.8.8", headers, None);
-    let result = detector.analyze(&context).await;
+    let _result = detector.analyze(&context).await;
 
     // Multiple localhost entries might be suspicious
 }
@@ -207,7 +207,7 @@ async fn test_missing_required_headers() {
     // No Host header (required in HTTP/1.1)
     let headers = vec![("Accept".to_string(), "text/html".to_string())];
     let context = create_context("192.168.1.100", headers, None);
-    let result = detector.analyze(&context).await;
+    let _result = detector.analyze(&context).await;
 
     // Missing Host header might be flagged
 }

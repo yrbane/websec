@@ -22,15 +22,13 @@ impl ComposeCommand {
         if Command::new("docker")
             .args(["compose", "version"])
             .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
+            .is_ok_and(|s| s.success())
         {
             Ok(Self::new("docker", &["compose"]))
         } else if Command::new("docker-compose")
             .arg("--version")
             .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
+            .is_ok_and(|s| s.success())
         {
             Ok(Self::new("docker-compose", &[]))
         } else {
@@ -63,8 +61,7 @@ pub fn docker_build() -> Result<()> {
     let buildx_available = Command::new("docker")
         .args(["buildx", "version"])
         .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
+        .is_ok_and(|s| s.success());
 
     let mut cmd = Command::new("docker");
     if buildx_available {
@@ -229,18 +226,23 @@ async fn test_metrics(client: &Client) -> Result<()> {
 }
 
 async fn test_headers(client: &Client) -> Result<()> {
-    print!("  Test headers... ");
+    // Discrétion : aucune signature X-WebSec-* ne doit fuir vers le client.
+    print!("  Test discrétion (aucun header signé)... ");
     let resp = client
         .get("http://localhost:8080/")
         .header("User-Agent", "Mozilla/5.0")
         .send()
         .await
         .map_err(|e| Error::Http(format!("headers request failed: {e}")))?;
-    if resp.headers().contains_key("x-websec-decision") {
+    if resp.headers().contains_key("x-websec-decision")
+        || resp.headers().contains_key("x-websec-score")
+    {
+        Err(Error::Http(
+            "Header X-WebSec-* divulgué au client".to_string(),
+        ))
+    } else {
         println!("✓");
         Ok(())
-    } else {
-        Err(Error::Http("Header X-WebSec-Decision manquant".to_string()))
     }
 }
 

@@ -206,7 +206,9 @@ fn validate_ip(entry: &str) -> Result<()> {
     // Accepte IPv4 et IPv6, avec ou sans suffixe CIDR. L'ancienne regex ne
     // reconnaissait que l'IPv4, rejetant toute adresse IPv6 (ex: whitelist admin).
     use std::net::IpAddr;
-    let (addr, prefix) = entry.split_once('/').map_or((entry, None), |(a, p)| (a, Some(p)));
+    let (addr, prefix) = entry
+        .split_once('/')
+        .map_or((entry, None), |(a, p)| (a, Some(p)));
     let ip: IpAddr = addr
         .parse()
         .map_err(|_| Error::Config(format!("Format IP/CIDR invalide: {entry}")))?;

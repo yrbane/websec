@@ -43,10 +43,7 @@ fn clean_request(ip: &str) -> HttpRequestContext {
                     .to_string(),
             ),
             ("Accept".to_string(), "text/html".to_string()),
-            (
-                "Accept-Language".to_string(),
-                "fr-FR,fr;q=0.9".to_string(),
-            ),
+            ("Accept-Language".to_string(), "fr-FR,fr;q=0.9".to_string()),
         ],
         body: None,
         user_agent: Some(
@@ -188,7 +185,12 @@ fn bench_pipeline_throughput(c: &mut Criterion) {
                         let mut handles = Vec::with_capacity(n);
                         for i in 0..n {
                             let engine = engine.clone();
-                            let ctx = clean_request(&format!("10.{}.{}.{}", i / 65536 % 256, i / 256 % 256, i % 256));
+                            let ctx = clean_request(&format!(
+                                "10.{}.{}.{}",
+                                i / 65536 % 256,
+                                i / 256 % 256,
+                                i % 256
+                            ));
                             handles.push(tokio::spawn(async move {
                                 engine.process_request(&ctx).await.unwrap()
                             }));
@@ -214,9 +216,7 @@ fn bench_individual_remaining_detectors(c: &mut Criterion) {
     let protocol_detector = ProtocolDetector::new();
     group.bench_function("protocol/normal", |b| {
         b.to_async(tokio::runtime::Runtime::new().unwrap())
-            .iter(|| async {
-                black_box(protocol_detector.analyze(black_box(&normal_ctx)).await)
-            });
+            .iter(|| async { black_box(protocol_detector.analyze(black_box(&normal_ctx)).await) });
     });
     group.bench_function("protocol/malicious", |b| {
         b.to_async(tokio::runtime::Runtime::new().unwrap())
@@ -229,18 +229,14 @@ fn bench_individual_remaining_detectors(c: &mut Criterion) {
     let session_detector = SessionDetector::new();
     group.bench_function("session/normal", |b| {
         b.to_async(tokio::runtime::Runtime::new().unwrap())
-            .iter(|| async {
-                black_box(session_detector.analyze(black_box(&normal_ctx)).await)
-            });
+            .iter(|| async { black_box(session_detector.analyze(black_box(&normal_ctx)).await) });
     });
 
     // Flood Detector
     let flood_detector = FloodDetector::new();
     group.bench_function("flood/normal", |b| {
         b.to_async(tokio::runtime::Runtime::new().unwrap())
-            .iter(|| async {
-                black_box(flood_detector.analyze(black_box(&normal_ctx)).await)
-            });
+            .iter(|| async { black_box(flood_detector.analyze(black_box(&normal_ctx)).await) });
     });
 
     // BruteForce Detector
@@ -256,9 +252,7 @@ fn bench_individual_remaining_detectors(c: &mut Criterion) {
     let geo_detector = GeoDetector::new();
     group.bench_function("geo/normal", |b| {
         b.to_async(tokio::runtime::Runtime::new().unwrap())
-            .iter(|| async {
-                black_box(geo_detector.analyze(black_box(&normal_ctx)).await)
-            });
+            .iter(|| async { black_box(geo_detector.analyze(black_box(&normal_ctx)).await) });
     });
 
     group.finish();

@@ -69,7 +69,7 @@ impl Default for CircuitBreakerConfig {
         Self {
             failure_threshold: 5,
             success_threshold: 2,
-            timeout: Duration::from_secs(60),
+            timeout: Duration::from_mins(1),
             half_open_max_requests: 3,
         }
     }

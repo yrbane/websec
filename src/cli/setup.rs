@@ -50,8 +50,7 @@ fn nginx_sites_enabled_path() -> PathBuf {
 }
 
 fn nginx_conf_path() -> PathBuf {
-    env::var("WEBSEC_NGINX_CONF")
-        .map_or_else(|_| PathBuf::from(NGINX_CONF), PathBuf::from)
+    env::var("WEBSEC_NGINX_CONF").map_or_else(|_| PathBuf::from(NGINX_CONF), PathBuf::from)
 }
 
 fn letsencrypt_live_path() -> PathBuf {
@@ -159,11 +158,22 @@ impl CertbotManager {
 
     /// Generate a new certificate with certbot
     #[allow(dead_code)]
-    fn generate_certificate(&mut self, domain: &str, email: Option<&str>) -> Result<CertificateInfo> {
+    fn generate_certificate(
+        &mut self,
+        domain: &str,
+        email: Option<&str>,
+    ) -> Result<CertificateInfo> {
         println!("\n📜 Génération du certificat SSL pour {domain}...");
 
         let mut cmd = Command::new("certbot");
-        cmd.args(["certonly", "--standalone", "-d", domain, "--non-interactive", "--agree-tos"]);
+        cmd.args([
+            "certonly",
+            "--standalone",
+            "-d",
+            domain,
+            "--non-interactive",
+            "--agree-tos",
+        ]);
 
         if let Some(email) = email {
             cmd.args(["--email", email]);
@@ -172,7 +182,9 @@ impl CertbotManager {
         }
 
         let output = cmd.output().map_err(|e| {
-            Error::Config(format!("Impossible d'exécuter certbot: {e}. Assurez-vous que certbot est installé."))
+            Error::Config(format!(
+                "Impossible d'exécuter certbot: {e}. Assurez-vous que certbot est installé."
+            ))
         })?;
 
         if !output.status.success() {
@@ -187,9 +199,9 @@ impl CertbotManager {
         // Reload certificates
         *self = Self::scan_existing()?;
 
-        self.get(domain)
-            .cloned()
-            .ok_or_else(|| Error::Config(format!("Certificat généré mais introuvable pour {domain}")))
+        self.get(domain).cloned().ok_or_else(|| {
+            Error::Config(format!("Certificat généré mais introuvable pour {domain}"))
+        })
     }
 
     /// List all available certificates
@@ -212,7 +224,10 @@ fn choose_web_server(detected_servers: &[WebServer]) -> Result<WebServer> {
     }
 
     loop {
-        print!("\nChoisissez le serveur à configurer [1-{}]: ", detected_servers.len());
+        print!(
+            "\nChoisissez le serveur à configurer [1-{}]: ",
+            detected_servers.len()
+        );
         io::stdout().flush().map_err(Error::Io)?;
 
         let mut input = String::new();
@@ -309,7 +324,10 @@ fn collect_migration_for_plan(
         plan.default_internal,
     )?;
 
-    println!("\nRépondez 'o' pour chaque VirtualHost {} à migrer :", plan.label);
+    println!(
+        "\nRépondez 'o' pour chaque VirtualHost {} à migrer :",
+        plan.label
+    );
 
     let mut selections: Vec<VirtualHostSelection> = Vec::new();
     for (idx, entry) in hosts.iter().enumerate() {
@@ -471,7 +489,10 @@ pub fn run_setup(config_path: &Path) -> Result<()> {
     }
     let web_server = choose_web_server(&detected_servers)?;
 
-    println!("\n🔍 Configuration de {} avec WebSec...\n", web_server.name());
+    println!(
+        "\n🔍 Configuration de {} avec WebSec...\n",
+        web_server.name()
+    );
 
     // Scan virtual hosts
     let virtual_hosts = scan_virtual_hosts_for_server(&web_server)?;
@@ -501,7 +522,7 @@ pub fn run_setup(config_path: &Path) -> Result<()> {
 ///
 /// Automatically detects the web server, selects ALL virtual hosts on ports
 /// 80 and 443, migrates them to internal ports (8081/8443), and updates
-/// the WebSec configuration — all without user prompts.
+/// the `WebSec` configuration — all without user prompts.
 pub fn run_setup_noninteractive(config_path: &Path) -> Result<()> {
     println!("WebSec setup (non-interactive mode)");
 
@@ -548,7 +569,7 @@ pub fn run_setup_noninteractive(config_path: &Path) -> Result<()> {
         });
     }
 
-    let https_hosts: Vec<VirtualHostSelection> = virtual_hosts
+    let tls_hosts: Vec<VirtualHostSelection> = virtual_hosts
         .iter()
         .filter(|vh| vh.supports_port(443))
         .map(|vh| VirtualHostSelection {
@@ -557,16 +578,16 @@ pub fn run_setup_noninteractive(config_path: &Path) -> Result<()> {
         })
         .collect();
 
-    if !https_hosts.is_empty() {
+    if !tls_hosts.is_empty() {
         println!(
             "Migration HTTPS : {} VirtualHost(s) vers port {}",
-            https_hosts.len(),
+            tls_hosts.len(),
             DEFAULT_INTERNAL_HTTPS_PORT
         );
         migrations.push(PortMigration {
             original_port: 443,
             internal_port: DEFAULT_INTERNAL_HTTPS_PORT,
-            selections: https_hosts,
+            selections: tls_hosts,
         });
     }
 
@@ -583,20 +604,18 @@ pub fn run_setup_noninteractive(config_path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Restore web server configuration from WebSec backups and disable WebSec.
+/// Restore web server configuration from `WebSec` backups and disable `WebSec`.
 ///
 /// Scans for `.websec.bak.*` files in Apache/Nginx config directories,
 /// restores the most recent backup for each original file, reloads the
-/// web server, and stops/disables the WebSec service.
+/// web server, and stops/disables the `WebSec` service.
 pub fn run_restore(config_path: &Path) -> Result<()> {
     println!("Restauration de la configuration originale...");
     let _ = config_path; // acknowledge param; may be used later for websec.toml cleanup
 
     let detected_servers = WebServer::detect_all();
     if detected_servers.is_empty() {
-        return Err(Error::Config(
-            "Aucun serveur web detecte.".to_string(),
-        ));
+        return Err(Error::Config("Aucun serveur web detecte.".to_string()));
     }
     let web_server = detected_servers[0].clone();
 
@@ -650,10 +669,7 @@ fn restore_apache_backups() -> Result<()> {
             if let Some(pos) = file_name.find(".websec.bak.") {
                 let original_name = &file_name[..pos];
                 let original_path = dir.join(original_name);
-                backup_groups
-                    .entry(original_path)
-                    .or_default()
-                    .push(path);
+                backup_groups.entry(original_path).or_default().push(path);
             }
         }
 
@@ -705,10 +721,7 @@ fn restore_nginx_backups() -> Result<()> {
         if let Some(pos) = file_name.find(".websec.bak.") {
             let original_name = &file_name[..pos];
             let original_path = dir.join(original_name);
-            backup_groups
-                .entry(original_path)
-                .or_default()
-                .push(path);
+            backup_groups.entry(original_path).or_default().push(path);
         }
     }
 
@@ -742,9 +755,7 @@ fn reload_web_server(web_server: &WebServer) -> Result<()> {
     };
 
     println!("Rechargement de {}...", web_server.name());
-    let output = Command::new("systemctl")
-        .args(["reload", service])
-        .output();
+    let output = Command::new("systemctl").args(["reload", service]).output();
 
     match output {
         Ok(o) if o.status.success() => {
@@ -762,12 +773,10 @@ fn reload_web_server(web_server: &WebServer) -> Result<()> {
     Ok(())
 }
 
-/// Stop and disable the WebSec systemd service.
+/// Stop and disable the `WebSec` systemd service.
 fn stop_websec_service() {
     println!("Arret du service WebSec...");
-    let _ = Command::new("systemctl")
-        .args(["stop", "websec"])
-        .output();
+    let _ = Command::new("systemctl").args(["stop", "websec"]).output();
     let _ = Command::new("systemctl")
         .args(["disable", "websec"])
         .output();
@@ -1015,13 +1024,9 @@ impl NginxEnvironment {
             )));
         }
         if !nginx_conf.exists() {
-            return Err(Error::Config(format!(
-                "Fichier {NGINX_CONF} introuvable"
-            )));
+            return Err(Error::Config(format!("Fichier {NGINX_CONF} introuvable")));
         }
-        Ok(Self {
-            sites_enabled,
-        })
+        Ok(Self { sites_enabled })
     }
 
     fn scan_virtual_hosts(&self) -> Result<Vec<VirtualHostEntry>> {
@@ -1078,10 +1083,16 @@ impl NginxEnvironment {
                         let port = if let Some(colon_pos) = listen_spec.rfind(':') {
                             // Format: addr:port or [::]:port
                             let port_str = &listen_spec[colon_pos + 1..];
-                            port_str.split_whitespace().next().and_then(|p| p.parse::<u16>().ok())
+                            port_str
+                                .split_whitespace()
+                                .next()
+                                .and_then(|p| p.parse::<u16>().ok())
                         } else {
                             // Format: port or port ssl
-                            listen_spec.split_whitespace().next().and_then(|p| p.parse::<u16>().ok())
+                            listen_spec
+                                .split_whitespace()
+                                .next()
+                                .and_then(|p| p.parse::<u16>().ok())
                         };
 
                         if let Some(port) = port {
@@ -1098,7 +1109,8 @@ impl NginxEnvironment {
                     if parts.len() >= 2 {
                         for domain in parts.iter().skip(1) {
                             let domain = domain.trim_end_matches(';');
-                            if domain != "_" {  // Skip default server
+                            if domain != "_" {
+                                // Skip default server
                                 if current_server_name.is_none() {
                                     current_server_name = Some(domain.to_string());
                                 } else {
@@ -1193,7 +1205,9 @@ impl NginxEnvironment {
                         .map_err(|e| Error::Config(format!("Regex error: {e}")))?;
 
                     if port_pattern.is_match(line) {
-                        *line = port_pattern.replace_all(line, to_port.to_string()).to_string();
+                        *line = port_pattern
+                            .replace_all(line, to_port.to_string())
+                            .to_string();
                         touched = true;
                     }
                 }
@@ -1463,14 +1477,35 @@ fn update_websec_config_with_sni(
                     );
                     println!("   Certificat par défaut : {default_name}");
 
-                    if !settings.server.listeners.last().unwrap().tls.as_ref().unwrap().sni_certificates.is_empty() {
+                    if !settings
+                        .server
+                        .listeners
+                        .last()
+                        .unwrap()
+                        .tls
+                        .as_ref()
+                        .unwrap()
+                        .sni_certificates
+                        .is_empty()
+                    {
                         println!(
                             "   SNI activé pour {} domaines additionnels",
-                            settings.server.listeners.last().unwrap().tls.as_ref().unwrap().sni_certificates.len()
+                            settings
+                                .server
+                                .listeners
+                                .last()
+                                .unwrap()
+                                .tls
+                                .as_ref()
+                                .unwrap()
+                                .sni_certificates
+                                .len()
                         );
                     }
                 } else {
-                    println!("⚠️  Aucun certificat trouvé pour le domaine par défaut {default_name}");
+                    println!(
+                        "⚠️  Aucun certificat trouvé pour le domaine par défaut {default_name}"
+                    );
                     println!("   Utilisez 'certbot certonly --standalone -d {default_name}' pour générer un certificat");
                 }
             } else {
@@ -1497,7 +1532,10 @@ fn update_websec_config_with_sni(
         .map_err(|e| Error::Config(format!("Erreur de sérialisation TOML: {e}")))?;
     fs::write(config_path, toml_text).map_err(Error::Io)?;
 
-    println!("✅ Configuration WebSec mise à jour avec {} listener(s)", settings.server.listeners.len());
+    println!(
+        "✅ Configuration WebSec mise à jour avec {} listener(s)",
+        settings.server.listeners.len()
+    );
 
     Ok(())
 }
@@ -1622,16 +1660,12 @@ Listen 8080
         fs::write(&cfg_path, sample_config()).unwrap();
 
         let virtual_hosts = vec![];
-        let certbot = CertbotManager { certificates: HashMap::new() };
+        let certbot = CertbotManager {
+            certificates: HashMap::new(),
+        };
 
-        update_websec_config_with_sni(
-            &cfg_path,
-            Some(8081),
-            None,
-            &virtual_hosts,
-            &certbot,
-        )
-        .expect("update should succeed");
+        update_websec_config_with_sni(&cfg_path, Some(8081), None, &virtual_hosts, &certbot)
+            .expect("update should succeed");
 
         let new_settings = load_from_file(&cfg_path).expect("updated config should be valid");
         assert_eq!(new_settings.server.listen, "[::]:80");
@@ -1654,7 +1688,9 @@ Listen 8080
         fs::write(&cfg_path, sample_config()).unwrap();
 
         let virtual_hosts = vec![];
-        let certbot = CertbotManager { certificates: HashMap::new() };
+        let certbot = CertbotManager {
+            certificates: HashMap::new(),
+        };
 
         update_websec_config_with_sni(&cfg_path, None, None, &virtual_hosts, &certbot)
             .expect("should succeed");

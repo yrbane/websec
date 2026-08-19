@@ -12,10 +12,10 @@
 //! ```
 
 use crate::challenge::ChallengeManager;
-use crate::proxy::router::HostRouter;
 use crate::detectors::HttpRequestContext;
 use crate::observability::metrics::MetricsRegistry;
 use crate::proxy::backend::BackendClient;
+use crate::proxy::router::HostRouter;
 use crate::reputation::decision::DecisionEngine;
 use crate::reputation::score::ProxyDecision;
 use axum::body::Body;
@@ -220,62 +220,13 @@ pub async fn proxy_handler(
     // 5. Agir selon la décision
     let response = match decision_result.decision {
         ProxyDecision::Allow => {
-            // Forward la requête au backend (avec sanitization des headers)
-            let mut resp =
-                forward_to_backend(state.clone(), parts, body_bytes, client_ip).await;
-            // Marquer la réponse comme autorisée (cohérent avec BLOCK/CHALLENGE/RATE_LIMIT).
-            let headers = resp.headers_mut();
-            headers.insert(
-                "X-WebSec-Decision",
-                http::HeaderValue::from_static("ALLOW"),
-            );
-            if let Ok(score) = http::HeaderValue::from_str(&decision_result.score.to_string()) {
-                headers.insert("X-WebSec-Score", score);
-            }
-            resp
+            // Forward la requête au backend (avec sanitization des headers).
+            // DISCRÉTION : aucun en-tête X-WebSec-* ne part vers le client —
+            // révéler le produit ou le score renseignerait un attaquant.
+            // La décision reste observable via les journaux et /metrics.
+            forward_to_backend(state.clone(), parts, body_bytes, client_ip).await
         }
-        ProxyDecision::Block => {
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
-            let host = parts
-                .headers
-                .get(http::header::HOST)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("");
-
-            let country = decision_result.detection.country.as_deref();
-            tracing::warn!(
-                ip = %client_ip,
-                score = decision_result.score,
-                signals = decision_result.detection.signals.len(),
-                country = country.unwrap_or("?"),
-                host = host,
-                geo = decision_result.detection.force_block,
-                "Request blocked"
-            );
-
-            // Geo policy block (force_block + resolved country): count it per
-            // country/host so operators can tune per-domain rules.
-            if decision_result.detection.force_block {
-                if let Some(cc) = country {
-                    state.metrics.increment_geo_block(cc, host);
-                }
-            }
-            error_response_with_headers(
-                StatusCode::FORBIDDEN,
-                &[
-                    ("Content-Type", "text/html; charset=utf-8".to_string()),
-                    ("X-WebSec-Decision", "BLOCK".to_string()),
-                    ("X-WebSec-Score", decision_result.score.to_string()),
-                ],
-                crate::proxy::pages::block_page(
-                    &client_ip.to_string(),
-                    decision_result.score,
-                    host,
-                    &now,
-                    decision_result.detection.message.as_deref(),
-                ),
-            )
-        }
+        ProxyDecision::Block => block_response(&state, &parts, &decision_result, client_ip),
         ProxyDecision::Challenge => {
             // Si le client a un cookie PoW valide, on le laisse passer
             if has_valid_pow_cookie {
@@ -301,15 +252,14 @@ pub async fn proxy_handler(
                 let html = challenge.to_html();
                 error_response_with_headers(
                     StatusCode::FORBIDDEN,
-                    &[
-                        ("Content-Type", "text/html; charset=utf-8".to_string()),
-                        ("X-WebSec-Decision", "CHALLENGE".to_string()),
-                        ("X-WebSec-Score", decision_result.score.to_string()),
-                    ],
+                    &[("Content-Type", "text/html; charset=utf-8".to_string())],
                     html,
                 )
             } else {
-                error_response(StatusCode::INTERNAL_SERVER_ERROR, "Failed to generate challenge")
+                error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to generate challenge",
+                )
             }
         }
         ProxyDecision::RateLimit => {
@@ -319,7 +269,9 @@ pub async fn proxy_handler(
                 "Rate limit applied"
             );
 
-            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+            let now = chrono::Utc::now()
+                .format("%Y-%m-%d %H:%M:%S UTC")
+                .to_string();
             let host = parts
                 .headers
                 .get(http::header::HOST)
@@ -329,8 +281,6 @@ pub async fn proxy_handler(
                 StatusCode::TOO_MANY_REQUESTS,
                 &[
                     ("Content-Type", "text/html; charset=utf-8".to_string()),
-                    ("X-WebSec-Decision", "RATE_LIMIT".to_string()),
-                    ("X-WebSec-Score", decision_result.score.to_string()),
                     ("Retry-After", "60".to_string()),
                 ],
                 crate::proxy::pages::rate_limit_page(&client_ip.to_string(), host, &now, 60),
@@ -375,7 +325,7 @@ pub async fn metrics_standalone_handler(
         .expect("metrics response construction")
 }
 
-/// Gère POST /challenge/verify : valide la réponse PoW et pose un cookie signé
+/// Gère POST /challenge/verify : valide la réponse `PoW` et pose un cookie signé
 fn handle_challenge_verify(
     state: &Arc<ProxyState>,
     parts: &http::request::Parts,
@@ -430,11 +380,9 @@ fn handle_challenge_verify(
             .header(
                 "Set-Cookie",
                 format!(
-                    "websec_pow={}; Path=/; Max-Age={}; HttpOnly; SameSite=Strict",
-                    cookie_value, cookie_ttl
+                    "sec_pow={cookie_value}; Path=/; Max-Age={cookie_ttl}; HttpOnly; SameSite=Strict"
                 ),
             )
-            .header("X-WebSec-Decision", "CHALLENGE_PASSED")
             .body(Body::from("Challenge passed. Redirecting..."))
             .expect("redirect response construction")
     } else {
@@ -448,19 +396,19 @@ fn handle_challenge_verify(
             let html = challenge.to_html();
             error_response_with_headers(
                 StatusCode::FORBIDDEN,
-                &[
-                    ("Content-Type", "text/html; charset=utf-8".to_string()),
-                    ("X-WebSec-Decision", "CHALLENGE_RETRY".to_string()),
-                ],
+                &[("Content-Type", "text/html; charset=utf-8".to_string())],
                 html,
             )
         } else {
-            error_response(StatusCode::INTERNAL_SERVER_ERROR, "Failed to generate challenge")
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to generate challenge",
+            )
         }
     }
 }
 
-/// Vérifie si la requête contient un cookie PoW valide
+/// Vérifie si la requête contient un cookie `PoW` valide
 fn check_pow_cookie(
     parts: &http::request::Parts,
     challenge_manager: &ChallengeManager,
@@ -473,15 +421,64 @@ fn check_pow_cookie(
         return false;
     };
 
-    // Chercher le cookie websec_pow dans le header Cookie
+    // Chercher le cookie sec_pow dans le header Cookie. Le nom reste neutre :
+    // il ne doit pas trahir le produit (l'ancien websec_pow signait le proxy).
     for cookie in cookie_str.split(';') {
         let cookie = cookie.trim();
-        if let Some(value) = cookie.strip_prefix("websec_pow=") {
+        if let Some(value) = cookie.strip_prefix("sec_pow=") {
             return challenge_manager.verify_pow_cookie(value, client_ip);
         }
     }
 
     false
+}
+
+/// Réponse 403 : journalise le blocage, compte les blocages géo, et sert la
+/// page neutre — aucune signature du produit ne part vers le client.
+fn block_response(
+    state: &ProxyState,
+    parts: &http::request::Parts,
+    decision_result: &crate::reputation::decision::DecisionEngineResult,
+    client_ip: IpAddr,
+) -> Response<Body> {
+    let now = chrono::Utc::now()
+        .format("%Y-%m-%d %H:%M:%S UTC")
+        .to_string();
+    let host = parts
+        .headers
+        .get(http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    let country = decision_result.detection.country.as_deref();
+    tracing::warn!(
+        ip = %client_ip,
+        score = decision_result.score,
+        signals = decision_result.detection.signals.len(),
+        country = country.unwrap_or("?"),
+        host = host,
+        geo = decision_result.detection.force_block,
+        "Request blocked"
+    );
+
+    // Geo policy block (force_block + resolved country): count it per
+    // country/host so operators can tune per-domain rules.
+    if decision_result.detection.force_block {
+        if let Some(cc) = country {
+            state.metrics.increment_geo_block(cc, host);
+        }
+    }
+    error_response_with_headers(
+        StatusCode::FORBIDDEN,
+        &[("Content-Type", "text/html; charset=utf-8".to_string())],
+        crate::proxy::pages::block_page(
+            &client_ip.to_string(),
+            decision_result.score,
+            host,
+            &now,
+            decision_result.detection.message.as_deref(),
+        ),
+    )
 }
 
 /// Canonicalise une adresse IPv4-mappée en IPv6 (`::ffff:a.b.c.d`) vers son
@@ -492,7 +489,7 @@ fn check_pow_cookie(
 fn canonical_ip(ip: IpAddr) -> IpAddr {
     match ip {
         IpAddr::V6(v6) => v6.to_ipv4_mapped().map_or(IpAddr::V6(v6), IpAddr::V4),
-        other => other,
+        IpAddr::V4(v4) => IpAddr::V4(v4),
     }
 }
 
@@ -511,15 +508,16 @@ fn canonical_ip(ip: IpAddr) -> IpAddr {
 fn extract_client_ip(req: &Request<Body>, trusted_proxies: &[IpAddr]) -> IpAddr {
     // Extraire l'IP de la socket (connexion réelle)
     // axum stocke ConnectInfo<SocketAddr> via into_make_service_with_connect_info
-    let socket_ip = if let Some(ConnectInfo(addr)) = req.extensions().get::<ConnectInfo<SocketAddr>>() {
-        addr.ip()
-    } else if let Some(addr) = req.extensions().get::<SocketAddr>() {
-        // Fallback pour les tests qui insèrent SocketAddr directement
-        addr.ip()
-    } else {
-        // Fallback si pas de SocketAddr (ne devrait jamais arriver)
-        return LOCALHOST;
-    };
+    let socket_ip =
+        if let Some(ConnectInfo(addr)) = req.extensions().get::<ConnectInfo<SocketAddr>>() {
+            addr.ip()
+        } else if let Some(addr) = req.extensions().get::<SocketAddr>() {
+            // Fallback pour les tests qui insèrent SocketAddr directement
+            addr.ip()
+        } else {
+            // Fallback si pas de SocketAddr (ne devrait jamais arriver)
+            return LOCALHOST;
+        };
 
     // Normalise une éventuelle adresse IPv4-mappée (écoute dual-stack).
     let socket_ip = canonical_ip(socket_ip);
@@ -691,7 +689,7 @@ fn sanitize_request_headers(
         .get("host")
         .and_then(|v| v.to_str().ok())
         .map(String::from)
-        .or_else(|| parts.uri.authority().map(|a| a.to_string()));
+        .or_else(|| parts.uri.authority().map(std::string::ToString::to_string));
 
     if let Some(host_str) = original_host {
         if let Ok(val) = host_str.parse() {
@@ -725,23 +723,22 @@ fn sanitize_request_headers(
 
     parts.headers.insert(
         "x-forwarded-for",
-        forwarded_for
-            .parse()
-            .unwrap_or_else(|_| {
-                client_ip
-                    .to_string()
-                    .parse()
-                    .expect("IP address string is a valid header value")
-            }),
+        forwarded_for.parse().unwrap_or_else(|_| {
+            client_ip
+                .to_string()
+                .parse()
+                .expect("IP address string is a valid header value")
+        }),
     );
 
     // Définir X-Real-IP avec l'IP du client
     parts.headers.insert(
         "x-real-ip",
-        client_ip
-            .to_string()
-            .parse()
-            .unwrap_or_else(|_| "127.0.0.1".parse().expect("127.0.0.1 is a valid header value")),
+        client_ip.to_string().parse().unwrap_or_else(|_| {
+            "127.0.0.1"
+                .parse()
+                .expect("127.0.0.1 is a valid header value")
+        }),
     );
 
     // Normaliser Content-Length et Transfer-Encoding
@@ -801,9 +798,8 @@ async fn forward_to_backend(
             };
 
             // Reconstruire la réponse
-            let response = Response::from_parts(parts, Body::from(body_bytes));
 
-            response
+            Response::from_parts(parts, Body::from(body_bytes))
         }
         Err(e) => {
             tracing::error!(error = %e, "Backend forwarding failed");

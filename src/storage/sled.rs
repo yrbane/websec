@@ -28,14 +28,13 @@ impl SledRepository {
         Ok(Self { db })
     }
 
-    /// Create a temporary SledRepository (useful for tests)
+    /// Create a temporary `SledRepository` (useful for tests)
     #[cfg(test)]
     pub fn new_temporary() -> Result<Self> {
-        let db =
-            sled::Config::new()
-                .temporary(true)
-                .open()
-                .map_err(|e| Error::Storage(format!("Sled temp error: {e}")))?;
+        let db = sled::Config::new()
+            .temporary(true)
+            .open()
+            .map_err(|e| Error::Storage(format!("Sled temp error: {e}")))?;
         Ok(Self { db })
     }
 }
@@ -67,7 +66,7 @@ impl ReputationRepository for SledRepository {
 
         db.insert(key.as_bytes(), encoded)
             .map_err(|e| Error::Storage(format!("Sled insert error: {e}")))?;
-        
+
         Ok(())
     }
 
@@ -75,7 +74,8 @@ impl ReputationRepository for SledRepository {
         let key = ip.to_string();
         let db = self.db.clone();
 
-        let result = db.remove(key.as_bytes())
+        let result = db
+            .remove(key.as_bytes())
             .map_err(|e| Error::Storage(format!("Sled remove error: {e}")))?;
         Ok(result.is_some())
     }
@@ -84,7 +84,7 @@ impl ReputationRepository for SledRepository {
         let key = ip.to_string();
         let db = self.db.clone();
         db.contains_key(key.as_bytes())
-             .map_err(|e| Error::Storage(format!("Sled exists error: {e}")))
+            .map_err(|e| Error::Storage(format!("Sled exists error: {e}")))
     }
 
     async fn list_all(&self) -> Result<Vec<IpAddr>> {
@@ -92,10 +92,11 @@ impl ReputationRepository for SledRepository {
         let mut ips = Vec::new();
 
         for item in db.iter() {
-            let (key, _) = item.map_err(|e| Error::Storage(format!("Sled iteration error: {e}")))?;
+            let (key, _) =
+                item.map_err(|e| Error::Storage(format!("Sled iteration error: {e}")))?;
             let ip_str = String::from_utf8(key.to_vec())
                 .map_err(|e| Error::Storage(format!("Invalid UTF-8 key: {e}")))?;
-            
+
             if let Ok(ip) = ip_str.parse::<IpAddr>() {
                 ips.push(ip);
             }
@@ -109,7 +110,9 @@ impl ReputationRepository for SledRepository {
     }
 
     async fn clear(&self) -> Result<()> {
-        self.db.clear().map_err(|e| Error::Storage(format!("Sled clear error: {e}")))
+        self.db
+            .clear()
+            .map_err(|e| Error::Storage(format!("Sled clear error: {e}")))
     }
 
     async fn health_check(&self) -> Result<bool> {

@@ -181,7 +181,7 @@ async fn test_detect_path_enumeration() {
 
     // Should accumulate scan signals
     let context = create_context(ip, "/check");
-    let result = detector.analyze(&context).await;
+    let _result = detector.analyze(&context).await;
 
     // Multiple suspicious path access indicates scanning
 }
@@ -199,7 +199,7 @@ async fn test_detect_sqlmap_paths() {
 
     for path in sqlmap_paths {
         let context = create_context("192.168.1.100", path);
-        let result = detector.analyze(&context).await;
+        let _result = detector.analyze(&context).await;
         // May or may not flag depending on path analysis
     }
 }

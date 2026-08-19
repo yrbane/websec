@@ -234,8 +234,8 @@ fn test_cleanup_expired_challenges() {
 
     // Créer plusieurs challenges
     for i in 0..10 {
-        let ip = IpAddr::from_str(&format!("192.168.1.{}", i)).unwrap();
-        manager.create_challenge(ip, ChallengeType::SimpleMath);
+        let ip = IpAddr::from_str(&format!("192.168.1.{i}")).unwrap();
+        let _ = manager.create_challenge(ip, ChallengeType::SimpleMath);
     }
 
     // Attendre l'expiration (bien au-delà du timeout)

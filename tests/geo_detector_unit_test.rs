@@ -63,11 +63,23 @@ async fn allow_only_per_domain_blocks_everyone_else() {
         db(),
     );
     // FR allowed
-    assert!(!det.analyze(&ctx("90.114.131.138", "boutique.fr")).await.force_block);
+    assert!(
+        !det.analyze(&ctx("90.114.131.138", "boutique.fr"))
+            .await
+            .force_block
+    );
     // CN refused
-    assert!(det.analyze(&ctx("1.2.3.4", "boutique.fr")).await.force_block);
+    assert!(
+        det.analyze(&ctx("1.2.3.4", "boutique.fr"))
+            .await
+            .force_block
+    );
     // Unknown country refused under allow-only
-    assert!(det.analyze(&ctx("203.0.113.7", "boutique.fr")).await.force_block);
+    assert!(
+        det.analyze(&ctx("203.0.113.7", "boutique.fr"))
+            .await
+            .force_block
+    );
 }
 
 #[tokio::test]
@@ -84,8 +96,16 @@ async fn blocklist_per_domain() {
         ),
         db(),
     );
-    assert!(det.analyze(&ctx("1.2.3.4", "api.example.com")).await.force_block);
-    assert!(!det.analyze(&ctx("8.8.8.8", "api.example.com")).await.force_block);
+    assert!(
+        det.analyze(&ctx("1.2.3.4", "api.example.com"))
+            .await
+            .force_block
+    );
+    assert!(
+        !det.analyze(&ctx("8.8.8.8", "api.example.com"))
+            .await
+            .force_block
+    );
 }
 
 #[tokio::test]
@@ -103,19 +123,43 @@ async fn global_policy_and_wildcard_override() {
         db(),
     );
     // wildcard host is allow-only FR
-    assert!(det.analyze(&ctx("1.2.3.4", "a.corp.example")).await.force_block);
-    assert!(!det.analyze(&ctx("90.114.131.138", "a.corp.example")).await.force_block);
+    assert!(
+        det.analyze(&ctx("1.2.3.4", "a.corp.example"))
+            .await
+            .force_block
+    );
+    assert!(
+        !det.analyze(&ctx("90.114.131.138", "a.corp.example"))
+            .await
+            .force_block
+    );
     // unmatched host falls back to global block CN
-    assert!(det.analyze(&ctx("1.2.3.4", "blog.example.com")).await.force_block);
-    assert!(!det.analyze(&ctx("8.8.8.8", "blog.example.com")).await.force_block);
+    assert!(
+        det.analyze(&ctx("1.2.3.4", "blog.example.com"))
+            .await
+            .force_block
+    );
+    assert!(
+        !det.analyze(&ctx("8.8.8.8", "blog.example.com"))
+            .await
+            .force_block
+    );
 }
 
 #[tokio::test]
 async fn loopback_and_private_are_exempt() {
     let det = GeoDetector::from_config(&cfg(vec![], vec!["FR".into()], vec![]), db());
     // allow-only FR, but loopback/private never geo-blocked
-    assert!(!det.analyze(&ctx("127.0.0.1", "boutique.fr")).await.force_block);
-    assert!(!det.analyze(&ctx("192.168.1.10", "boutique.fr")).await.force_block);
+    assert!(
+        !det.analyze(&ctx("127.0.0.1", "boutique.fr"))
+            .await
+            .force_block
+    );
+    assert!(
+        !det.analyze(&ctx("192.168.1.10", "boutique.fr"))
+            .await
+            .force_block
+    );
 }
 
 #[tokio::test]
@@ -123,7 +167,11 @@ async fn disabled_detector_never_blocks() {
     let mut c = cfg(vec![], vec!["FR".into()], vec![]);
     c.enabled = false;
     let det = GeoDetector::from_config(&c, db());
-    assert!(!det.analyze(&ctx("1.2.3.4", "boutique.fr")).await.force_block);
+    assert!(
+        !det.analyze(&ctx("1.2.3.4", "boutique.fr"))
+            .await
+            .force_block
+    );
 }
 
 #[tokio::test]

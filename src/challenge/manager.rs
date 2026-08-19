@@ -49,11 +49,11 @@ pub struct ChallengeManager {
     challenges: Arc<Mutex<HashMap<IpAddr, Challenge>>>,
     /// Durée de validité d'un challenge
     timeout: Duration,
-    /// PoW difficulty (leading zero bits)
+    /// `PoW` difficulty (leading zero bits)
     pow_difficulty: u8,
     /// HMAC key for signing cookies (random, generated at startup)
     hmac_key: [u8; 32],
-    /// Duration of the PoW cookie in seconds
+    /// Duration of the `PoW` cookie in seconds
     cookie_ttl_secs: u64,
 }
 
@@ -77,7 +77,7 @@ impl ChallengeManager {
         Self::with_pow_config(timeout, 20, 3600)
     }
 
-    /// Crée un nouveau gestionnaire avec configuration PoW complète
+    /// Crée un nouveau gestionnaire avec configuration `PoW` complète
     #[must_use]
     pub fn with_pow_config(timeout: Duration, pow_difficulty: u8, cookie_ttl_secs: u64) -> Self {
         let mut hmac_key = [0u8; 32];
@@ -262,13 +262,13 @@ impl ChallengeManager {
         initial_count - challenges.len()
     }
 
-    /// Returns the configured PoW difficulty
+    /// Returns the configured `PoW` difficulty
     #[must_use]
     pub fn pow_difficulty(&self) -> u8 {
         self.pow_difficulty
     }
 
-    /// Génère un cookie PoW signé HMAC-SHA256 pour une IP validée
+    /// Génère un cookie `PoW` signé HMAC-SHA256 pour une IP validée
     ///
     /// Format: `ip|expiry_timestamp|hmac_hex`
     #[must_use]
@@ -278,12 +278,12 @@ impl ChallengeManager {
             .unwrap()
             .as_secs()
             + self.cookie_ttl_secs;
-        let payload = format!("{}|{}", ip, expiry);
+        let payload = format!("{ip}|{expiry}");
         let mut mac =
             HmacSha256::new_from_slice(&self.hmac_key).expect("HMAC accepts any key size");
         mac.update(payload.as_bytes());
         let signature = hex::encode(mac.finalize().into_bytes());
-        format!("{}|{}", payload, signature)
+        format!("{payload}|{signature}")
     }
 
     /// Returns the configured cookie TTL in seconds
@@ -292,7 +292,7 @@ impl ChallengeManager {
         self.cookie_ttl_secs
     }
 
-    /// Vérifie un cookie PoW signé
+    /// Vérifie un cookie `PoW` signé
     ///
     /// Vérifie que l'IP correspond, que le cookie n'est pas expiré,
     /// et que la signature HMAC est valide.
@@ -326,7 +326,7 @@ impl ChallengeManager {
         }
 
         // Vérifier la signature HMAC
-        let payload = format!("{}|{}", cookie_ip, expiry_str);
+        let payload = format!("{cookie_ip}|{expiry_str}");
         let mut mac =
             HmacSha256::new_from_slice(&self.hmac_key).expect("HMAC accepts any key size");
         mac.update(payload.as_bytes());
@@ -352,7 +352,7 @@ impl ChallengeManager {
 
 impl Default for ChallengeManager {
     fn default() -> Self {
-        Self::new(Duration::from_secs(300))
+        Self::new(Duration::from_mins(5))
     }
 }
 

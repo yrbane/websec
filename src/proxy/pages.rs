@@ -4,7 +4,7 @@
 //!
 //! Everything is self-contained (inline CSS, no external asset) so the pages
 //! render even for a client the proxy is actively blocking. Dark "techno"
-//! aesthetic, consistent across BLOCK / RATE_LIMIT / CHALLENGE.
+//! aesthetic, consistent across BLOCK / `RATE_LIMIT` / CHALLENGE.
 
 /// Shared `<style>` block. Kept as a single const so the block, rate-limit and
 /// challenge pages stay visually identical. Injected via a `{style}` format
@@ -66,9 +66,24 @@ fn esc(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
-/// Assemble a page from its parts. `accent` is "" (cyan/default), "danger" or
-/// "warn"; `meta_rows` is pre-rendered `<dt>…</dt><dd>…</dd>` markup.
-fn shell(accent: &str, badge: &str, code: &str, title: &str, body: &str, meta_rows: &str) -> String {
+/// En-tête d'une page : accent visuel ("" = cyan/défaut, "danger" ou "warn"),
+/// badge, code HTTP et titre.
+struct PageHead<'a> {
+    accent: &'a str,
+    badge: &'a str,
+    code: &'a str,
+    title: &'a str,
+}
+
+/// Assemble a page from its parts. `meta_rows` is pre-rendered
+/// `<dt>…</dt><dd>…</dd>` markup.
+fn shell(head: &PageHead, body: &str, meta_rows: &str) -> String {
+    let PageHead {
+        accent,
+        badge,
+        code,
+        title,
+    } = *head;
     let card_class = if accent.is_empty() {
         "card".to_string()
     } else {
@@ -81,8 +96,8 @@ fn shell(accent: &str, badge: &str, code: &str, title: &str, body: &str, meta_ro
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>{code} · WebSec</title>
-{style}
+<title>{code}</title>
+{PAGE_STYLE}
 </head>
 <body>
 <div class="{card_class}">
@@ -91,17 +106,9 @@ fn shell(accent: &str, badge: &str, code: &str, title: &str, body: &str, meta_ro
 <h1>{title}</h1>
 {body}
 <dl class="meta">{meta_rows}</dl>
-<div class="footer">Protégé par <b>WebSec</b> · proxy de sécurité</div>
 </div>
 </body>
 </html>"#,
-        style = PAGE_STYLE,
-        card_class = card_class,
-        badge = badge,
-        code = code,
-        title = title,
-        body = body,
-        meta_rows = meta_rows,
     )
 }
 
@@ -123,16 +130,20 @@ pub fn block_page(
     );
     let body = match reason {
         Some(r) => format!("<p>{}</p>", esc(r)),
-        None => "<p>Notre moteur de réputation a jugé cette requête malveillante ou trop peu fiable. \
+        None => {
+            "<p>Notre moteur de réputation a jugé cette requête malveillante ou trop peu fiable. \
 Si vous pensez qu'il s'agit d'une erreur, réessayez plus tard ou contactez l'administrateur \
 du site en indiquant l'horodatage ci-dessous.</p>"
-            .to_string(),
+                .to_string()
+        }
     };
     shell(
-        "danger",
-        "Accès refusé",
-        "403",
-        "Votre requête a été bloquée",
+        &PageHead {
+            accent: "danger",
+            badge: "Accès refusé",
+            code: "403",
+            title: "Votre requête a été bloquée",
+        },
         &body,
         &meta,
     )
@@ -149,10 +160,12 @@ pub fn rate_limit_page(ip: &str, host: &str, when: &str, retry_after: u64) -> St
         when = esc(when),
     );
     shell(
-        "warn",
-        "Trop de requêtes",
-        "429",
-        "Vous allez trop vite",
+        &PageHead {
+            accent: "warn",
+            badge: "Trop de requêtes",
+            code: "429",
+            title: "Vous allez trop vite",
+        },
         "<p>Vous avez envoyé trop de requêtes en peu de temps. Ce n'est pas un blocage définitif : \
 patientez quelques instants puis rechargez la page. Les scripts automatisés doivent respecter \
 l'en-tête <code>Retry-After</code>.</p>",
@@ -166,7 +179,13 @@ mod tests {
 
     #[test]
     fn block_page_is_self_contained_html() {
-        let h = block_page("203.0.113.4", 7, "example.com", "2026-01-01 00:00:00 UTC", None);
+        let h = block_page(
+            "203.0.113.4",
+            7,
+            "example.com",
+            "2026-01-01 00:00:00 UTC",
+            None,
+        );
         assert!(h.starts_with("<!DOCTYPE html>"));
         assert!(h.contains("403"));
         assert!(h.contains("203.0.113.4"));
@@ -181,6 +200,16 @@ mod tests {
         let h = rate_limit_page("203.0.113.4", "example.com", "t", 60);
         assert!(h.contains("429"));
         assert!(h.contains("60s"));
+    }
+
+    #[test]
+    fn pages_ne_divulguent_pas_le_produit() {
+        // Ne jamais révéler quel logiciel protège le site : aucune marque,
+        // ni dans le titre, ni en pied de page.
+        let b = block_page("203.0.113.4", 0, "example.com", "t", None);
+        let r = rate_limit_page("203.0.113.4", "example.com", "t", 60);
+        assert!(!b.contains("WebSec"), "la page 403 ne doit pas se signer");
+        assert!(!r.contains("WebSec"), "la page 429 ne doit pas se signer");
     }
 
     #[test]

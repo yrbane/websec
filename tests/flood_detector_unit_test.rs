@@ -82,7 +82,7 @@ async fn test_volume_threshold_exact_boundary() {
     }
 
     let context = create_context(ip, "/check");
-    let result = detector.analyze(&context).await;
+    let _result = detector.analyze(&context).await;
 
     // Behavior at boundary depends on threshold configuration
     // This test verifies consistent behavior at threshold
@@ -123,7 +123,7 @@ async fn test_burst_with_delay_not_flagged() {
     // Send requests with delays (not a burst)
     for i in 0..20 {
         let context = create_context(ip, &format!("/slow{}", i));
-        let result = detector.analyze(&context).await;
+        let _result = detector.analyze(&context).await;
 
         // Small delay between requests
         if i % 5 == 0 {

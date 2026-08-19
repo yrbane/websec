@@ -76,7 +76,9 @@ pub fn apply_domain_change(settings: &mut Settings, change: &DomainChange) -> Ve
         let mut removed_routes = 0;
         for listener in &mut settings.server.listeners {
             let before = listener.routes.len();
-            listener.routes.retain(|r| norm_host(&r.server_name) != host);
+            listener
+                .routes
+                .retain(|r| norm_host(&r.server_name) != host);
             removed_routes += before - listener.routes.len();
         }
         let before = settings.geolocation.sites.len();
@@ -94,9 +96,7 @@ pub fn apply_domain_change(settings: &mut Settings, change: &DomainChange) -> Ve
     // --- Routage ---
     if let Some(backend) = &change.backend {
         if settings.server.listeners.is_empty() {
-            log.push(
-                "⚠️  aucun listener configuré : lancez d'abord `websec setup`.".to_string(),
-            );
+            log.push("⚠️  aucun listener configuré : lancez d'abord `websec setup`.".to_string());
         }
         for listener in &mut settings.server.listeners {
             // upsert par server_name
@@ -105,7 +105,7 @@ pub fn apply_domain_change(settings: &mut Settings, change: &DomainChange) -> Ve
                 .iter_mut()
                 .find(|r| norm_host(&r.server_name) == host)
             {
-                route.backend = backend.clone();
+                route.backend.clone_from(backend);
             } else {
                 listener.routes.push(RouteConfig {
                     server_name: host.clone(),
@@ -124,7 +124,9 @@ pub fn apply_domain_change(settings: &mut Settings, change: &DomainChange) -> Ve
             .sites
             .retain(|s| norm_host(&s.server_name) != host);
         if settings.geolocation.sites.len() < before {
-            log.push(format!("règle géo retirée pour {host} (règles globales appliquées)"));
+            log.push(format!(
+                "règle géo retirée pour {host} (règles globales appliquées)"
+            ));
         } else {
             log.push(format!("aucune règle géo à retirer pour {host}"));
         }
@@ -187,15 +189,18 @@ pub fn apply_domain_change(settings: &mut Settings, change: &DomainChange) -> Ve
 
 /// Rendu lisible de la configuration par domaine (routes + géo).
 pub fn render_listing(settings: &Settings) -> String {
+    use std::fmt::Write as _;
+
     let mut out = String::new();
     out.push_str("Routage par hôte :\n");
     let mut any_route = false;
     for listener in &settings.server.listeners {
         for r in &listener.routes {
-            out.push_str(&format!(
-                "  [{}] {} → {}\n",
+            let _ = writeln!(
+                out,
+                "  [{}] {} → {}",
                 listener.listen, r.server_name, r.backend
-            ));
+            );
             any_route = true;
         }
     }
@@ -204,21 +209,28 @@ pub fn render_listing(settings: &Settings) -> String {
     }
 
     out.push_str("\nPolitique GeoIP :\n");
-    out.push_str(&format!(
-        "  activée : {}\n",
-        if settings.geolocation.enabled { "oui" } else { "non" }
-    ));
+    let _ = writeln!(
+        out,
+        "  activée : {}",
+        if settings.geolocation.enabled {
+            "oui"
+        } else {
+            "non"
+        }
+    );
     if !settings.geolocation.allow.is_empty() {
-        out.push_str(&format!(
-            "  globale allow-only : [{}]\n",
+        let _ = writeln!(
+            out,
+            "  globale allow-only : [{}]",
             settings.geolocation.allow.join(", ")
-        ));
+        );
     }
     if !settings.geolocation.block.is_empty() {
-        out.push_str(&format!(
-            "  globale block : [{}]\n",
+        let _ = writeln!(
+            out,
+            "  globale block : [{}]",
             settings.geolocation.block.join(", ")
-        ));
+        );
     }
     if settings.geolocation.allow.is_empty() && settings.geolocation.block.is_empty() {
         out.push_str("  globale : aucune (par défaut : tout passe)\n");
@@ -238,7 +250,7 @@ pub fn render_listing(settings: &Settings) -> String {
             if parts.is_empty() {
                 parts.push("(vide)".to_string());
             }
-            out.push_str(&format!("    {} : {}\n", s.server_name, parts.join(" ; ")));
+            let _ = writeln!(out, "    {} : {}", s.server_name, parts.join(" ; "));
         }
     }
     out
@@ -247,9 +259,10 @@ pub fn render_listing(settings: &Settings) -> String {
 /// Sauvegarde `config_path` en `.websec.bak.<timestamp>` puis renvoie le chemin.
 fn backup(config_path: &Path) -> Result<std::path::PathBuf> {
     let timestamp = Utc::now().format("%Y%m%d%H%M%S");
-    let name = config_path
-        .file_name()
-        .map_or_else(|| "websec.toml".to_string(), |s| s.to_string_lossy().into_owned());
+    let name = config_path.file_name().map_or_else(
+        || "websec.toml".to_string(),
+        |s| s.to_string_lossy().into_owned(),
+    );
     let parent = config_path.parent().unwrap_or_else(|| Path::new("."));
     let backup_path = parent.join(format!("{name}.websec.bak.{timestamp}"));
     fs::copy(config_path, &backup_path).map_err(Error::Io)?;
@@ -363,7 +376,10 @@ pub async fn run_domain(
     test_ip: Option<IpAddr>,
 ) -> Result<()> {
     let mut settings = load_from_file(config_path).map_err(|e| {
-        Error::Config(format!("Impossible de charger {}: {e}", config_path.display()))
+        Error::Config(format!(
+            "Impossible de charger {}: {e}",
+            config_path.display()
+        ))
     })?;
 
     // Mode simulation : ne modifie rien.
@@ -479,13 +495,22 @@ mod tests {
                 aggressive_burst: 5,
                 window_duration_secs: 60,
             },
-            logging: LoggingConfig { level: "info".into(), format: "json".into() },
-            metrics: MetricsConfig { enabled: true, port: 9090 },
+            logging: LoggingConfig {
+                level: "info".into(),
+                format: "json".into(),
+            },
+            metrics: MetricsConfig {
+                enabled: true,
+                port: 9090,
+            },
         }
     }
 
     fn change(host: &str) -> DomainChange {
-        DomainChange { host: host.into(), ..Default::default() }
+        DomainChange {
+            host: host.into(),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -495,8 +520,14 @@ mod tests {
         c.backend = Some("http://127.0.0.1:8082".into());
         apply_domain_change(&mut s, &c);
         assert_eq!(s.server.listeners[0].routes.len(), 1);
-        assert_eq!(s.server.listeners[0].routes[0].server_name, "app.example.com");
-        assert_eq!(s.server.listeners[0].routes[0].backend, "http://127.0.0.1:8082");
+        assert_eq!(
+            s.server.listeners[0].routes[0].server_name,
+            "app.example.com"
+        );
+        assert_eq!(
+            s.server.listeners[0].routes[0].backend,
+            "http://127.0.0.1:8082"
+        );
     }
 
     #[test]
@@ -508,7 +539,10 @@ mod tests {
         c.backend = Some("http://127.0.0.1:2".into());
         apply_domain_change(&mut s, &c);
         assert_eq!(s.server.listeners[0].routes.len(), 1);
-        assert_eq!(s.server.listeners[0].routes[0].backend, "http://127.0.0.1:2");
+        assert_eq!(
+            s.server.listeners[0].routes[0].backend,
+            "http://127.0.0.1:2"
+        );
     }
 
     #[test]

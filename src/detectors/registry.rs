@@ -76,11 +76,11 @@ impl DetectorRegistry {
                 if result.force_block {
                     force_block = true;
                     if block_message.is_none() {
-                        block_message = result.message.clone();
+                        block_message.clone_from(&result.message);
                     }
                 }
                 if country.is_none() && result.country.is_some() {
-                    country = result.country.clone();
+                    country.clone_from(&result.country);
                 }
                 all_signals.extend(result.signals);
             }

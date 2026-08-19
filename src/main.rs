@@ -237,11 +237,7 @@ async fn main() -> websec::Result<()> {
     Ok(())
 }
 
-fn handle_lists(
-    dir: Option<&Path>,
-    config: &Path,
-    command: &ListCommands,
-) -> websec::Result<()> {
+fn handle_lists(dir: Option<&Path>, config: &Path, command: &ListCommands) -> websec::Result<()> {
     // Sans --dir explicite, on co-localise les listes avec le fichier de config
     // (<dossier config>/lists) pour rester cohérent avec le runtime, au lieu de
     // "lists" relatif au CWD (source de fichiers whitelist éparpillés).

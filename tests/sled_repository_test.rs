@@ -1,8 +1,8 @@
 use std::net::IpAddr;
 use std::str::FromStr;
+use tempfile::tempdir;
 use websec::reputation::profile::ReputationProfile;
 use websec::storage::{ReputationRepository, SledRepository};
-use tempfile::tempdir;
 
 #[tokio::test]
 async fn test_sled_repo_lifecycle() {

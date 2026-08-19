@@ -260,7 +260,8 @@ impl ProxyServer {
         // Reuse TLS config from the first HTTPS listener (if any) so metrics
         // are served over HTTPS — required when HSTS is active on the domain.
         if settings.metrics.enabled {
-            let metrics_addr: SocketAddr = format!("[::]:{}", settings.metrics.port).parse().unwrap();
+            let metrics_addr: SocketAddr =
+                format!("[::]:{}", settings.metrics.port).parse().unwrap();
             let metrics_app = build_metrics_router(metrics.clone());
 
             let metrics_tls = first_tls_config;
@@ -268,7 +269,11 @@ impl ProxyServer {
             tracing::info!(
                 "Metrics server configured on {}{}",
                 metrics_addr,
-                if metrics_tls.is_some() { " (TLS, separate port)" } else { " (separate port)" }
+                if metrics_tls.is_some() {
+                    " (TLS, separate port)"
+                } else {
+                    " (separate port)"
+                }
             );
 
             runtimes.push(ListenerRuntime {
@@ -324,7 +329,9 @@ impl ProxyServer {
 
     /// Build the detector registry. Also returns the geo detector handle so the
     /// server can hot-reload its rules + country data on SIGHUP without restart.
-    fn init_detectors(settings: &Settings) -> (Arc<DetectorRegistry>, Arc<crate::detectors::GeoDetector>) {
+    fn init_detectors(
+        settings: &Settings,
+    ) -> (Arc<DetectorRegistry>, Arc<crate::detectors::GeoDetector>) {
         let mut detector_registry = DetectorRegistry::new();
 
         detector_registry.register(Arc::new(crate::detectors::BotDetector::new()));
@@ -345,15 +352,15 @@ impl ProxyServer {
         (Arc::new(detector_registry), geo_detector)
     }
 
-    /// Load whitelist/blacklist from files on disk (via ListManager).
+    /// Load whitelist/blacklist from files on disk (via `ListManager`).
     /// Falls back gracefully to empty lists if files are missing.
     fn load_lists() -> (Option<Blacklist>, Option<Whitelist>) {
         // Le dossier des listes est co-localisé avec le fichier de config
         // (WEBSEC_CONFIG). Sinon "lists" serait résolu relativement au CWD du
         // service (= / sous systemd) → /lists inexistant → whitelist jamais chargée.
-        let list_dir = std::env::var("WEBSEC_CONFIG").ok().and_then(|c| {
-            std::path::Path::new(&c).parent().map(|p| p.join("lists"))
-        });
+        let list_dir = std::env::var("WEBSEC_CONFIG")
+            .ok()
+            .and_then(|c| std::path::Path::new(&c).parent().map(|p| p.join("lists")));
         let manager = match ListManager::new(list_dir.as_deref()) {
             Ok(m) => m,
             Err(e) => {
@@ -466,21 +473,25 @@ impl ProxyServer {
             return;
         };
         tokio::spawn(async move {
-            let mut hangup = match tokio::signal::unix::signal(
-                tokio::signal::unix::SignalKind::hangup(),
-            ) {
-                Ok(s) => s,
-                Err(e) => {
-                    tracing::warn!("Cannot install SIGHUP handler: {e}");
-                    return;
-                }
-            };
-            tracing::info!("SIGHUP handler ready: `kill -HUP` reloads geo config from {}", path.display());
+            let mut hangup =
+                match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup()) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::warn!("Cannot install SIGHUP handler: {e}");
+                        return;
+                    }
+                };
+            tracing::info!(
+                "SIGHUP handler ready: `kill -HUP` reloads geo config from {}",
+                path.display()
+            );
             while hangup.recv().await.is_some() {
                 tracing::info!("SIGHUP received: reloading geo configuration");
                 match crate::config::load_from_file(&path) {
                     Ok(settings) => geo_detector.reload_from_config(&settings.geolocation),
-                    Err(e) => tracing::warn!("SIGHUP reload failed to load {}: {e}", path.display()),
+                    Err(e) => {
+                        tracing::warn!("SIGHUP reload failed to load {}: {e}", path.display());
+                    }
                 }
             }
         });

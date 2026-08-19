@@ -5,6 +5,35 @@ All notable changes to WebSec will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-08-20
+
+### 🕶️ Mode discrétion — le proxy ne se signe plus
+
+- **Removed** Les en-têtes `X-WebSec-Decision` et `X-WebSec-Score` ne sont
+  plus envoyés au client (toutes décisions : ALLOW, BLOCK, CHALLENGE,
+  RATE_LIMIT, CHALLENGE_PASSED, CHALLENGE_RETRY). Révéler le produit ou le
+  score de réputation renseignait un attaquant ; les décisions restent
+  observables via les journaux et les métriques Prometheus.
+- **Removed** Les pages servies (403, 429, challenges) ne portent plus la
+  signature « Protégé par WebSec » — ni en pied de page, ni dans le
+  `<title>`. Pages d'erreur neutres, sans divulgation du produit.
+- **Changed** Le cookie Proof-of-Work `websec_pow` devient `sec_pow`
+  (nom neutre) — les cookies en cours de validité sont invalidés, le
+  visiteur repasse simplement le challenge.
+- **Changed** Les contrôles internes (`websec e2e`, tests Docker, test e2e
+  Rust) vérifient désormais l'ABSENCE de signature au lieu de sa présence,
+  et un test unitaire garde les pages 403/429 sans marque.
+- **Docs** getting-started, architecture et deployment-checklist alignés
+  sur la discrétion.
+
+### 🧹 Dépoussiérage toolchain (stable 1.97)
+
+- **Fixed** ~60 lints clippy apparus avec la stable courante (doc backticks,
+  `format!` inliné, `clone_from`, `sort_by_key`, `write!` sur String,
+  extraction de `block_response`, `PageHead` pour `shell()`, alias `CidrNet`,
+  match exhaustif de `canonical_ip`) et reformatage `cargo fmt` — la CI
+  (fmt --check + clippy -D warnings) repasse au vert sur la stable du jour.
+
 ## [0.3.0] - 2026-08-03
 
 ### 🔒 Bug Fixes

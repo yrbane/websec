@@ -164,7 +164,7 @@ impl Challenge {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vérification de sécurité - WebSec</title>
+    <title>Vérification de sécurité</title>
     <style>
         body {{
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -269,9 +269,6 @@ impl Challenge {
             <button type="submit">Valider</button>
         </form>
 
-        <div class="footer">
-            Protégé par WebSec - Proxy de sécurité intelligent
-        </div>
     </div>
 </body>
 </html>"#,
@@ -287,12 +284,12 @@ impl Challenge {
     fn to_pow_html(&self) -> String {
         let difficulty: u8 = self.answer.parse().unwrap_or(20);
         format!(
-            r##"<!DOCTYPE html>
+            r#"<!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vérification de sécurité - WebSec</title>
+    <title>Vérification de sécurité</title>
     <style>
         body {{
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -364,9 +361,6 @@ impl Challenge {
             <input type="hidden" name="answer" id="nonce-field" value="">
         </form>
 
-        <div class="footer">
-            Protégé par WebSec - Proxy de sécurité intelligent
-        </div>
     </div>
     <script>
     (function() {{
@@ -436,7 +430,7 @@ impl Challenge {
     }})();
     </script>
 </body>
-</html>"##,
+</html>"#,
             token = self.token,
             challenge = self.question,
             difficulty = difficulty

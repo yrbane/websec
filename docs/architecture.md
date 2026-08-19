@@ -283,7 +283,7 @@ Client HTTP/2 → WebSec → sanitize_request_headers() → BackendClient
 Client → ProxyServer → Middleware
   → DecisionEngine (score: 85)
   → BackendClient → Backend
-  → Response + X-WebSec-Decision: ALLOW
+  → Response (aucun header signé : discrétion)
 ```
 
 ### 2. Requête suspecte (score moyen)
@@ -299,7 +299,7 @@ Client → ProxyServer → Middleware
 ```
 Client → ProxyServer → Middleware
   → DecisionEngine (score: 18, detect: Injection + Scan)
-  → HTTP 403 + X-WebSec-Decision: BLOCK
+  → HTTP 403 (page de blocage neutre, sans signature)
 ```
 
 ### 4. Attaque confirmée (score très bas)
@@ -307,7 +307,7 @@ Client → ProxyServer → Middleware
 ```
 Client → ProxyServer → Middleware
   → DecisionEngine (score: 5, detect: Multiple threats)
-  → HTTP 403 + X-WebSec-Score: 5
+  → HTTP 403 (le score reste interne : journaux + métriques)
 ```
 
 ---

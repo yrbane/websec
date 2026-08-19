@@ -132,8 +132,8 @@ impl SniResolver {
     /// E.g., certificate for "*.example.com" matches "sub.example.com"
     fn find_wildcard_match(&self, hostname: &str) -> Option<Arc<CertifiedKey>> {
         for (pattern, cert) in &self.sni_certs {
-            if pattern.starts_with("*.") {
-                let domain_suffix = &pattern[2..]; // Remove "*."
+            if let Some(domain_suffix) = pattern.strip_prefix("*.") {
+                // Remove "*."
                 if let Some(dot_pos) = hostname.find('.') {
                     let hostname_suffix = &hostname[dot_pos + 1..];
                     if hostname_suffix == domain_suffix {
@@ -148,19 +148,16 @@ impl SniResolver {
 
 impl ResolvesServerCert for SniResolver {
     fn resolve(&self, client_hello: ClientHello) -> Option<Arc<CertifiedKey>> {
-        match client_hello.server_name() {
-            Some(server_name) => {
-                tracing::trace!(
-                    server_name = %server_name,
-                    "SNI hostname received from client"
-                );
-                Some(self.resolve_cert(server_name))
-            }
-            None => {
-                // Client didn't send SNI, use default certificate
-                tracing::debug!("No SNI provided by client, using default certificate");
-                Some(Arc::clone(&self.default_cert))
-            }
+        if let Some(server_name) = client_hello.server_name() {
+            tracing::trace!(
+                server_name = %server_name,
+                "SNI hostname received from client"
+            );
+            Some(self.resolve_cert(server_name))
+        } else {
+            // Client didn't send SNI, use default certificate
+            tracing::debug!("No SNI provided by client, using default certificate");
+            Some(Arc::clone(&self.default_cert))
         }
     }
 }

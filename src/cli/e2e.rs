@@ -222,18 +222,22 @@ async fn post_echo(client: &Client, base: &str) -> Result<()> {
 }
 
 async fn check_headers(client: &Client, base: &str) -> Result<()> {
-    print!("  Headers WebSec ... ");
+    // Discrétion : le proxy ne doit signer AUCUNE réponse — un en-tête
+    // X-WebSec-* visible du client est une fuite d'information.
+    print!("  Discrétion (aucun header signé) ... ");
     let resp = client
         .get(format!("{base}/"))
         .header("User-Agent", "Mozilla/5.0")
         .send()
         .await
         .map_err(|e| Error::Http(format!("headers request failed: {e}")))?;
-    if resp.headers().contains_key("x-websec-decision") {
+    if resp.headers().contains_key("x-websec-decision")
+        || resp.headers().contains_key("x-websec-score")
+    {
+        Err(Error::Http("Header X-WebSec-* divulgué au client".into()))
+    } else {
         println!("✓");
         Ok(())
-    } else {
-        Err(Error::Http("Header X-WebSec-Decision manquant".into()))
     }
 }
 

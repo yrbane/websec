@@ -567,7 +567,7 @@ sudo certbot renew --dry-run
 - [ ] WebSec démarre sans erreur (`systemctl status websec`)
 - [ ] Ports corrects (`ss -tlnp`)
 - [ ] Tests HTTP/HTTPS fonctionnent
-- [ ] Headers `X-WebSec-*` présents
+- [ ] Aucun header `X-WebSec-*` visible du client (discrétion)
 - [ ] Logs montrent vraies IPs clients
 - [ ] Métriques accessibles sur `:9090`
 - [ ] Hook renouvellement SSL configuré

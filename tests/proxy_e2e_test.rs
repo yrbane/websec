@@ -164,7 +164,9 @@ async fn test_proxy_server_creation() {
 }
 
 #[tokio::test]
-async fn test_proxy_adds_websec_headers() {
+async fn test_proxy_reste_discret() {
+    // Le proxy ne doit signer AUCUNE réponse : pas d'en-tête X-WebSec-*
+    // visible du client (fuite d'information sur le produit et le score).
     // 1. Démarrer le backend sur port 13003
     let backend_handle = start_test_backend(13003).await;
     sleep(Duration::from_millis(100)).await;
@@ -182,15 +184,10 @@ async fn test_proxy_adds_websec_headers() {
     // 3. Faire une requête
     let response = make_request(18003, "/echo").await.unwrap();
 
-    // 4. Vérifier les headers WebSec
+    // 4. La réponse passe, sans signature
     assert_eq!(response.status(), StatusCode::OK);
-
-    let decision_header = response
-        .headers()
-        .get("X-WebSec-Decision")
-        .and_then(|v| v.to_str().ok());
-
-    assert_eq!(decision_header, Some("ALLOW"));
+    assert!(response.headers().get("X-WebSec-Decision").is_none());
+    assert!(response.headers().get("X-WebSec-Score").is_none());
 
     // Cleanup
     proxy_handle.abort();

@@ -233,14 +233,14 @@ pub async fn check_storage(config_path: &Path) -> Result<()> {
         "sled" => {
             let path = settings.storage.path.as_deref().unwrap_or("websec.db");
             println!("Database path: {path}");
-            
+
             match SledRepository::new(path) {
                 Ok(repo) => {
                     println!("✅ Opened Sled database successfully");
                     match repo.health_check().await {
                         Ok(true) => {
                             println!("✅ Sled health check: PASS");
-                             match repo.count().await {
+                            match repo.count().await {
                                 Ok(count) => {
                                     println!("📊 Tracked IPs: {count}");
                                 }
@@ -248,10 +248,10 @@ pub async fn check_storage(config_path: &Path) -> Result<()> {
                                     println!("⚠️  Failed to get count: {e}");
                                 }
                             }
-                        },
+                        }
                         _ => println!("❌ Sled health check: FAIL"),
                     }
-                },
+                }
                 Err(e) => {
                     println!("❌ Failed to open Sled database: {e}");
                     return Err(e);
@@ -401,7 +401,7 @@ fn display_metrics(metrics_text: &str) {
         println!();
         println!("🚨 Top Signals:");
         // Sort by count descending
-        signals.sort_by(|a, b| b.1.cmp(&a.1));
+        signals.sort_by_key(|s| std::cmp::Reverse(s.1));
         for (i, (signal, count)) in signals.iter().take(5).enumerate() {
             println!("  {}. {} ({})", i + 1, signal, count);
         }

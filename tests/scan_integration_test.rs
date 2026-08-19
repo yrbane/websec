@@ -286,7 +286,7 @@ async fn test_legitimate_robots_txt_access() {
 
     // robots.txt is legitimate
     let context = create_context(ip, "/robots.txt");
-    let result = engine.process_request(&context).await.unwrap();
+    let _result = engine.process_request(&context).await.unwrap();
 
     // Should not necessarily flag as suspicious (depends on implementation)
     // robots.txt is commonly accessed by legitimate crawlers

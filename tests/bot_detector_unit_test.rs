@@ -222,7 +222,7 @@ async fn test_detect_non_human_profile_missing_accept() {
     // Real browsers send Accept, Accept-Language, Accept-Encoding headers
     // This request only has User-Agent
 
-    let result = detector.analyze(&context).await;
+    let _result = detector.analyze(&context).await;
 
     // This might be suspicious depending on implementation strategy
     // For now, we'll be lenient and only flag if UA is also suspicious

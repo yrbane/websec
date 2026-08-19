@@ -7,7 +7,7 @@
 //! 2. **Soft scoring** — optional per-country penalties and impossible-travel
 //!    heuristics that feed the reputation score.
 //!
-//! Country resolution uses [`CountryDb`] (per-country CIDR lists, no MaxMind
+//! Country resolution uses [`CountryDb`] (per-country CIDR lists, no `MaxMind`
 //! licence). Loopback/private/link-local IPs and whitelisted IPs never reach a
 //! geo block (the whitelist short-circuits before detectors run).
 
@@ -60,7 +60,11 @@ impl GeoState {
     /// allow/block applies.
     fn effective_policy(&self, host: &str) -> (&HashSet<String>, &HashSet<String>) {
         if !host.is_empty() {
-            if let Some(rule) = self.sites.iter().find(|r| host_matches(&r.server_name, host)) {
+            if let Some(rule) = self
+                .sites
+                .iter()
+                .find(|r| host_matches(&r.server_name, host))
+            {
                 return (&rule.allow, &rule.block);
             }
         }
@@ -212,30 +216,35 @@ impl GeoDetector {
     fn is_exempt_ip(ip: &IpAddr) -> bool {
         match ip {
             IpAddr::V4(v4) => v4.is_loopback() || v4.is_private() || v4.is_link_local(),
-            IpAddr::V6(v6) => {
-                v6.is_loopback() || (v6.segments()[0] & 0xffc0) == 0xfe80
-            }
+            IpAddr::V6(v6) => v6.is_loopback() || (v6.segments()[0] & 0xffc0) == 0xfe80,
         }
     }
 
     fn detect_impossible_travel(&self, ip: &IpAddr, current: &str) -> bool {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
+            .map_or(0, |d| d.as_secs());
 
         if let Some(mut history) = self.ip_history.get_mut(ip) {
-            let flagged = history
-                .last()
-                .is_some_and(|last| now.saturating_sub(last.timestamp) < 3600 && last.country_code != current);
-            history.push(GeoLocation { country_code: current.to_string(), timestamp: now });
+            let flagged = history.last().is_some_and(|last| {
+                now.saturating_sub(last.timestamp) < 3600 && last.country_code != current
+            });
+            history.push(GeoLocation {
+                country_code: current.to_string(),
+                timestamp: now,
+            });
             if history.len() > 10 {
                 history.remove(0);
             }
             flagged
         } else {
-            self.ip_history
-                .insert(*ip, vec![GeoLocation { country_code: current.to_string(), timestamp: now }]);
+            self.ip_history.insert(
+                *ip,
+                vec![GeoLocation {
+                    country_code: current.to_string(),
+                    timestamp: now,
+                }],
+            );
             false
         }
     }
@@ -254,7 +263,7 @@ impl Detector for GeoDetector {
     }
 
     fn enabled(&self) -> bool {
-        self.state.read().map(|s| s.enabled).unwrap_or(false)
+        self.state.read().is_ok_and(|s| s.enabled)
     }
 
     async fn analyze(&self, context: &HttpRequestContext) -> DetectionResult {
@@ -291,10 +300,8 @@ impl Detector for GeoDetector {
             }
         } else if let Some(cc) = country.as_deref() {
             if block.contains(cc) {
-                return DetectionResult::block(format!(
-                    "Accès bloqué depuis votre pays ({cc})."
-                ))
-                .with_country(country.clone());
+                return DetectionResult::block(format!("Accès bloqué depuis votre pays ({cc})."))
+                    .with_country(country.clone());
             }
         }
 
@@ -382,11 +389,23 @@ mod tests {
             db(),
         );
         // FR visitor allowed
-        assert!(!det.analyze(&ctx("90.114.131.138", "boutique.fr")).await.force_block);
+        assert!(
+            !det.analyze(&ctx("90.114.131.138", "boutique.fr"))
+                .await
+                .force_block
+        );
         // CN visitor blocked
-        assert!(det.analyze(&ctx("1.2.3.4", "boutique.fr")).await.force_block);
+        assert!(
+            det.analyze(&ctx("1.2.3.4", "boutique.fr"))
+                .await
+                .force_block
+        );
         // Unknown country blocked under allow-only
-        assert!(det.analyze(&ctx("203.0.113.7", "boutique.fr")).await.force_block);
+        assert!(
+            det.analyze(&ctx("203.0.113.7", "boutique.fr"))
+                .await
+                .force_block
+        );
     }
 
     #[tokio::test]
@@ -403,8 +422,16 @@ mod tests {
             ),
             db(),
         );
-        assert!(det.analyze(&ctx("1.2.3.4", "api.example.com")).await.force_block);
-        assert!(!det.analyze(&ctx("8.8.8.8", "api.example.com")).await.force_block);
+        assert!(
+            det.analyze(&ctx("1.2.3.4", "api.example.com"))
+                .await
+                .force_block
+        );
+        assert!(
+            !det.analyze(&ctx("8.8.8.8", "api.example.com"))
+                .await
+                .force_block
+        );
     }
 
     #[tokio::test]
@@ -422,40 +449,74 @@ mod tests {
             db(),
         );
         // wildcard host: allow-only FR -> CN blocked, FR ok
-        assert!(det.analyze(&ctx("1.2.3.4", "a.corp.example")).await.force_block);
-        assert!(!det.analyze(&ctx("90.114.131.138", "a.corp.example")).await.force_block);
+        assert!(
+            det.analyze(&ctx("1.2.3.4", "a.corp.example"))
+                .await
+                .force_block
+        );
+        assert!(
+            !det.analyze(&ctx("90.114.131.138", "a.corp.example"))
+                .await
+                .force_block
+        );
         // unmatched host: global block CN
-        assert!(det.analyze(&ctx("1.2.3.4", "blog.example.com")).await.force_block);
-        assert!(!det.analyze(&ctx("8.8.8.8", "blog.example.com")).await.force_block);
+        assert!(
+            det.analyze(&ctx("1.2.3.4", "blog.example.com"))
+                .await
+                .force_block
+        );
+        assert!(
+            !det.analyze(&ctx("8.8.8.8", "blog.example.com"))
+                .await
+                .force_block
+        );
     }
 
     #[tokio::test]
     async fn reload_swaps_policy_live() {
         // Start with no policy: CN passes.
         let det = GeoDetector::from_config(&cfg(vec![], vec![], vec![]), db());
-        assert!(!det.analyze(&ctx("1.2.3.4", "api.example.com")).await.force_block);
+        assert!(
+            !det.analyze(&ctx("1.2.3.4", "api.example.com"))
+                .await
+                .force_block
+        );
 
         // Reload with a global block on CN: same detector now blocks CN.
         det.reload(&cfg(vec![], vec![], vec!["CN".into()]), db());
-        assert!(det.analyze(&ctx("1.2.3.4", "api.example.com")).await.force_block);
+        assert!(
+            det.analyze(&ctx("1.2.3.4", "api.example.com"))
+                .await
+                .force_block
+        );
 
         // Reload back to empty policy: CN passes again.
         det.reload(&cfg(vec![], vec![], vec![]), db());
-        assert!(!det.analyze(&ctx("1.2.3.4", "api.example.com")).await.force_block);
+        assert!(
+            !det.analyze(&ctx("1.2.3.4", "api.example.com"))
+                .await
+                .force_block
+        );
     }
 
     #[tokio::test]
     async fn loopback_and_disabled_never_block() {
-        let det = GeoDetector::from_config(
-            &cfg(vec![], vec!["FR".into()], vec![]),
-            db(),
-        );
+        let det = GeoDetector::from_config(&cfg(vec![], vec!["FR".into()], vec![]), db());
         // loopback exempt even under allow-only
-        assert!(!det.analyze(&ctx("127.0.0.1", "boutique.fr")).await.force_block);
+        assert!(
+            !det.analyze(&ctx("127.0.0.1", "boutique.fr"))
+                .await
+                .force_block
+        );
 
         let mut c = cfg(vec![], vec!["FR".into()], vec![]);
         c.enabled = false;
         let det_off = GeoDetector::from_config(&c, db());
-        assert!(!det_off.analyze(&ctx("1.2.3.4", "boutique.fr")).await.force_block);
+        assert!(
+            !det_off
+                .analyze(&ctx("1.2.3.4", "boutique.fr"))
+                .await
+                .force_block
+        );
     }
 }

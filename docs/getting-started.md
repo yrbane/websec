@@ -205,12 +205,9 @@ threshold_block = 10
 
 ### Headers de réponse
 
-WebSec ajoute des headers à chaque réponse (sauf si bloqué):
-
-```http
-X-WebSec-Decision: ALLOW
-X-WebSec-Score: 85
-```
+Par discrétion, WebSec n'ajoute **aucun** header signé aux réponses vues du
+client : ni le produit, ni la décision, ni le score ne sont divulgués. Les
+décisions restent observables via les journaux et les métriques Prometheus.
 
 ### Métriques Prometheus
 
