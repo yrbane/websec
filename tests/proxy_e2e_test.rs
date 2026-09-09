@@ -102,6 +102,7 @@ fn create_test_settings(proxy_port: u16, backend_port: u16, metrics_port: u16) -
             enabled: true,
             port: metrics_port,
         },
+        exemptions: Vec::new(),
     }
 }
 

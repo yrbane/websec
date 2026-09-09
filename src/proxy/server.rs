@@ -201,6 +201,9 @@ impl ProxyServer {
             tracing::warn!("No request body size limit configured (not recommended in production)");
         }
 
+        // Exemptions de chemin : compilées une fois, partagées par les listeners.
+        let exemptions = Self::init_exemptions(settings);
+
         let effective_listeners = resolve_listeners(&settings.server)?;
         if effective_listeners.is_empty() {
             return Err(Error::Config(
@@ -235,6 +238,7 @@ impl ProxyServer {
                 decision_engine: decision_engine.clone(),
                 backend_client,
                 router,
+                exemptions: exemptions.clone(),
                 challenge_manager: challenge_manager.clone(),
                 metrics: metrics.clone(),
                 trusted_proxies: trusted_proxies.clone(),
@@ -354,6 +358,35 @@ impl ProxyServer {
 
     /// Load whitelist/blacklist from files on disk (via `ListManager`).
     /// Falls back gracefully to empty lists if files are missing.
+    /// Compile les exemptions de chemin et journalise ce qui sera exempté.
+    fn init_exemptions(settings: &Settings) -> Arc<crate::proxy::exemption::ExemptionSet> {
+        let exemptions = Arc::new(crate::proxy::exemption::ExemptionSet::new(
+            &settings.exemptions,
+        ));
+        if exemptions.is_empty() {
+            tracing::info!("Path exemptions: none configured");
+            return exemptions;
+        }
+        tracing::info!(
+            "Path exemptions: {} rule(s) loaded",
+            exemptions.rule_count()
+        );
+        for exemption in &settings.exemptions {
+            let host = if exemption.server_name.trim().is_empty() {
+                "*"
+            } else {
+                exemption.server_name.trim()
+            };
+            let methods = if exemption.methods.is_empty() {
+                "any method".to_string()
+            } else {
+                exemption.methods.join(", ")
+            };
+            tracing::info!("  exempt {} {:?} [{}]", host, exemption.paths, methods);
+        }
+        exemptions
+    }
+
     fn load_lists() -> (Option<Blacklist>, Option<Whitelist>) {
         // Le dossier des listes est co-localisé avec le fichier de config
         // (WEBSEC_CONFIG). Sinon "lists" serait résolu relativement au CWD du
@@ -703,6 +736,7 @@ mod tests {
                 enabled: true,
                 port: 9090,
             },
+            exemptions: Vec::new(),
             challenge: ChallengeConfig::default(),
         }
     }

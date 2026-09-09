@@ -25,6 +25,44 @@ pub struct Settings {
     /// Challenge configuration (`PoW` / CAPTCHA)
     #[serde(default)]
     pub challenge: ChallengeConfig,
+    /// Path exemptions (public paths reachable by non-browser clients)
+    #[serde(default)]
+    pub exemptions: Vec<PathExemption>,
+}
+
+/// Exemption de chemin : dispense des chemins publics (métadonnées, images,
+/// webhooks) des décisions **comportementales** — challenge `PoW`, limitation
+/// de débit, score de réputation bas.
+///
+/// Utile pour les robots légitimes qui n'exécutent pas de JavaScript et ne
+/// peuvent donc pas résoudre une preuve de travail : places de marché NFT
+/// (`OpenSea`), moteurs d'indexation, agrégateurs, sondes de disponibilité.
+///
+/// Une exemption ne relâche **jamais** les contrôles déterministes : la
+/// blacklist d'IP et la politique `GeoIP` (globale ou par domaine) continuent
+/// de s'appliquer sur les chemins exemptés.
+///
+/// ```toml
+/// [[exemptions]]
+/// server_name = "minoupix.com"
+/// paths = ["/api/nft", "/media"]
+/// methods = ["GET", "HEAD"]
+/// ```
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PathExemption {
+    /// Hôte concerné : exact ("minoupix.com") ou wildcard ("*.example.com",
+    /// qui couvre aussi le domaine nu). Vide ou "*" = tous les hôtes.
+    #[serde(default)]
+    pub server_name: String,
+    /// Préfixes de chemin exemptés. Un préfixe respecte les frontières de
+    /// segment : "/api/nft" couvre "/api/nft" et "/api/nft/1", jamais
+    /// "/api/nftx". Un motif terminé par `*` est un préfixe brut
+    /// ("/media/thumb*"). "/" exempte tout l'hôte.
+    pub paths: Vec<String>,
+    /// Méthodes HTTP exemptées. Défaut : GET et HEAD (lecture seule) — une
+    /// liste vide autorise toutes les méthodes.
+    #[serde(default = "default_exempt_methods")]
+    pub methods: Vec<String>,
 }
 
 /// HTTP server configuration
@@ -255,6 +293,10 @@ impl Default for ChallengeConfig {
             cookie_ttl_secs: default_cookie_ttl(),
         }
     }
+}
+
+fn default_exempt_methods() -> Vec<String> {
+    vec!["GET".to_string(), "HEAD".to_string()]
 }
 
 fn default_challenge_type() -> String {

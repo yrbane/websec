@@ -214,6 +214,21 @@ impl MetricsRegistry {
             .unwrap()
             .insert("geo_blocks_total".to_string(), geo_blocks);
 
+        // Compteur des requêtes laissées passer par une exemption de chemin
+        let exempt_opts = Opts::new(
+            "exemptions_total",
+            "Requêtes laissées passer par une exemption de chemin",
+        );
+        let exemptions =
+            IntCounterVec::new(exempt_opts, &["host"]).expect("Création métrique exemptions_total");
+        self.registry
+            .register(Box::new(exemptions.clone()))
+            .expect("Enregistrement exemptions_total");
+        self.counter_vecs
+            .lock()
+            .unwrap()
+            .insert("exemptions_total".to_string(), exemptions);
+
         // Jauge par IP pour score de réputation
         let reputation_opts = Opts::new("reputation_by_ip", "Score de réputation par adresse IP");
         let reputation_by_ip =
@@ -346,6 +361,17 @@ impl MetricsRegistry {
     pub fn increment_geo_block(&self, country: &str, host: &str) {
         if let Some(vec) = self.counter_vecs.lock().unwrap().get("geo_blocks_total") {
             vec.with_label_values(&[country, host]).inc();
+        }
+    }
+
+    /// Incrémente le compteur d'exemptions de chemin pour un hôte.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mutex is poisoned
+    pub fn increment_exemption(&self, host: &str) {
+        if let Some(vec) = self.counter_vecs.lock().unwrap().get("exemptions_total") {
+            vec.with_label_values(&[host]).inc();
         }
     }
 

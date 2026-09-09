@@ -15,6 +15,7 @@ use crate::challenge::ChallengeManager;
 use crate::detectors::HttpRequestContext;
 use crate::observability::metrics::MetricsRegistry;
 use crate::proxy::backend::BackendClient;
+use crate::proxy::exemption::ExemptionSet;
 use crate::proxy::router::HostRouter;
 use crate::reputation::decision::DecisionEngine;
 use crate::reputation::score::ProxyDecision;
@@ -30,6 +31,33 @@ use std::time::Instant;
 
 /// Localhost IP address constant (avoids runtime parsing)
 const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
+
+/// Hôte visé par la requête, minuscules et sans port.
+///
+/// En HTTP/1.1 l'hôte voyage dans l'en-tête `Host` ; en HTTP/2 et HTTP/3 il
+/// voyage dans le pseudo-en-tête `:authority`, exposé par hyper sur l'URI de
+/// la requête — l'en-tête `Host` est alors absent. Lire uniquement `Host`
+/// rendait invisibles l'hôte de toutes les requêtes HTTP/2 (donc de tous les
+/// navigateurs modernes) : routage par hôte, politique géo par domaine et
+/// exemptions de chemin se retrouvaient évalués sur un hôte vide.
+fn request_host(parts: &http::request::Parts) -> String {
+    if let Some(authority) = parts.uri.host() {
+        return authority.to_ascii_lowercase();
+    }
+    parts
+        .headers
+        .get(http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .map(|h| {
+            h.split(':')
+                .next()
+                .unwrap_or(h)
+                .trim()
+                .trim_end_matches('.')
+                .to_ascii_lowercase()
+        })
+        .unwrap_or_default()
+}
 
 /// Build an error response with the given status and body
 ///
@@ -67,6 +95,8 @@ pub struct ProxyState {
     pub backend_client: Arc<BackendClient>,
     /// Routeur hôte -> backend ; renvoie `backend_client` si aucune route ne matche
     pub router: Arc<HostRouter>,
+    /// Exemptions de chemin (chemins publics dispensés du challenge/rate-limit)
+    pub exemptions: Arc<ExemptionSet>,
     /// Gestionnaire de challenges CAPTCHA
     pub challenge_manager: Arc<ChallengeManager>,
     /// Registry de métriques
@@ -87,6 +117,8 @@ pub struct ProxyStateConfig {
     pub backend_client: Arc<BackendClient>,
     /// Host -> backend router (falls back to `backend_client`)
     pub router: Arc<HostRouter>,
+    /// Compiled path exemptions (public paths, no behavioural gating)
+    pub exemptions: Arc<ExemptionSet>,
     /// Challenge manager for CAPTCHA
     pub challenge_manager: Arc<ChallengeManager>,
     /// Metrics registry for Prometheus
@@ -107,6 +139,7 @@ impl ProxyState {
             decision_engine: config.decision_engine,
             backend_client: config.backend_client,
             router: config.router,
+            exemptions: config.exemptions,
             challenge_manager: config.challenge_manager,
             metrics: config.metrics,
             trusted_proxies: config.trusted_proxies,
@@ -126,12 +159,14 @@ impl ProxyState {
 /// 1. Extraire l'IP du client (X-Forwarded-For ou socket)
 /// 2. Construire le contexte de requête HTTP
 /// 3. Passer par le `DecisionEngine` (détecteurs + scoring)
-/// 4. Selon la décision :
+/// 4. Si le chemin est exempté et que le blocage n'est pas déterministe
+///    (blacklist/géo), forwarder malgré la décision
+/// 5. Selon la décision :
 ///    - ALLOW: Forward au backend
 ///    - BLOCK: Retourner 403
 ///    - CHALLENGE: Afficher page CAPTCHA
 ///    - `RATE_LIMIT`: Retourner 429
-/// 5. Enregistrer métriques et logs
+/// 6. Enregistrer métriques et logs
 pub async fn proxy_handler(
     State(state): State<Arc<ProxyState>>,
     req: Request<Body>,
@@ -190,8 +225,14 @@ pub async fn proxy_handler(
     // 2c. Vérifier cookie PoW (bypass challenge pour clients prouvés)
     let has_valid_pow_cookie = check_pow_cookie(&parts, &state.challenge_manager, client_ip);
 
+    // 2d. Chemin exempté ? (métadonnées publiques lues par des robots sans JS)
+    let host = request_host(&parts);
+    let is_exempt_path = state
+        .exemptions
+        .matches(&host, parts.method.as_str(), parts.uri.path());
+
     // 3. Construire le contexte HTTP pour les détecteurs
-    let context = build_http_context(client_ip, &parts, &body_bytes);
+    let context = build_http_context(client_ip, &parts, &body_bytes, &host);
 
     // 4. Passer par le DecisionEngine
     let decision_result = match state.decision_engine.process_request(&context).await {
@@ -217,6 +258,27 @@ pub async fn proxy_handler(
         .metrics
         .set_reputation_score(&client_ip.to_string(), decision_result.score.into());
 
+    // 4b. Exemption de chemin : un chemin public déclaré exempt ne doit pas
+    // être masqué par une décision comportementale (challenge PoW, rate limit,
+    // score bas) — un robot légitime ne résout pas de preuve de travail.
+    // Les blocages déterministes (blacklist d'IP, politique géo) restent
+    // prioritaires : une exemption ouvre un chemin, jamais un client.
+    if is_exempt_path
+        && decision_result.decision != ProxyDecision::Allow
+        && !decision_result.hard_block
+    {
+        tracing::info!(
+            ip = %client_ip,
+            host = %host,
+            path = %parts.uri.path(),
+            decision = decision_str,
+            score = decision_result.score,
+            "Path exemption: forwarding public path despite behavioural decision"
+        );
+        state.metrics.increment_exemption(&host);
+        return forward_to_backend(state.clone(), parts, body_bytes, client_ip).await;
+    }
+
     // 5. Agir selon la décision
     let response = match decision_result.decision {
         ProxyDecision::Allow => {
@@ -226,7 +288,7 @@ pub async fn proxy_handler(
             // La décision reste observable via les journaux et /metrics.
             forward_to_backend(state.clone(), parts, body_bytes, client_ip).await
         }
-        ProxyDecision::Block => block_response(&state, &parts, &decision_result, client_ip),
+        ProxyDecision::Block => block_response(&state, &host, &decision_result, client_ip),
         ProxyDecision::Challenge => {
             // Si le client a un cookie PoW valide, on le laisse passer
             if has_valid_pow_cookie {
@@ -272,18 +334,13 @@ pub async fn proxy_handler(
             let now = chrono::Utc::now()
                 .format("%Y-%m-%d %H:%M:%S UTC")
                 .to_string();
-            let host = parts
-                .headers
-                .get(http::header::HOST)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("");
             error_response_with_headers(
                 StatusCode::TOO_MANY_REQUESTS,
                 &[
                     ("Content-Type", "text/html; charset=utf-8".to_string()),
                     ("Retry-After", "60".to_string()),
                 ],
-                crate::proxy::pages::rate_limit_page(&client_ip.to_string(), host, &now, 60),
+                crate::proxy::pages::rate_limit_page(&client_ip.to_string(), &host, &now, 60),
             )
         }
     };
@@ -437,18 +494,13 @@ fn check_pow_cookie(
 /// page neutre — aucune signature du produit ne part vers le client.
 fn block_response(
     state: &ProxyState,
-    parts: &http::request::Parts,
+    host: &str,
     decision_result: &crate::reputation::decision::DecisionEngineResult,
     client_ip: IpAddr,
 ) -> Response<Body> {
     let now = chrono::Utc::now()
         .format("%Y-%m-%d %H:%M:%S UTC")
         .to_string();
-    let host = parts
-        .headers
-        .get(http::header::HOST)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
 
     let country = decision_result.detection.country.as_deref();
     tracing::warn!(
@@ -582,9 +634,10 @@ fn build_http_context(
     ip: IpAddr,
     parts: &http::request::Parts,
     body: &Bytes,
+    host: &str,
 ) -> HttpRequestContext {
     // Extraire les headers sous forme de vecteurs de tuples
-    let headers: Vec<(String, String)> = parts
+    let mut headers: Vec<(String, String)> = parts
         .headers
         .iter()
         .map(|(name, value)| {
@@ -594,6 +647,13 @@ fn build_http_context(
             )
         })
         .collect();
+
+    // HTTP/2 n'envoie pas d'en-tête `Host` : sans cette injection, les
+    // détecteurs qui raisonnent par domaine (politique géo par site) verraient
+    // un hôte vide et retomberaient sur la règle globale.
+    if !host.is_empty() && !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("host")) {
+        headers.push(("host".to_string(), host.to_string()));
+    }
 
     // Extraire User-Agent
     let user_agent = parts
@@ -765,12 +825,7 @@ async fn forward_to_backend(
     // Choisir le backend selon l'hôte (routage par domaine). Sans routes
     // configurées, le routeur renvoie toujours le backend par défaut, donc le
     // comportement est identique à l'ancien proxy mono-backend.
-    let host = parts
-        .headers
-        .get(http::header::HOST)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
+    let host = request_host(&parts);
 
     // Sanitize headers avant de forwarder (sécurité)
     let sanitized_parts = sanitize_request_headers(parts, &state, client_ip);
@@ -896,7 +951,7 @@ mod tests {
         let body = Bytes::from("{}");
         let ip = IpAddr::from_str("192.168.1.1").unwrap();
 
-        let context = build_http_context(ip, &parts, &body);
+        let context = build_http_context(ip, &parts, &body, "app.example.com");
 
         assert_eq!(context.ip.to_string(), "192.168.1.1");
         assert_eq!(context.method, "POST");
@@ -904,5 +959,61 @@ mod tests {
         assert_eq!(context.query, Some("page=1".to_string()));
         assert_eq!(context.user_agent, Some("Mozilla/5.0".to_string()));
         assert_eq!(context.content_type, Some("application/json".to_string()));
+        // HTTP/2 : l'hôte résolu depuis `:authority` est injecté pour les
+        // détecteurs qui raisonnent par domaine.
+        assert!(context
+            .headers
+            .iter()
+            .any(|(k, v)| k == "host" && v == "app.example.com"));
+    }
+
+    #[test]
+    fn test_request_host_from_http1_header() {
+        let req = Request::builder()
+            .uri("/x")
+            .header("Host", "App.Example.com:443")
+            .body(Body::empty())
+            .unwrap();
+        let (parts, _) = req.into_parts();
+        assert_eq!(request_host(&parts), "app.example.com");
+    }
+
+    #[test]
+    fn test_request_host_from_http2_authority() {
+        // hyper expose le pseudo-en-tête :authority sur l'URI (forme absolue).
+        let req = Request::builder()
+            .uri("https://minoupix.com/api/nft/1")
+            .body(Body::empty())
+            .unwrap();
+        let (parts, _) = req.into_parts();
+        assert_eq!(request_host(&parts), "minoupix.com");
+    }
+
+    #[test]
+    fn test_request_host_missing_everywhere() {
+        let req = Request::builder().uri("/x").body(Body::empty()).unwrap();
+        let (parts, _) = req.into_parts();
+        assert_eq!(request_host(&parts), "");
+    }
+
+    #[test]
+    fn test_build_http_context_keeps_existing_host_header() {
+        let req = Request::builder()
+            .uri("/x")
+            .header("Host", "one.example.com")
+            .body(Body::empty())
+            .unwrap();
+        let (parts, _) = req.into_parts();
+        let body = Bytes::new();
+        let ip = IpAddr::from_str("192.168.1.1").unwrap();
+        let context = build_http_context(ip, &parts, &body, "one.example.com");
+        assert_eq!(
+            context
+                .headers
+                .iter()
+                .filter(|(k, _)| k.eq_ignore_ascii_case("host"))
+                .count(),
+            1
+        );
     }
 }

@@ -16,6 +16,12 @@
 //! # Retirer la politique géo d'un domaine (retour aux règles globales)
 //! websec domain api.example.com --geo-clear
 //!
+//! # Laisser passer les robots sans JS sur des chemins publics (OpenSea, etc.)
+//! websec domain minoupix.com --exempt-path /api/nft,/media
+//!
+//! # Retirer les exemptions de chemin d'un domaine
+//! websec domain minoupix.com --exempt-clear
+//!
 //! # Tout supprimer pour un hôte (route + géo)
 //! websec domain vieux.example.com --remove
 //!
@@ -25,7 +31,7 @@
 //! Le fichier est sauvegardé avant modification ; relancer WebSec pour appliquer.
 
 use crate::config::load_from_file;
-use crate::config::settings::{GeoSiteRule, RouteConfig, Settings};
+use crate::config::settings::{GeoSiteRule, PathExemption, RouteConfig, Settings};
 use crate::detectors::{Detector, GeoDetector, HttpRequestContext};
 use crate::geolocation::CountryDb;
 use crate::{Error, Result};
@@ -48,6 +54,13 @@ pub struct DomainChange {
     pub geo_block: Option<Vec<String>>,
     /// Retirer la règle géo de cet hôte (retour aux règles globales).
     pub geo_clear: bool,
+    /// Chemins publics exemptés du challenge/rate-limit. `Some` remplace la
+    /// liste, `None` laisse inchangé.
+    pub exempt_paths: Option<Vec<String>>,
+    /// Méthodes HTTP exemptées (défaut : GET, HEAD).
+    pub exempt_methods: Option<Vec<String>>,
+    /// Retirer les exemptions de chemin de cet hôte.
+    pub exempt_clear: bool,
     /// Retirer route + géo pour cet hôte.
     pub remove: bool,
 }
@@ -57,6 +70,29 @@ fn norm_host(h: &str) -> String {
 }
 
 fn norm_codes(list: &[String]) -> Vec<String> {
+    list.iter()
+        .flat_map(|s| s.split(','))
+        .map(|s| s.trim().to_ascii_uppercase())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+fn norm_paths(list: &[String]) -> Vec<String> {
+    list.iter()
+        .flat_map(|s| s.split(','))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            if s.starts_with('/') {
+                s.to_string()
+            } else {
+                format!("/{s}")
+            }
+        })
+        .collect()
+}
+
+fn norm_methods(list: &[String]) -> Vec<String> {
     list.iter()
         .flat_map(|s| s.split(','))
         .map(|s| s.trim().to_ascii_uppercase())
@@ -87,8 +123,14 @@ pub fn apply_domain_change(settings: &mut Settings, change: &DomainChange) -> Ve
             .sites
             .retain(|s| norm_host(&s.server_name) != host);
         let removed_geo = before - settings.geolocation.sites.len();
+        let before = settings.exemptions.len();
+        settings
+            .exemptions
+            .retain(|e| norm_host(&e.server_name) != host);
+        let removed_exempt = before - settings.exemptions.len();
         log.push(format!(
-            "supprimé : {removed_routes} route(s) et {removed_geo} règle(s) géo pour {host}"
+            "supprimé : {removed_routes} route(s), {removed_geo} règle(s) géo et \
+             {removed_exempt} exemption(s) pour {host}"
         ));
         return log;
     }
@@ -116,6 +158,19 @@ pub fn apply_domain_change(settings: &mut Settings, change: &DomainChange) -> Ve
         log.push(format!("route : {host} → {backend}"));
     }
 
+    apply_geo_change(settings, &host, change, &mut log);
+    apply_exempt_change(settings, &host, change, &mut log);
+
+    log
+}
+
+/// Applique la politique géo par domaine (sous-partie d'`apply_domain_change`).
+fn apply_geo_change(
+    settings: &mut Settings,
+    host: &str,
+    change: &DomainChange,
+    log: &mut Vec<String>,
+) {
     // --- Politique géo ---
     if change.geo_clear {
         let before = settings.geolocation.sites.len();
@@ -149,7 +204,7 @@ pub fn apply_domain_change(settings: &mut Settings, change: &DomainChange) -> Ve
             }
         } else {
             settings.geolocation.sites.push(GeoSiteRule {
-                server_name: host.clone(),
+                server_name: host.to_string(),
                 allow: allow.unwrap_or_default(),
                 block: block.unwrap_or_default(),
             });
@@ -183,8 +238,73 @@ pub fn apply_domain_change(settings: &mut Settings, change: &DomainChange) -> Ve
             );
         }
     }
+}
 
-    log
+/// Applique les exemptions de chemin (sous-partie d'`apply_domain_change`).
+fn apply_exempt_change(
+    settings: &mut Settings,
+    host: &str,
+    change: &DomainChange,
+    log: &mut Vec<String>,
+) {
+    // --- Exemptions de chemin ---
+    if change.exempt_clear {
+        let before = settings.exemptions.len();
+        settings
+            .exemptions
+            .retain(|e| norm_host(&e.server_name) != host);
+        let removed = before - settings.exemptions.len();
+        if removed > 0 {
+            log.push(format!("exemption(s) retirée(s) pour {host} : {removed}"));
+        } else {
+            log.push(format!("aucune exemption à retirer pour {host}"));
+        }
+    } else if change.exempt_paths.is_some() || change.exempt_methods.is_some() {
+        let paths = change.exempt_paths.as_deref().map(norm_paths);
+        let methods = change.exempt_methods.as_deref().map(norm_methods);
+
+        if let Some(rule) = settings
+            .exemptions
+            .iter_mut()
+            .find(|e| norm_host(&e.server_name) == host)
+        {
+            if let Some(p) = paths {
+                rule.paths = p;
+            }
+            if let Some(m) = methods {
+                rule.methods = m;
+            }
+        } else {
+            settings.exemptions.push(PathExemption {
+                server_name: host.to_string(),
+                paths: paths.unwrap_or_default(),
+                methods: methods.unwrap_or_else(|| vec!["GET".to_string(), "HEAD".to_string()]),
+            });
+        }
+
+        if let Some(rule) = settings
+            .exemptions
+            .iter()
+            .find(|e| norm_host(&e.server_name) == host)
+        {
+            if rule.paths.is_empty() {
+                log.push(format!(
+                    "⚠️  exemption {host} : aucun chemin — règle ignorée au démarrage"
+                ));
+            } else {
+                log.push(format!(
+                    "exemption {host} : [{}] pour [{}] (challenge et rate-limit \
+                     désactivés sur ces chemins ; blacklist et géo maintenues)",
+                    rule.paths.join(", "),
+                    if rule.methods.is_empty() {
+                        "toutes méthodes".to_string()
+                    } else {
+                        rule.methods.join(", ")
+                    }
+                ));
+            }
+        }
+    }
 }
 
 /// Rendu lisible de la configuration par domaine (routes + géo).
@@ -252,6 +372,30 @@ pub fn render_listing(settings: &Settings) -> String {
             }
             let _ = writeln!(out, "    {} : {}", s.server_name, parts.join(" ; "));
         }
+    }
+
+    out.push_str("\nExemptions de chemin (challenge/rate-limit désactivés) :\n");
+    if settings.exemptions.is_empty() {
+        out.push_str("  aucune\n");
+    } else {
+        for e in &settings.exemptions {
+            let host = if e.server_name.trim().is_empty() {
+                "* (tous les hôtes)"
+            } else {
+                e.server_name.trim()
+            };
+            let methods = if e.methods.is_empty() {
+                "toutes méthodes".to_string()
+            } else {
+                e.methods.join(", ")
+            };
+            let _ = writeln!(
+                out,
+                "    {host} : [{}] pour [{methods}]",
+                e.paths.join(", ")
+            );
+        }
+        out.push_str("  (blacklist d'IP et politique géo restent appliquées)\n");
     }
     out
 }
@@ -397,7 +541,10 @@ pub async fn run_domain(
         && change.backend.is_none()
         && change.geo_allow.is_none()
         && change.geo_block.is_none()
-        && !change.geo_clear;
+        && !change.geo_clear
+        && change.exempt_paths.is_none()
+        && change.exempt_methods.is_none()
+        && !change.exempt_clear;
 
     if list || (change.host.is_empty() && has_change) {
         print!("{}", render_listing(&settings));
@@ -426,11 +573,19 @@ pub async fn run_domain(
     for line in &actions {
         println!("✅ {line}");
     }
-    // Geo-only changes apply via a hot reload (no downtime); route/backend
-    // changes still require a full restart (listeners are built at startup).
-    let touched_route = change.backend.is_some() || change.remove;
-    if touched_route {
-        println!("ℹ️  Changement de routage : redémarrez WebSec : systemctl restart websec");
+    // Geo-only changes apply via a hot reload (no downtime); routing and path
+    // exemptions are compiled into the listeners at startup, so they still
+    // require a full restart.
+    let needs_restart = change.backend.is_some()
+        || change.remove
+        || change.exempt_paths.is_some()
+        || change.exempt_methods.is_some()
+        || change.exempt_clear;
+    if needs_restart {
+        println!(
+            "ℹ️  Changement de routage/exemption : redémarrez WebSec : \
+             systemctl restart websec"
+        );
     } else {
         println!("ℹ️  Appliquer à chaud (sans coupure) : systemctl reload websec");
     }
@@ -503,6 +658,7 @@ mod tests {
                 enabled: true,
                 port: 9090,
             },
+            exemptions: Vec::new(),
         }
     }
 
@@ -624,6 +780,76 @@ mod tests {
         c.geo_allow = Some(vec!["QQ".into()]);
         // No data loaded -> validation is skipped (cannot verify), never errors.
         assert!(validate_codes(&CountryDb::empty(), &c).is_ok());
+    }
+
+    #[test]
+    fn exempt_path_adds_rule_with_default_methods() {
+        let mut s = base_settings();
+        let mut c = change("MinouPix.com");
+        c.exempt_paths = Some(vec!["/api/nft, /media".into()]);
+        apply_domain_change(&mut s, &c);
+        assert_eq!(s.exemptions.len(), 1);
+        assert_eq!(s.exemptions[0].server_name, "minoupix.com");
+        assert_eq!(s.exemptions[0].paths, vec!["/api/nft", "/media"]);
+        assert_eq!(s.exemptions[0].methods, vec!["GET", "HEAD"]);
+    }
+
+    #[test]
+    fn exempt_path_prepends_missing_slash() {
+        let mut s = base_settings();
+        let mut c = change("h.example.com");
+        c.exempt_paths = Some(vec!["api/nft".into()]);
+        apply_domain_change(&mut s, &c);
+        assert_eq!(s.exemptions[0].paths, vec!["/api/nft"]);
+    }
+
+    #[test]
+    fn exempt_path_upsert_replaces_paths() {
+        let mut s = base_settings();
+        let mut c = change("h.example.com");
+        c.exempt_paths = Some(vec!["/a".into()]);
+        apply_domain_change(&mut s, &c);
+        c.exempt_paths = Some(vec!["/b".into()]);
+        apply_domain_change(&mut s, &c);
+        assert_eq!(s.exemptions.len(), 1);
+        assert_eq!(s.exemptions[0].paths, vec!["/b"]);
+    }
+
+    #[test]
+    fn exempt_methods_alone_keep_existing_paths() {
+        let mut s = base_settings();
+        let mut c = change("h.example.com");
+        c.exempt_paths = Some(vec!["/a".into()]);
+        apply_domain_change(&mut s, &c);
+        let mut c2 = change("h.example.com");
+        c2.exempt_methods = Some(vec!["get,post".into()]);
+        apply_domain_change(&mut s, &c2);
+        assert_eq!(s.exemptions[0].paths, vec!["/a"]);
+        assert_eq!(s.exemptions[0].methods, vec!["GET", "POST"]);
+    }
+
+    #[test]
+    fn exempt_clear_removes_rule() {
+        let mut s = base_settings();
+        let mut c = change("h.example.com");
+        c.exempt_paths = Some(vec!["/a".into()]);
+        apply_domain_change(&mut s, &c);
+        let mut clear = change("h.example.com");
+        clear.exempt_clear = true;
+        apply_domain_change(&mut s, &clear);
+        assert!(s.exemptions.is_empty());
+    }
+
+    #[test]
+    fn remove_deletes_exemptions_too() {
+        let mut s = base_settings();
+        let mut c = change("h.example.com");
+        c.exempt_paths = Some(vec!["/a".into()]);
+        apply_domain_change(&mut s, &c);
+        let mut rm = change("h.example.com");
+        rm.remove = true;
+        apply_domain_change(&mut s, &rm);
+        assert!(s.exemptions.is_empty());
     }
 
     #[test]

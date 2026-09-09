@@ -5,6 +5,44 @@ All notable changes to WebSec will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 🤖 Exemptions de chemin — laisser lire les métadonnées publiques
+
+Le pipeline de réputation suppose un navigateur. Un robot légitime qui lit des
+métadonnées publiques (place de marché NFT, indexeur, wallet, sonde de
+disponibilité) n'exécute pas de JavaScript : il accumule des signaux, son score
+tombe, et il reçoit un challenge Proof-of-Work qu'il ne résoudra jamais — puis
+un blocage. Les exemptions ouvrent un chemin, jamais un client.
+
+- **Added** Section `[[exemptions]]` : `server_name` (exact, `*.domaine`, ou
+  vide pour tous les hôtes), `paths` (préfixes respectant les frontières de
+  segment ; suffixe `*` pour un préfixe brut), `methods` (défaut `GET`, `HEAD`).
+  Sur un chemin exempté, challenge PoW et rate limit ne s'appliquent plus.
+- **Added** `websec domain <hôte> --exempt-path /api/nft,/media` et
+  `--exempt-method`, `--exempt-clear` ; `--list` et `--remove` couvrent les
+  exemptions. Sauvegarde automatique du fichier, redémarrage requis.
+- **Added** Métrique Prometheus `exemptions_total{host}` et journal `INFO` à
+  chaque requête laissée passer par une exemption.
+- **Security** Une exemption ne contourne **que** les décisions
+  comportementales : blacklist d'IP et politique GeoIP (globale ou par
+  domaine) restent prioritaires — c'est l'invariant porté par le nouveau champ
+  `DecisionEngineResult::hard_block`.
+- **Security** Le chemin est normalisé avant comparaison (décodage pourcent,
+  résolution de `.` / `..`) et toute tentative de sortie de la racine ou tout
+  caractère de contrôle interdit l'exemption : `/api/nft/../../admin` n'hérite
+  jamais de l'exemption de `/api/nft`.
+
+### 🔎 Hôte visible en HTTP/2
+
+- **Fixed** L'hôte de la requête était lu uniquement dans l'en-tête `Host`,
+  absent en HTTP/2 et HTTP/3 (l'autorité voyage dans le pseudo-en-tête
+  `:authority`). Conséquence : pour **tout navigateur moderne**, le routage par
+  hôte, la politique GeoIP **par domaine** et les pages de blocage voyaient un
+  hôte vide — les règles par domaine retombaient silencieusement sur la règle
+  globale. L'hôte est désormais résolu depuis l'URI puis, à défaut, depuis
+  `Host`, et injecté dans le contexte des détecteurs.
+
 ## [0.4.0] - 2026-08-20
 
 ### 🕶️ Mode discrétion — le proxy ne se signe plus

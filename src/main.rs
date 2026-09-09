@@ -84,6 +84,21 @@ enum Commands {
         #[arg(long)]
         geo_clear: bool,
 
+        /// Exempt these public paths from the behavioural gate (PoW challenge
+        /// and rate limit) so non-browser clients — OpenSea, indexers, uptime
+        /// probes — can read them. Comma-separated prefixes, e.g.
+        /// "/api/nft,/media". IP blacklist and geo policy still apply.
+        #[arg(long, value_name = "PATH,PATH", value_delimiter = ',')]
+        exempt_path: Option<Vec<String>>,
+
+        /// HTTP methods covered by --exempt-path (default: GET,HEAD).
+        #[arg(long, value_name = "M,M", value_delimiter = ',')]
+        exempt_method: Option<Vec<String>>,
+
+        /// Remove this host's path exemptions.
+        #[arg(long)]
+        exempt_clear: bool,
+
         /// Remove this host entirely (route + geo rule).
         #[arg(long)]
         remove: bool,
@@ -179,6 +194,9 @@ async fn main() -> websec::Result<()> {
             geo_allow,
             geo_block,
             geo_clear,
+            exempt_path,
+            exempt_method,
+            exempt_clear,
             remove,
             list,
             test,
@@ -190,6 +208,9 @@ async fn main() -> websec::Result<()> {
                 geo_allow,
                 geo_block,
                 geo_clear,
+                exempt_paths: exempt_path,
+                exempt_methods: exempt_method,
+                exempt_clear,
                 remove,
             };
             cli::run_domain(&args.config, &change, list, test).await?;

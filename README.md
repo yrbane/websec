@@ -165,6 +165,14 @@ threshold_block = 0         # < 20  : bloquer
 [storage]
 type = "redis"              # "redis", "memory" ou "sled"
 redis_url = "redis://127.0.0.1:6379"
+
+# Chemins publics lisibles par des clients sans navigateur (places de marché
+# NFT, indexeurs, wallets, sondes) : ni challenge PoW ni rate limit dessus.
+# La blacklist d'IP et la politique GeoIP continuent de s'appliquer.
+[[exemptions]]
+server_name = "example.com"           # exact, "*.example.com", ou vide = tous
+paths = ["/api/nft", "/media/1.png"]  # préfixes par segment ; "/x*" = brut
+methods = ["GET", "HEAD"]             # défaut : GET, HEAD
 ```
 
 WebSec ajoute automatiquement les headers `X-Forwarded-Proto`, `X-Forwarded-Host`, `X-Forwarded-For` et `X-Real-IP` pour que le backend puisse distinguer HTTP/HTTPS et connaître l'IP du client.
@@ -189,6 +197,11 @@ websec lists whitelist add 2001:db8::/64    -c /etc/websec/websec.toml   # tout 
 websec lists whitelist add 10.0.0.0/8       -c /etc/websec/websec.toml   # plage IPv4
 # Les listes sont stockées à côté de la config (ici /etc/websec/lists/). Le
 # drapeau -c cible ce dossier ; redémarrez WebSec pour recharger la liste.
+
+# Laisser un robot légitime lire des chemins publics (métadonnées NFT, flux,
+# sondes) : ni challenge PoW ni rate limit sur ces chemins. Redémarrage requis.
+websec domain example.com --exempt-path /api/nft,/media/1.png -c /etc/websec/websec.toml
+websec domain example.com --exempt-clear -c /etc/websec/websec.toml
 
 # Configurer Apache automatiquement (idempotent, génère des listeners [::] dual-stack)
 websec setup

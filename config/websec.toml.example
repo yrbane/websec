@@ -164,3 +164,38 @@ enabled = true
 
 # Port HTTP pour les métriques
 port = 9090
+
+# ============================================================================
+# EXEMPTIONS DE CHEMIN
+# ============================================================================
+# Le pipeline de réputation suppose un navigateur. Un robot légitime qui lit
+# des métadonnées publiques — place de marché NFT (OpenSea), wallet, indexeur,
+# sonde de disponibilité — n'exécute pas de JavaScript : son score se dégrade
+# jusqu'au challenge Proof-of-Work, qu'il ne résoudra jamais.
+#
+# Une exemption dispense un couple (hôte, chemin, méthode) des décisions
+# COMPORTEMENTALES : challenge PoW, rate limit, score bas. Elle ne relâche
+# JAMAIS les contrôles déterministes : la blacklist d'IP et la politique GeoIP
+# (globale ou par domaine) restent appliquées sur les chemins exemptés.
+#
+# Gardez la surface minimale : exemptez les chemins que le robot doit lire, pas
+# le site entier. Les chemins exemptés ne sont plus limités en débit.
+#
+# Équivalent CLI (sauvegarde automatique, redémarrage requis) :
+#   websec domain minoupix.com --exempt-path /api/nft,/media/1.png
+#   websec domain minoupix.com --exempt-clear
+#
+# [[exemptions]]
+# # Hôte : exact ("minoupix.com"), wildcard ("*.example.com", qui couvre aussi
+# # le domaine nu), ou vide / "*" pour tous les hôtes.
+# server_name = "minoupix.com"
+#
+# # Préfixes de chemin. Un préfixe respecte les frontières de segment :
+# # "/api/nft" couvre "/api/nft" et "/api/nft/1", jamais "/api/nftx".
+# # Un motif terminé par "*" est un préfixe brut ("/media/thumb*").
+# # "/" exempterait tout l'hôte — à éviter.
+# paths = ["/api/nft", "/generated/nft", "/media/1.png"]
+#
+# # Méthodes exemptées. Défaut : GET et HEAD (lecture seule).
+# # Une liste vide autorise toutes les méthodes.
+# methods = ["GET", "HEAD"]

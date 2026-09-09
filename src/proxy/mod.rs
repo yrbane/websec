@@ -10,6 +10,8 @@
 
 pub mod backend;
 pub mod circuit_breaker;
+/// Exemptions de chemin (robots légitimes sur des chemins publics)
+pub mod exemption;
 pub mod middleware;
 pub mod pages;
 pub mod retry;
@@ -20,6 +22,7 @@ pub mod sni;
 
 pub use backend::BackendClient;
 pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitState};
+pub use exemption::ExemptionSet;
 pub use middleware::{metrics_handler, proxy_handler, ProxyState};
 pub use retry::RetryPolicy;
 pub use router::HostRouter;

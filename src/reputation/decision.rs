@@ -68,6 +68,10 @@ pub struct DecisionEngineResult {
     pub detection: DetectionResult,
     /// Whether this is a new IP
     pub is_new_ip: bool,
+    /// Blocage déterministe (blacklist d'IP ou politique géo), par opposition
+    /// à une décision issue du score de réputation. Les exemptions de chemin
+    /// ne peuvent pas passer outre un blocage dur.
+    pub hard_block: bool,
 }
 
 /// Core decision engine
@@ -132,6 +136,7 @@ impl DecisionEngine {
                     score: 0,
                     detection: DetectionResult::clean(),
                     is_new_ip: false,
+                    hard_block: true,
                 });
             }
         }
@@ -145,6 +150,7 @@ impl DecisionEngine {
                     score: 100,
                     detection: DetectionResult::clean(),
                     is_new_ip: false,
+                    hard_block: false,
                 });
             }
         }
@@ -176,6 +182,7 @@ impl DecisionEngine {
                 score: 0,
                 detection,
                 is_new_ip,
+                hard_block: true,
             });
         }
 
@@ -211,6 +218,7 @@ impl DecisionEngine {
             score: profile.current_score,
             detection,
             is_new_ip,
+            hard_block: false,
         })
     }
 
