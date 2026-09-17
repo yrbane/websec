@@ -81,7 +81,10 @@
 //! - `/dashboard/*` - User dashboards
 //! - `/profile/*` - User profiles
 //! - `/settings/*` - Account settings
-//! - `/api/*` - API endpoints
+//!
+//! Public APIs are deliberately excluded: machine clients carry no session
+//! cookie, so treating `/api/*` as session-protected penalised legitimate
+//! callers (NFT marketplaces, payment webhooks) until they were blocked.
 
 use super::detector::{DetectionResult, Detector, HttpRequestContext};
 use crate::reputation::{Signal, SignalVariant};
@@ -121,8 +124,16 @@ struct IpSessionData {
     unique_sessions: std::collections::HashSet<String>,
 }
 
-/// Protected paths that require session authentication
-const PROTECTED_PATHS: &[&str] = &["/admin", "/dashboard", "/profile", "/settings", "/api"];
+/// Protected paths that require session authentication.
+///
+/// `/api` n'en fait volontairement PAS partie : une API publique est appelée
+/// par des machines qui n'ont aucun cookie de session (places de marché NFT
+/// lisant des métadonnées, webhooks de paiement, appels `fetch` avant qu'une
+/// session existe). Les y inclure transformait chaque appel légitime en
+/// anomalie de session à 15 points, et bloquait l'appelant au bout de sept
+/// requêtes. Les scans qui visent `/api/.env` ou `/api/vendor/...` sont du
+/// ressort du détecteur de scan, pas de celui de session.
+const PROTECTED_PATHS: &[&str] = &["/admin", "/dashboard", "/profile", "/settings"];
 
 /// Suspicious session token patterns (too uniform/predictable)
 const SUSPICIOUS_SESSION_PATTERNS: &[&str] = &["AAAA", "1111", "0000", "FFFF"];
@@ -243,7 +254,8 @@ impl SessionDetector {
     /// - `/dashboard` - User dashboards
     /// - `/profile` - User profiles
     /// - `/settings` - Account settings
-    /// - `/api` - API endpoints
+    ///
+    /// Public APIs are excluded on purpose: see [`PROTECTED_PATHS`].
     ///
     /// # Examples
     ///
@@ -251,6 +263,7 @@ impl SessionDetector {
     /// assert!(SessionDetector::is_protected_path("/admin/users"));
     /// assert!(SessionDetector::is_protected_path("/dashboard"));
     /// assert!(!SessionDetector::is_protected_path("/login"));
+    /// assert!(!SessionDetector::is_protected_path("/api/nft/collection"));
     /// assert!(!SessionDetector::is_protected_path("/public/images/logo.png"));
     /// ```
     fn is_protected_path(path: &str) -> bool {
@@ -504,6 +517,21 @@ mod tests {
         assert!(SessionDetector::is_protected_path("/admin/users"));
         assert!(SessionDetector::is_protected_path("/dashboard"));
         assert!(!SessionDetector::is_protected_path("/login"));
+    }
+
+    /// Une API publique n'a par construction aucun cookie de session :
+    /// métadonnées NFT lues par les places de marché, webhooks de paiement,
+    /// points d'entrée appelés en `fetch`. Les compter comme des anomalies
+    /// de session faisait chuter la réputation de clients parfaitement
+    /// légitimes jusqu'au blocage.
+    #[tokio::test]
+    async fn test_public_api_is_not_session_protected() {
+        assert!(!SessionDetector::is_protected_path("/api"));
+        assert!(!SessionDetector::is_protected_path("/api/nft/collection"));
+        assert!(!SessionDetector::is_protected_path("/api/webhooks/stripe"));
+        // Les vraies zones à session restent protégées, y compris sous /api.
+        assert!(SessionDetector::is_protected_path("/admin"));
+        assert!(SessionDetector::is_protected_path("/settings/compte"));
     }
 
     #[tokio::test]

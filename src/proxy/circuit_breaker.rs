@@ -124,8 +124,8 @@ impl CircuitBreaker {
 
     /// Check if circuit allows request
     ///
-    /// Returns `Ok(())` if request is allowed, `Err(())` if circuit is open
-    pub async fn call_allowed(&self) -> Result<(), ()> {
+    /// Returns `Ok(())` if request is allowed, `Err(CircuitOpen)` otherwise.
+    pub async fn call_allowed(&self) -> Result<(), CircuitOpen> {
         let current_state = self.state();
 
         match current_state {
@@ -136,7 +136,7 @@ impl CircuitBreaker {
                     self.transition_to_half_open();
                     Ok(())
                 } else {
-                    Err(())
+                    Err(CircuitOpen)
                 }
             }
             CircuitState::HalfOpen => {
@@ -145,7 +145,7 @@ impl CircuitBreaker {
                 if successes < self.config.half_open_max_requests {
                     Ok(())
                 } else {
-                    Err(())
+                    Err(CircuitOpen)
                 }
             }
         }
@@ -213,7 +213,7 @@ impl CircuitBreaker {
         // Check if call is allowed
         self.call_allowed()
             .await
-            .map_err(|()| CircuitBreakerError::CircuitOpen)?;
+            .map_err(|CircuitOpen| CircuitBreakerError::CircuitOpen)?;
 
         // Execute operation
         match operation().await {
@@ -288,6 +288,13 @@ pub struct CircuitBreakerStats {
     /// Number of consecutive successes
     pub consecutive_successes: u64,
 }
+/// Le circuit est ouvert : l'appel est refusé sans être tenté.
+///
+/// Type dédié plutôt qu'un `Result<_, ()>`, que clippy refuse à juste titre :
+/// une erreur sans type ne dit rien à l'appelant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("Circuit breaker is open")]
+pub struct CircuitOpen;
 
 /// Circuit breaker error
 #[derive(Debug, thiserror::Error)]

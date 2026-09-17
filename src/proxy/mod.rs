@@ -21,7 +21,7 @@ pub mod server;
 pub mod sni;
 
 pub use backend::BackendClient;
-pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitState};
+pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitOpen, CircuitState};
 pub use exemption::ExemptionSet;
 pub use middleware::{metrics_handler, proxy_handler, ProxyState};
 pub use retry::RetryPolicy;

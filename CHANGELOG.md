@@ -5,7 +5,7 @@ All notable changes to WebSec will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-09-17
 
 ### 🤖 Exemptions de chemin — laisser lire les métadonnées publiques
 
@@ -42,6 +42,31 @@ un blocage. Les exemptions ouvrent un chemin, jamais un client.
   hôte vide — les règles par domaine retombaient silencieusement sur la règle
   globale. L'hôte est désormais résolu depuis l'URI puis, à défaut, depuis
   `Host`, et injecté dans le contexte des détecteurs.
+### 🔓 Les API publiques ne sont plus prises pour des intrus
+
+Les exemptions ci-dessus empêchent le challenge et la limitation de frapper un
+chemin public ; ce correctif s'attaque à la cause en amont, le signal lui-même.
+
+- **Changed** `/api` sort de la liste des chemins exigeant une session
+  (`session_detector.rs`). Une API publique est appelée par des machines qui
+  n'ont par construction aucun cookie : places de marché lisant des
+  métadonnées NFT, webhooks de paiement, appels `fetch` émis avant qu'une
+  session existe. Chacun de ces appels légitimes émettait un
+  `SessionTokenAnomaly` à 15 points ; avec une base à 100, le quatrième appel
+  faisait basculer l'IP en limitation, le cinquième en challenge, le septième
+  en blocage, et la réputation ne remonte qu'avec une demi-vie de 24 h. Sans
+  ce correctif, un chemin exempté voyait toujours son appelant perdre des
+  points, qui lui manquaient ensuite ailleurs sur le site.
+  Constaté en production : les métadonnées NFT d'un site étaient notées comme
+  les scans visant `/api/.env` ou `/api/vendor/phpunit/...`, que le détecteur
+  de scan reconnaît déjà à leur forme. Les zones réellement liées à une
+  session (`/admin`, `/dashboard`, `/profile`, `/settings`) restent protégées
+  à l'identique.
+- **Changed** `CircuitBreaker::call_allowed` renvoie `Result<(), CircuitOpen>`
+  au lieu de `Result<(), ()>` : une erreur sans type ne dit rien à l'appelant,
+  et clippy le refusait depuis une montée de version de l'outil, ce qui
+  laissait la CI rouge indépendamment de ces correctifs. `CircuitOpen` est
+  exporté par `proxy`.
 
 ## [0.4.0] - 2026-08-20
 

@@ -509,6 +509,18 @@ Détecter les signaux indiquant un **hijacking de session** ou un partage de ses
   * des pays très différents en très peu de temps.
 * IP qui “vole” une session d’une autre IP (pattern de “switch” brutal).
 
+### Ce qui n’est PAS un signal
+
+L’absence de cookie de session ne compte que sur les zones réellement liées à
+une session : `/admin`, `/dashboard`, `/profile`, `/settings`. Une **API
+publique en est exclue** : elle est appelée par des machines qui n’ont, par
+construction, aucun cookie — places de marché lisant des métadonnées, webhooks
+de paiement, appels `fetch` émis avant qu’une session existe. Les compter
+comme des anomalies faisait chuter la réputation d’appelants légitimes de 15
+points par requête, jusqu’au blocage. Les scans qui visent `/api/.env` ou
+`/api/vendor/...` relèvent du détecteur de scan, qui les reconnaît à leur
+forme.
+
 ### Exemples
 
 #### 11.1. Même session depuis 2 pays éloignés
