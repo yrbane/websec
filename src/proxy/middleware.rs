@@ -696,6 +696,39 @@ fn build_http_context(
     }
 }
 
+/// Headers hop-by-hop (RFC 7230 § 6.1) : ils décrivent UNE connexion et ne
+/// doivent jamais être relayés, ni à l'aller ni au retour.
+const HOP_BY_HOP_HEADERS: &[&str] = &[
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailers",
+    "transfer-encoding",
+    "upgrade",
+];
+
+/// Sanitize les headers de la RÉPONSE du backend avant de la rendre au client.
+///
+/// Le proxy collecte entièrement le corps avant de le réémettre : la réponse
+/// sortante est donc de taille connue. Conserver le cadrage du backend
+/// (`Transfer-Encoding: chunked`) décrivait alors un corps qui n'existait plus
+/// sous cette forme, et la connexion se fermait sans qu'aucun octet ne
+/// parvienne au client — toute réponse dynamique était perdue, les statiques
+/// (servies avec `Content-Length`) passant, elles, sans encombre.
+///
+/// `Content-Length` est retiré pour la même raison : c'est l'encodeur qui le
+/// recalcule à partir du corps réellement émis.
+fn sanitize_response_headers(mut parts: http::response::Parts) -> http::response::Parts {
+    for header in HOP_BY_HOP_HEADERS {
+        parts.headers.remove(*header);
+    }
+    parts.headers.remove("content-length");
+
+    parts
+}
+
 /// Sanitize les headers HTTP avant de forwarder au backend
 ///
 /// Supprime les headers hop-by-hop et potentiellement dangereux,
@@ -712,18 +745,6 @@ fn sanitize_request_headers(
     state: &ProxyState,
     client_ip: IpAddr,
 ) -> http::request::Parts {
-    // Liste des headers hop-by-hop à supprimer (RFC 7230)
-    const HOP_BY_HOP_HEADERS: &[&str] = &[
-        "connection",
-        "keep-alive",
-        "proxy-authenticate",
-        "proxy-authorization",
-        "te",
-        "trailers",
-        "transfer-encoding",
-        "upgrade",
-    ];
-
     // Supprimer tous les headers hop-by-hop
     for header in HOP_BY_HOP_HEADERS {
         parts.headers.remove(*header);
@@ -852,9 +873,10 @@ async fn forward_to_backend(
                 }
             };
 
-            // Reconstruire la réponse
-
-            Response::from_parts(parts, Body::from(body_bytes))
+            // Reconstruire la réponse. Le corps a été entièrement collecté :
+            // il est désormais de taille connue, et les en-têtes de cadrage
+            // du backend ne le décrivent plus.
+            Response::from_parts(sanitize_response_headers(parts), Body::from(body_bytes))
         }
         Err(e) => {
             tracing::error!(error = %e, "Backend forwarding failed");
@@ -869,6 +891,35 @@ async fn forward_to_backend(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Régression : le proxy collecte le corps puis le réémet. Garder le
+    /// `Transfer-Encoding: chunked` du backend annonçait un cadrage que la
+    /// réponse sortante n'avait plus, et la connexion se fermait sans qu'un
+    /// seul octet n'atteigne le client. Constaté en production : les réponses
+    /// statiques (avec `Content-Length`) passaient, toutes les réponses
+    /// dynamiques étaient perdues.
+    #[test]
+    fn test_response_headers_drop_backend_framing() {
+        let reponse = Response::builder()
+            .status(StatusCode::OK)
+            .header("transfer-encoding", "chunked")
+            .header("connection", "Upgrade")
+            .header("content-length", "999")
+            .header("content-type", "application/json")
+            .header("x-metier", "à conserver")
+            .body(Body::empty())
+            .unwrap();
+        let (parts, _) = reponse.into_parts();
+
+        let propre = sanitize_response_headers(parts);
+
+        assert!(!propre.headers.contains_key("transfer-encoding"));
+        assert!(!propre.headers.contains_key("connection"));
+        assert!(!propre.headers.contains_key("content-length"));
+        // Les en-têtes applicatifs, eux, ne bougent pas.
+        assert_eq!(propre.headers["content-type"], "application/json");
+        assert_eq!(propre.headers["x-metier"], "à conserver");
+    }
 
     #[test]
     fn test_extract_client_ip_ignores_headers_without_trusted_proxy() {

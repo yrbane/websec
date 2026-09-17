@@ -5,6 +5,25 @@ All notable changes to WebSec will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-09-17
+
+### 🩹 Les réponses dynamiques repassent
+
+- **Fixed** Le proxy collecte entièrement le corps de la réponse du backend
+  avant de le réémettre, mais conservait les en-têtes de cadrage d'origine.
+  Une réponse annoncée `Transfer-Encoding: chunked` décrivait alors un corps
+  qui n'existait plus sous cette forme : l'encodeur fermait la connexion sans
+  qu'un seul octet n'atteigne le client. Conséquence en production : **toute
+  réponse dynamique était perdue** — page PHP, JSON d'API, métadonnées NFT —
+  tandis que les fichiers statiques, servis avec `Content-Length`, passaient
+  sans encombre. Le défaut restait masqué derrière une page de parking
+  statique, et ne s'est révélé que sur les chemins exemptés atteignant
+  l'applicatif.
+  Les en-têtes hop-by-hop (RFC 7230 § 6.1) sont désormais retirés de la
+  réponse comme ils l'étaient déjà de la requête, et `Content-Length` est
+  recalculé par l'encodeur sur le corps réellement émis. Les en-têtes
+  applicatifs ne sont pas touchés.
+
 ## [0.5.0] - 2026-09-17
 
 ### 🤖 Exemptions de chemin — laisser lire les métadonnées publiques
