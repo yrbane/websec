@@ -45,7 +45,9 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=sha,prefix={{branch}}-
+            # Préfixe par défaut (sha-) : sur un tag, {{branch}} est vide et
+            # produisait « :-4c583a5 », que Docker refuse comme nom d'image.
+            type=sha
 
       - name: Build and push
         uses: docker/build-push-action@v5

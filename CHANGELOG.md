@@ -5,6 +5,27 @@ All notable changes to WebSec will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] - 2026-09-17
+
+### 🏗️ Le binaire de production sort de l'image
+
+- **Added** `scripts/construire-binaire.sh` produit le binaire depuis l'étape
+  de compilation de l'image, donc sous Debian 13 comme le serveur. Il refuse
+  un binaire dépourvu de `rustls` ou exigeant une glibc plus récente que celle
+  de la cible, et l'option `--installer <hôte>` sauvegarde l'ancien binaire
+  puis revient en arrière si le service ne redémarre pas. Compiler sur une
+  machine de développement plus récente produisait un binaire qui démarrait
+  tant qu'aucune dépendance ne réclamait un symbole postérieur : le proxy
+  servant tous les sites, la panne aurait été totale et le message obscur.
+- **Fixed** Le workflow Docker échouait sur les tags : `type=sha` était
+  préfixé de `{{branch}}-`, vide lors d'un push de tag, d'où une étiquette
+  `ghcr.io/…:-4c583a5` que Docker refuse. La construction réussissait déjà sur
+  `main` depuis la 0.5.2 ; elle aboutit désormais aussi là où l'image doit
+  réellement être publiée.
+- **Fixed** La procédure d'installation documentée recommandait
+  `cargo build --release --locked`, **sans** `--features tls` : le chemin
+  officiel produisait un proxy incapable de servir en 443.
+
 ## [0.5.2] - 2026-09-17
 
 ### 📦 L'image se construit, et pour la bonne cible

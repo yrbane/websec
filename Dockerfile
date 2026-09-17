@@ -51,8 +51,8 @@ RUN rm -rf target/release/.fingerprint/websec-* \
 # TLS est indispensable à un proxy qui termine le HTTPS : il n'est PAS dans les
 # features par défaut, et l'oublier produit un binaire incapable d'écouter
 # en 443 — la panne de dix-huit heures du 21 août.
-RUN cargo build --release --features tls \
-    && strip target/release/websec
+RUN cargo build --release --features tls
+
 
 # ---------- Étape 2 : exécution ----------
 # Même version que l'étape de compilation ET que le serveur.

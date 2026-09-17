@@ -54,6 +54,24 @@ Ce guide couvre l'installation et le déploiement de WebSec en environnement de 
 
 ### Installation
 
+> **Le plus sûr : faire produire le binaire par l'image Docker.**
+> Elle compile sous Debian 13, la même distribution que le serveur, donc le
+> binaire y démarre par construction. Compilé sur une machine de développement
+> plus récente, il ne fonctionne que tant qu'aucune dépendance ne réclame un
+> symbole de glibc postérieur.
+>
+> ```bash
+> scripts/construire-binaire.sh                  # produit dist/websec
+> scripts/construire-binaire.sh --installer <hôte>   # vérifie et installe
+> ```
+>
+> Le script refuse un binaire sans `rustls` ou exigeant une glibc plus récente
+> que celle du serveur, sauvegarde l'ancien binaire et revient en arrière si le
+> service ne redémarre pas.
+
+#### Compilation manuelle
+
+
 ```bash
 # Se connecter au serveur
 ssh user@votre-serveur.com
@@ -253,7 +271,7 @@ source $HOME/.cargo/env
 # 2. Cloner et compiler
 git clone https://github.com/votre-username/websec.git
 cd websec
-cargo build --release --locked
+cargo build --release --locked --features tls
 
 # 3. Installer le binaire
 sudo cp target/release/websec /usr/local/bin/
@@ -967,7 +985,7 @@ docker rm websec-proxy
 ```bash
 cd websec
 git pull
-cargo build --release --locked
+cargo build --release --locked --features tls
 sudo systemctl stop websec
 sudo cp target/release/websec /usr/local/bin/
 sudo systemctl start websec

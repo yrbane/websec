@@ -43,3 +43,6 @@ docs/_build/
 # Added by cargo
 
 /target
+
+# Binaire produit par scripts/construire-binaire.sh
+dist/
