@@ -7,7 +7,9 @@ release/
 *.prof*
 
 # Cargo
-Cargo.lock
+# Cargo.lock est VERSIONNÉ : ce dépôt produit un binaire, pas une
+# bibliothèque. Le verrouiller garantit que la CI, l'image Docker et le
+# serveur compilent exactement les mêmes dépendances.
 
 # IDE
 .idea/

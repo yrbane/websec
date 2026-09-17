@@ -5,6 +5,36 @@ All notable changes to WebSec will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-09-17
+
+### 📦 L'image se construit, et pour la bonne cible
+
+- **Added** `Cargo.lock` est désormais **versionné**. Ce dépôt produit un
+  binaire, pas une bibliothèque : le verrou garantit que la CI, l'image Docker
+  et le serveur compilent exactement les mêmes dépendances. Son absence
+  faisait échouer `COPY Cargo.toml Cargo.lock` et donc **toute** construction
+  d'image depuis avant la 0.4.0.
+- **Changed** L'image est construite pour la cible réelle, **Debian 13
+  (trixie)**, et non plus Alpine. Le serveur tourne sous glibc 2.41 ; compiler
+  contre la même bibliothèque garantit que le binaire y démarre. Un binaire
+  produit sur une machine plus récente (Arch, glibc 2.44) ne fonctionnait que
+  tant qu'aucune dépendance ne réclamait un symbole postérieur. Accessoirement,
+  musl imposait de recompiler `aws-lc-sys` depuis les sources : plus de dix
+  minutes de compilation pour une cible qui n'est pas la nôtre.
+- **Fixed** L'image de base était figée à `rust:1.83`, incapable de compiler un
+  code qui emploie `Duration::from_mins`. Épinglée à `rust:1.98`, la version de
+  la toolchain du projet.
+- **Fixed** Le binaire de l'image était construit **sans** `--features tls` :
+  elle livrait un proxy incapable de terminer le HTTPS.
+- **Fixed** L'étape de mise en cache des dépendances échouait sur les quatre
+  cibles `[[bench]]` déclarées, dont cargo exige les fichiers pour lire le
+  manifeste ; `benches/` accompagne désormais les manifestes. Les artefacts du
+  squelette, homonymes du vrai crate, sont effacés avant la compilation réelle
+  — sans quoi cargo les croyait à jour et livrait un binaire vide.
+- **Fixed** `WEBSEC_CONFIG` visait la configuration générique, qui écoute sur
+  `[::]:80` et vise un backend en `127.0.0.1`, sans objet dans un conteneur.
+  Il pointe désormais `websec-docker.toml`.
+
 ## [0.5.1] - 2026-09-17
 
 ### 🩹 Les réponses dynamiques repassent
