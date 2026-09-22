@@ -5,6 +5,26 @@ All notable changes to WebSec will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4] - 2026-09-22
+
+### 🖼️ Une galerie n'est pas une attaque
+
+- **Fixed** Le `FloodDetector` ne compte plus les lectures (`GET`/`HEAD`) de
+  ressources statiques — images, CSS, JS, polices, reconnues à l'extension du
+  dernier segment du chemin. Ouvrir la galerie de minoupix.com charge une
+  cinquantaine de miniatures en moins de deux secondes : le seuil de rafale
+  (50 / 2 s) prenait n'importe quel navigateur pour un flood, faisait tomber
+  son score à 0 et le bloquait dès la page suivante (403 sur une fiche, 412
+  requêtes refusées en une minute). Les deux compteurs du détecteur sont
+  concernés — le plafond de 100 / 60 s aurait sinon rattrapé le défilement.
+- **Security** Les statiques restent plafonnées par le limiteur de débit
+  (`[ratelimit]`), qui s'applique à toutes les requêtes. Contrepartie
+  assumée : un attaquant peut viser des URL en `.png` pour échapper à ce
+  détecteur précis ; il bute alors sur le limiteur. Un `POST` vers un chemin
+  en `.png`, ou `/media.gif/admin`, reste compté.
+- **Tests** Cinq cas, dont une rafale de pages dynamiques toujours détectée
+  malgré les statiques intercalées ; vérifiés par mutation.
+
 ## [0.5.3] - 2026-09-17
 
 ### 🏗️ Le binaire de production sort de l'image

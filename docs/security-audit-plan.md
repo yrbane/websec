@@ -161,6 +161,20 @@ wait
 
 **Attendu** : Détection burst, `RATE_LIMIT` activé
 
+#### Test 3.2 bis : Rafale de ressources statiques (faux positif à éviter)
+
+```bash
+# 100 miniatures en 2 secondes, comme une page de galerie
+for i in {1..100}; do
+    curl -s -o /dev/null https://votre-domaine.com/media/mini/$i.gif &
+done
+wait
+```
+
+**Attendu** : **aucun** signal `RequestFlood` — les lectures de statiques
+(`GET`/`HEAD` d'images, CSS, JS, polices) ne comptent pas pour le
+`FloodDetector` ; seul le limiteur de débit (`[ratelimit]`) les plafonne.
+
 #### Test 3.3 : Sustained High Rate
 
 ```bash
