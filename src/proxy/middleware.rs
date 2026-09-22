@@ -21,7 +21,7 @@ use crate::reputation::decision::DecisionEngine;
 use crate::reputation::score::ProxyDecision;
 use axum::body::Body;
 use axum::extract::{ConnectInfo, State};
-use axum::http::{Method, Request, Response, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, Method, Request, Response, StatusCode};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -729,6 +729,25 @@ fn sanitize_response_headers(mut parts: http::response::Parts) -> http::response
     parts
 }
 
+/// Recolle en un seul en-tête les champs `cookie` qu'un client HTTP/2 envoie
+/// séparément (RFC 9113 §8.2.3). Le backend reçoit du HTTP/1.1 : plusieurs
+/// lignes `Cookie` y sont fusionnées avec une virgule, que PHP et consorts ne
+/// savent pas découper — le cookie de session se perdait.
+fn merge_cookie_fields(headers: &mut HeaderMap) {
+    let champs: Vec<&[u8]> = headers
+        .get_all("cookie")
+        .iter()
+        .map(HeaderValue::as_bytes)
+        .collect();
+    if champs.len() < 2 {
+        return;
+    }
+    let fusion = champs.join(&b"; "[..]);
+    if let Ok(valeur) = HeaderValue::from_bytes(&fusion) {
+        headers.insert("cookie", valeur);
+    }
+}
+
 /// Sanitize les headers HTTP avant de forwarder au backend
 ///
 /// Supprime les headers hop-by-hop et potentiellement dangereux,
@@ -749,6 +768,9 @@ fn sanitize_request_headers(
     for header in HOP_BY_HOP_HEADERS {
         parts.headers.remove(*header);
     }
+
+    // HTTP/2 → HTTP/1.1 : un seul en-tête Cookie, sinon la session se perd.
+    merge_cookie_fields(&mut parts.headers);
 
     // Supprimer headers potentiellement dangereux multiples
     // (empêche HTTP request smuggling via headers dupliqués)
@@ -919,6 +941,45 @@ mod tests {
         // Les en-têtes applicatifs, eux, ne bougent pas.
         assert_eq!(propre.headers["content-type"], "application/json");
         assert_eq!(propre.headers["x-metier"], "à conserver");
+    }
+
+    /// Régression : en HTTP/2, un navigateur envoie un champ `cookie` par
+    /// cookie. Relayés tels quels en HTTP/1.1, Apache les fusionnait avec une
+    /// virgule et PHP ne retrouvait plus le cookie de session : tout
+    /// formulaire protégé par CSRF échouait dès qu'un autre cookie précédait
+    /// `PHPSESSID`. RFC 9113 §8.2.3 : on les recolle avec `; `.
+    #[test]
+    fn test_split_cookie_fields_are_joined_into_one() {
+        let mut headers = HeaderMap::new();
+        headers.append("cookie", "sec_pow=abc".parse().unwrap());
+        headers.append("cookie", "minoupix_sesame=xyz".parse().unwrap());
+        headers.append("cookie", "PHPSESSID=s3ss10n".parse().unwrap());
+
+        merge_cookie_fields(&mut headers);
+
+        let tous: Vec<_> = headers.get_all("cookie").iter().collect();
+        assert_eq!(tous.len(), 1, "un seul en-tête Cookie vers le backend");
+        assert_eq!(
+            tous[0],
+            "sec_pow=abc; minoupix_sesame=xyz; PHPSESSID=s3ss10n"
+        );
+    }
+
+    #[test]
+    fn test_a_single_cookie_field_is_left_untouched() {
+        let mut headers = HeaderMap::new();
+        headers.insert("cookie", "a=1; b=2".parse().unwrap());
+
+        merge_cookie_fields(&mut headers);
+
+        assert_eq!(headers["cookie"], "a=1; b=2");
+    }
+
+    #[test]
+    fn test_no_cookie_no_header() {
+        let mut headers = HeaderMap::new();
+        merge_cookie_fields(&mut headers);
+        assert!(!headers.contains_key("cookie"));
     }
 
     #[test]

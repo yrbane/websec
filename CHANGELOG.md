@@ -5,6 +5,22 @@ All notable changes to WebSec will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.5] - 2026-09-22
+
+### 🍪 Les cookies d'un client HTTP/2 arrivent entiers
+
+- **Fixed** Un navigateur en HTTP/2 envoie un champ `cookie` par cookie. WebSec
+  les relayait tels quels vers le backend en HTTP/1.1, où Apache les
+  fusionnait avec une virgule : PHP ne savait plus les découper et perdait
+  tout cookie placé après le premier — à commencer par le cookie de session.
+  Tout formulaire protégé par CSRF échouait en 400 dès que le visiteur avait
+  un autre cookie (le `sec_pow` de WebSec suffit), sur tous les sites
+  derrière le proxy. Les champs sont désormais recollés avec `; ` en un seul
+  en-tête, comme l'exige la RFC 9113 §8.2.3.
+- **Tests** Trois cas unitaires, et une sonde réelle à travers le proxy :
+  deux en-têtes `Cookie` donnaient 400, un seul 302 ; après correctif, les
+  deux donnent 302.
+
 ## [0.5.4] - 2026-09-22
 
 ### 🖼️ Une galerie n'est pas une attaque
