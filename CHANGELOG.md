@@ -5,6 +5,21 @@ All notable changes to WebSec will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.6] - 2026-09-22
+
+### 🧹 Un seul chemin de publication
+
+- **Removed** Le workflow GitHub `release.yml`. Il créait une release à chaque
+  tag, en concurrence avec la publication faite à la main (notes extraites du
+  CHANGELOG, binaire construit dans l'image Debian 13 et vérifié) : l'un des
+  deux échouait en `already_exists` depuis la 0.5.2, et un mail d'échec
+  partait à chaque version. Pire, il compilait **sans `--features tls`** — s'il
+  était allé au bout, il aurait publié des binaires incapables de servir du
+  HTTPS, la cause exacte de la panne du 21 août. Il reposait enfin sur
+  `actions/create-release` et `actions/upload-release-asset`, archivées.
+  Le binaire de référence reste celui de `scripts/construire-binaire.sh`, et
+  `install.sh` compile toujours depuis les sources avec TLS.
+
 ## [0.5.5] - 2026-09-22
 
 ### 🍪 Les cookies d'un client HTTP/2 arrivent entiers
